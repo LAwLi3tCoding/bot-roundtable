@@ -4,3 +4,47 @@ dialog{border:1px solid var(--line);border-radius:18px;background:var(--bg);colo
 @media(max-width:1400px){.app-shell{margin:16px;height:calc(100dvh - 32px)}}
 @media(max-width:720px){:root{background:#fff}.app-shell{height:100dvh;margin:0;border:0;border-radius:0;box-shadow:none;display:block}#sidebar{height:100%;border:0;padding:18px 14px}.sidebar-top{height:42px}.brand{font-size:22px}.search-box{margin-top:8px}.search-box input{padding:12px 5px}.room-nav{padding:14px 9px}.room-nav-name{font-size:16px}.room-preview{font-size:13px}.room-nav .avatar{width:40px;height:40px}.main-shell{display:none;height:100%}.chat-open #sidebar{display:none}.chat-open .main-shell{display:flex}#menu{display:inline-flex;width:32px;min-width:32px;height:36px;font-size:28px;padding:0;border-radius:50%;background:#fafafa}.topbar{height:68px;padding:0 12px;gap:7px}.topbar .avatar{width:23px;height:23px}.heading h1{font-size:14px}.heading p{font-size:9px}.topbar .secondary{padding:8px 4px;font-size:11px}.status-pill{font-size:9px;max-width:76px;white-space:normal}#chat{padding:18px 12px}.message-content{max-width:88%}.message-body{font-size:13px;padding:10px 12px}.message-meta strong{font-size:11px}.message-meta .source,.message-meta time{font-size:8px}.message{margin-bottom:16px}.human{margin:16px 0 24px}#composer-wrap{padding:8px 10px max(14px,env(safe-area-inset-bottom))}#body{font-size:13px}.bot-cards{grid-template-columns:1fr}.manage-member{flex-wrap:wrap}.manage-member>div{flex-basis:100%}dialog{padding:20px}.welcome{margin-top:12vh}#thread-select{max-width:150px}.button-row{flex-wrap:wrap}.button-row select{min-width:140px}}
 @media(prefers-reduced-motion:reduce){#chat{scroll-behavior:auto}}
+
+
+/* Independently authored desktop refinements and geometric avatar motion. */
+:root{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;--ink:#1c1c1c}
+.bot-avatar{display:inline-flex;flex-shrink:0;align-items:center;justify-content:center;vertical-align:middle}
+.bot-avatar svg{display:block;overflow:visible}
+.avatar-body{transform-origin:32px 42px}
+.avatar-eyes{transform-box:fill-box;transform-origin:center;animation:avatar-blink 6.7s ease-in-out infinite}
+.avatar-smile,.avatar-brow{opacity:0}
+.bot-avatar[data-state=finished] .avatar-smile,.bot-avatar[data-state=blocked] .avatar-brow{opacity:1}
+.bot-avatar[data-state=blocked] .avatar-eyes{transform:scaleY(.7)}
+.bot-avatar[data-state=working] .avatar-body{animation:avatar-attend 2.8s ease-in-out infinite}
+.bot-avatar[data-compact=true] *{animation:none!important}
+.avatar-motion-paused *{animation-play-state:paused!important}
+.hero-mark .bot-avatar{margin:auto}
+.participant-chip .bot-avatar{width:22px!important;height:22px!important}
+.participant-chip .bot-avatar svg{width:22px;height:22px}
+@keyframes avatar-blink{0%,43%,47%,100%{transform:scaleY(1)}45%{transform:scaleY(.12)}}
+@keyframes avatar-attend{0%,100%{transform:rotate(-2deg) translateY(0)}50%{transform:rotate(2deg) translateY(-1px)}}
+@media(min-width:721px){
+ .app-shell{grid-template-columns:280px minmax(0,1fr);border-radius:18px}
+ #sidebar{background:#f5f5f5;padding:12px 10px;border-right-color:#e5e5e5}
+ .topbar{background:#fcfcfc;height:60px}
+ .room-nav{border-radius:10px;gap:8px;padding:10px 8px}
+ .room-nav.active{background:#e9e9e9}
+ .room-nav:hover:not(:disabled){background:#ededed}
+ .room-nav.active:hover{background:#e5e5e5}
+ .message.bot{gap:8px}
+ .message.bot>.bot-avatar{margin-top:17px}
+ .message.human>.avatar{display:none}
+ .message-content{max-width:84%}
+ .message-body{border-radius:16px}
+ #chat{padding:20px 24px}
+ #composer-wrap{padding:10px 24px 18px}
+ button{transition:background-color 130ms ease,border-color 130ms ease}
+ button:active:not(:disabled){transform:translateY(1px)}
+ dialog[open]{animation:panel-arrive 170ms ease-out}
+ .message.new-message{animation:message-arrive 180ms ease-out}
+}
+@keyframes panel-arrive{from{opacity:0;transform:translateY(5px) scale(.99)}to{opacity:1;transform:none}}
+@keyframes message-arrive{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){
+ *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+}

@@ -11,3 +11,7 @@ window.I18N = {
   errors:{'A room can contain at most 6 bots':'每个群聊最多 6 个 Bot。','Lead coordination requires at least 3 replies':'Lead 协调至少需要 3 条回复预算。','Admin credential required':'管理员令牌无效。','Invalid room or agent credential':'群聊或 Bot 凭据无效。','Stop or finish the current run first':'请先停止或完成当前讨论。','Choose 1–6 distinct agents and 1–20 total replies':'请选择 1–6 名参与者，并设置 1–20 条回复上限。','Choose 1–6 distinct registered bots':'请选择 1–6 个已注册 Bot。','Lead coordination needs another participant':'Lead 协调至少需要另一名参与者。','Bot already registered':'这个 Bot ID 已注册。','Agent already exists':'该 Bot 已经在本群中。','Bot initiation allowance exhausted or not granted':'该 Bot 未获发起额度或额度已耗尽。','Self invocation is not allowed':'Bot 不能调用自己。','Lead must be a room participant':'Lead 必须是本群成员。','Job is no longer active':'任务已停止或过期。','Registered bot not found':'未找到该已注册 Bot。','Invalid agent id or kind':'请检查 Bot ID 和连接类型。','Room not found':'未找到群聊。','Initiation allowance must be 0–20 total replies':'发起额度必须为 0–20 的整数。'}
  }
 };
+
+
+Object.assign(I18N.en, {demoTurn:'Demo turn in progress', awaitingReply:'Awaiting bot reply', avatarBlocked:'Reply failed or timed out', avatarFinished:'Reply received'});
+Object.assign(I18N.zh, {demoTurn:'演示回合进行中', awaitingReply:'等待 Bot 回复', avatarBlocked:'回复失败或超时', avatarFinished:'已收到回复'});

@@ -6,6 +6,8 @@ const t = key => I18N[language][key] || key;
 let adminToken = '', active = null, rooms = [], bots = [], state = null, selected = new Set(), threadId = '', refreshing = false, refreshGeneration = 0, leadContext = null;
 const roomTokens = new Map();
 const roomPreviews = new Map();
+const avatarMotion = RoundtableAvatar.motionController();
+window.addEventListener('pagehide', event => { if (!event.persisted) avatarMotion.dispose(); });
 function element(tag, className, value) { const node = document.createElement(tag); if (className) node.className = className; if (value !== undefined) node.textContent = value; return node; }
 function setError(error, dialog) { const target = dialog?.querySelector('.dialog-error') || $('error'); target.textContent = I18N[language].errors[error.message] || (I18N[language][error.message] ? t(error.message) : `${t('requestFailed')} ${error.status ? `(${error.status})` : ''}`); }
 async function action(fn, dialog) { $('error').textContent = ''; if(dialog) dialog.querySelectorAll('.dialog-error').forEach(n => n.textContent = ''); try { await fn(); } catch (error) { setError(error, dialog); } }
@@ -44,7 +46,7 @@ function renderNavigation() {
   const button=element('button','room-nav'+(active?.id===room.id?' active':''));
   button.dataset.roomId=room.id;
   button.setAttribute('aria-current',active?.id===room.id?'page':'false');
-  const avatar=element('span','avatar room-avatar',room.name.slice(0,1).toLocaleUpperCase());
+  const avatar=RoundtableAvatar.create('room:'+room.id);
   const content=element('span','room-nav-content'); const title=element('span','room-nav-title');
   title.append(element('span','room-nav-name',room.name)); const preview=roomPreviews.get(room.id);
   if(preview) title.append(element('time','',new Date(preview.created*1000).toLocaleTimeString(language==='zh'?'zh-CN':'en-US',{hour:'2-digit',minute:'2-digit'})));
@@ -65,6 +67,7 @@ function renderState() {
  const connected = Boolean(active && state); $('welcome').hidden = connected; $('thread-bar').hidden = !connected; $('composer-wrap').classList.toggle('inactive', !connected);
  $('manage').disabled = !connected; $('options-open').disabled = !connected; $('stop').hidden = true; $('send').disabled = !connected; $('stop').disabled = !connected;
  if (!connected) { $('room-title').textContent = t('welcomeTitle'); $('room-subtitle').textContent = t('welcomeSub'); $('status').textContent = t('disconnected'); $('messages').replaceChildren(); $('participants').replaceChildren(); $('member-list').replaceChildren(); $('participant-count').textContent='0'; return; }
+ $('room-mark').replaceChildren(RoundtableAvatar.create('room:'+state.room.id));
  $('room-title').textContent = state.room.name; $('room-subtitle').textContent = `${state.agents.length} ${t('participants')} · ${state.room.lead ? t('leadBadge') : t('noneLead')}`;
  const currentRun = state.runs.at(-1); const running = currentRun?.status === 'running';
  const displayRun = state.runs.find(r => r.id === threadId) || currentRun; $('status').textContent = displayRun ? `${t('run_' + displayRun.status)} · ${displayRun.turn}/${displayRun.budget}` : t('idle'); $('status').classList.toggle('running', running);
@@ -77,11 +80,13 @@ function renderState() {
  const wasNearBottom = $('chat').scrollHeight - $('chat').scrollTop - $('chat').clientHeight < 140;
  const signature = JSON.stringify([language,shownRun,messages]);
  if ($('messages').dataset.signature !== signature) {
+  const existingMessages = new Set([...$('messages').querySelectorAll('[data-message-id]')].map(n=>n.dataset.messageId));
   $('messages').dataset.signature=signature; $('messages').replaceChildren();
   if (!messages.length) $('messages').append(element('div','empty-thread',t('noMessages')));
   for (const message of messages) {
    const agent = state.agents.find(a => a.id === message.sender); const human = message.sender === 'user' && message.source === 'human'; const article = element('article', 'message ' + (human ? 'human' : 'bot'));
-   const avatar = element('div','avatar' + (message.sender === state.room.lead ? ' lead-avatar' : ''), human ? '↗' : '◈');
+   article.dataset.messageId=String(message.id); if(!existingMessages.has(String(message.id))) article.classList.add('new-message');
+   const avatar = human ? element('span','avatar','↗') : RoundtableAvatar.create(message.sender, message.source.endsWith('-error') ? 'blocked' : 'finished');
    const content = element('div','message-content'); const meta = element('div','message-meta'); meta.append(element('strong','', human ? t('human') : agent?.name || message.sender), element('span','source',sourceLabel(message.source)));
    if (message.sender === state.room.lead) meta.append(element('span','lead-badge',t('lead')));
    const time = element('time','',new Date(message.created*1000).toLocaleTimeString(language === 'zh' ? 'zh-CN' : 'en-US',{hour:'2-digit',minute:'2-digit'})); meta.append(time);
@@ -92,12 +97,17 @@ function renderState() {
  const focusedAgent=document.activeElement?.dataset.agentId;
  const participantSignature=JSON.stringify([language,state.agents,[...selected],running,state.room.lead]);
  const updateParticipants=$('participants').dataset.signature!==participantSignature;
- if(updateParticipants){$('participants').dataset.signature=participantSignature;$('participants').replaceChildren();} $('participants').title=t('targetHint'); $('member-list').replaceChildren(); $('participant-count').textContent=state.agents.length;
+ if(updateParticipants){$('participants').dataset.signature=participantSignature;$('participants').replaceChildren();} $('participants').title=t('targetHint');
+ const memberSignature=JSON.stringify([language,state.agents,state.room.lead,state.agents.map(a=>RoundtableAvatar.stateFor(a,currentRun,state.messages))]);
+ const updateMembers=$('member-list').dataset.signature!==memberSignature;
+ if(updateMembers){$('member-list').dataset.signature=memberSignature;$('member-list').replaceChildren();} $('participant-count').textContent=state.agents.length;
  for (const agent of state.agents) {
-  const chip=element('button','participant-chip'+(selected.has(agent.id)?' selected':''),agent.name); chip.type='button'; chip.dataset.agentId=agent.id; chip.setAttribute('aria-pressed',String(selected.has(agent.id))); chip.disabled=running; if(agent.id===state.room.lead) chip.append(element('span','',` · ${t('lead')}`)); chip.onclick=()=>{if(selected.has(agent.id))selected.delete(agent.id);else selected.add(agent.id);renderState();}; if(updateParticipants){$('participants').append(chip);if(focusedAgent===agent.id)chip.focus();}
-  const row=element('div','member'); row.append(element('div','avatar small-avatar','◈')); const info=element('div','member-info'); info.append(element('strong','',agent.name),element('span','',agent.kind==='demo'?t('ready'):t('waiting'))); row.append(info); if(agent.id===state.room.lead) row.append(element('span','lead-badge',t('lead'))); $('member-list').append(row);
+  const chip=element('button','participant-chip'+(selected.has(agent.id)?' selected':'')); chip.append(RoundtableAvatar.create(agent.id),element('span','',agent.name)); chip.type='button'; chip.dataset.agentId=agent.id; chip.setAttribute('aria-pressed',String(selected.has(agent.id))); chip.disabled=running; if(agent.id===state.room.lead) chip.append(element('span','',` · ${t('lead')}`)); chip.onclick=()=>{if(selected.has(agent.id))selected.delete(agent.id);else selected.add(agent.id);renderState();}; if(updateParticipants){$('participants').append(chip);if(focusedAgent===agent.id)chip.focus();}
+  const avatarState=RoundtableAvatar.stateFor(agent,currentRun,state.messages);
+  const row=element('div','member'); row.append(RoundtableAvatar.create(agent.id,avatarState,48)); const info=element('div','member-info'); info.append(element('strong','',agent.name),element('span','',avatarState==='working'?t(agent.kind==='demo'?'demoTurn':'awaitingReply'):avatarState==='blocked'?t('avatarBlocked'):avatarState==='finished'?t('avatarFinished'):agent.kind==='demo'?t('ready'):t('waiting'))); row.append(info); if(agent.id===state.room.lead) row.append(element('span','lead-badge',t('lead'))); if(updateMembers)$('member-list').append(row);
  }
- if(!state.agents.length)$('member-list').append(element('p','muted',t('noBots')));
+ if(updateMembers&&!state.agents.length)$('member-list').append(element('p','muted',t('noBots')));
+ avatarMotion.sync();
  $('lead-note').textContent=state.room.lead ? `${t('lead')}: ${state.agents.find(a=>a.id===state.room.lead)?.name||state.room.lead}` : '';
 }
 function renderCreate() {
@@ -105,7 +115,7 @@ function renderCreate() {
 }
 function showCreate() { if(!adminToken){openDialog('access-dialog');return;} $('name').value=t('defaultRoom');renderCreate();openDialog('create-dialog'); }
 function renderDirectory() {
- $('bot-cards').replaceChildren(); for(const bot of bots){const card=element('div','bot-card');card.append(element('div','avatar','◈'),element('h3','',bot.name),element('span','status-pill',bot.kind==='demo'?t('ready'):t('waiting')),element('p','muted',bot.description||t('registerHint')),element('code','',bot.id));$('bot-cards').append(card);}
+ $('bot-cards').replaceChildren(); for(const bot of bots){const card=element('div','bot-card');card.append(RoundtableAvatar.create(bot.id,'idle',64),element('h3','',bot.name),element('span','status-pill',bot.kind==='demo'?t('ready'):t('waiting')),element('p','muted',bot.description||t('registerHint')),element('code','',bot.id));$('bot-cards').append(card);} avatarMotion.sync();
 }
 function showSecrets(data) { $('secrets').textContent=JSON.stringify(data,null,2);$('copy-secrets').textContent=t('copy');openDialog('secret-dialog'); }
 function renderManage() {
@@ -138,4 +148,5 @@ $('create-lead').onclick=()=>action(()=>showBotForm({...active}),$('manage-dialo
 $('join-form').onsubmit=event=>{event.preventDefault();action(async()=>{const credential=await api(roomPath('/join'),roomAuth(),{id:$('join-select').value});await refresh(true);selected.add(credential.id);renderManage();showSecrets({room_id:active.id,agent:credential});},$('manage-dialog'));};
 $('copy-secrets').onclick=()=>action(async()=>{await navigator.clipboard.writeText($('secrets').textContent);$('copy-secrets').textContent=t('copied');});
 $('mcp-open').onclick=()=>{renderMCP();openDialog('mcp-dialog');};
-translate();setInterval(()=>refresh().catch(error=>setError(error)),1200);
+document.querySelector('.hero-mark').replaceChildren(RoundtableAvatar.create('roundtable-welcome','idle',72));
+translate();avatarMotion.sync();setInterval(()=>refresh().catch(error=>setError(error)),1200);

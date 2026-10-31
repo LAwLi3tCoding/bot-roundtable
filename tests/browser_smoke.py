@@ -1,6 +1,7 @@
 """Desktop bilingual flows against real local HTTP; deterministic demo bots only."""
 
 import os
+import re
 import secrets
 import threading
 from pathlib import Path
@@ -35,6 +36,17 @@ def main():
             page = browser.new_page(viewport={"width": 1440, "height": 1000}, locale="en-US")
             errors = []
             page.on("pageerror", lambda error: errors.append(str(error)))
+            page.on(
+                "console",
+                lambda message: errors.append(message.text)
+                if message.type == "error"
+                and not (
+                    message.location.get("url", "").endswith("/api/rooms")
+                    and "403 (Forbidden)" in message.text
+                )
+                and not message.location.get("url", "").endswith("/favicon.ico")
+                else None,
+            )
             page.on("dialog", lambda dialog: dialog.accept())
             page.goto(f"http://127.0.0.1:{server.server_port}")
             expect(page.locator(".welcome h2")).to_have_text("Bring your bots to the table.")
@@ -94,6 +106,35 @@ def main():
             assert human.evaluate("n => getComputedStyle(n).backgroundColor") == "rgb(17, 17, 17)"
             assert bot.evaluate("n => getComputedStyle(n).backgroundColor") == "rgb(243, 243, 242)"
             assert human.bounding_box()["x"] > bot.bounding_box()["x"]
+            # Original SVG identities are visible, not text glyph placeholders.
+            message_avatars = page.locator(".message.bot .bot-avatar")
+            expect(message_avatars).to_have_count(4)
+            expect(message_avatars.first).to_be_visible()
+            expect(message_avatars.first.locator("svg")).to_have_count(1)
+            planner_identity = message_avatars.first.get_attribute("data-identity")
+            assert planner_identity
+            page.locator("#manage").click()
+            member_avatar = (
+                page.locator(".member").filter(has_text="Planner").locator(".bot-avatar")
+            )
+            expect(member_avatar).to_have_attribute("data-identity", planner_identity)
+            page.locator("#manage-dialog .close").click()
+            page.locator("#directory").click()
+            directory_avatar = (
+                page.locator(".bot-card").filter(has_text="Planner").locator(".bot-avatar")
+            )
+            expect(directory_avatar).to_have_attribute("data-identity", planner_identity)
+            # OS reduced-motion preference suppresses motion, not just scroll easing.
+            page.emulate_media(reduced_motion="reduce")
+            assert directory_avatar.evaluate("""node =>
+                [node, ...node.querySelectorAll('*')].every(part => {
+                    const css = getComputedStyle(part);
+                    return css.animationName === 'none' ||
+                        css.animationDuration.split(',').every(value => parseFloat(value) === 0);
+                })""")
+            page.emulate_media(reduced_motion="no-preference")
+            page.locator("#directory-dialog .close").click()
+            expect(directory_avatar).to_have_class(re.compile("avatar-motion-paused"))
             original = page.locator("#messages").inner_text()
             page.locator("#language").select_option("zh")
             expect(page.locator("#manage")).to_have_text("管理")
@@ -118,8 +159,13 @@ def main():
             page.locator("#body").fill("Waiting for owner-connected Lead")
             page.locator("#send").click()
             expect(page.locator("#status")).to_contain_text("进行中")
+            page.locator("#manage").click()
+            lead_avatar = page.locator('.member .bot-avatar[data-identity="research-lead"]')
+            expect(lead_avatar).to_have_attribute("data-state", "working")
+            page.locator("#manage-dialog .close").click()
             page.locator("#stop").click()
             expect(page.locator("#status")).to_contain_text("已停止")
+            expect(lead_avatar).to_have_attribute("data-state", "idle")
             # History is real, stable and room-scoped.
             first_run = store.state(store.list_rooms()[0]["id"])["runs"][0]["id"]
             page.locator("#thread-select").select_option(first_run)

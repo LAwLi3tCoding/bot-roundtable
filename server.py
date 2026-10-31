@@ -62,10 +62,17 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
                 if origin and origin not in {f"http://{h}" for h in allowed}:
                     raise Problem(403, "Origin rejected")
                 path = urlsplit(self.path).path
-                if method == "GET" and path in ("/", "/app.js", "/i18n.js", "/style.css"):
+                if method == "GET" and path in (
+                    "/",
+                    "/app.js",
+                    "/i18n.js",
+                    "/style.css",
+                    "/avatar.js",
+                ):
                     file, mime = {
                         "/": ("index.html", "text/html; charset=utf-8"),
                         "/app.js": ("app.js", "text/javascript; charset=utf-8"),
+                        "/avatar.js": ("avatar.js", "text/javascript; charset=utf-8"),
                         "/i18n.js": ("i18n.js", "text/javascript; charset=utf-8"),
                         "/style.css": ("style.css", "text/css; charset=utf-8"),
                     }[path]
