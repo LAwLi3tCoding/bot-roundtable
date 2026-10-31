@@ -142,3 +142,15 @@ PYTHONPATH=. python tests/browser_smoke.py
 - 部署到真实 Bot 的运行电脑、创建持久凭据、真实账号联调是单独步骤，本次未执行。
 
 MIT License。欢迎围绕经过核实的现成 Bot 通信入口贡献适配与测试。
+
+## 界面实拍
+
+当前已发布版本 `3f171f5` 的真实运行截图，仅使用确定性 demo Bot；不代表真实产品联通。
+
+![Desktop / 桌面中文](docs/screenshots/desktop-zh.png)
+
+<details><summary>Mobile / 手机中文</summary>
+
+![Mobile / 手机中文](docs/screenshots/mobile-zh.png)
+
+</details>

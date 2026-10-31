@@ -142,3 +142,15 @@ Tests cover actual MCP stdio / HTTP clients, three independent identities, Lead 
 - Deployment on a real Bot’s machine, persistent user credential setup, and real provider tests are separate steps and have not been performed.
 
 MIT License. Contributions should target verified communication interfaces of existing bots.
+
+## Actual UI screenshots
+
+Captured from released version `3f171f5`, using deterministic demo bots only; these are not real provider conversations.
+
+![Desktop / 桌面中文](docs/screenshots/desktop-zh.png)
+
+<details><summary>Mobile / 手机中文</summary>
+
+![Mobile / 手机中文](docs/screenshots/mobile-zh.png)
+
+</details>
