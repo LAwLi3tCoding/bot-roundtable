@@ -146,12 +146,18 @@ MIT License。欢迎围绕经过核实的现成 Bot 通信入口贡献适配与�
 
 ## 界面实拍
 
-以下是旧版 `3f171f5` 的历史运行截图，不代表本分支的新桌面 UI。新版浏览器验收与截图待完成；旧图仅保留作前后对照。仅使用确定性 demo Bot，不代表真实产品联通。
+本分支桌面 UI 的真实运行截图（1280×900），仅使用确定性 demo Bot。中英文浏览器流程已通过；仍待视觉验收，不代表真实产品联通。
 
-![Desktop / 桌面中文](docs/screenshots/desktop-zh.png)
+![Desktop Chinese / 桌面中文](docs/screenshots/desktop-zh.png)
 
-<details><summary>Mobile / 手机中文</summary>
+<details><summary>English / 英文</summary>
 
-![Mobile / 手机中文](docs/screenshots/mobile-zh.png)
+![Desktop English](docs/screenshots/desktop-en.png)
+
+</details>
+
+<details><summary>Group management / 群管理</summary>
+
+![Group management](docs/screenshots/desktop-manage-zh.png)
 
 </details>

@@ -172,6 +172,29 @@ def main():
             page.keyboard.press("Escape")
             expect(page.locator("#manage-dialog")).not_to_be_visible()
             expect(page.locator("#manage")).to_be_focused()
+            # Invalid values in the detached options dialog must never queue a run.
+            before_runs = len(store.state(store.list_rooms()[0]["id"])["runs"])
+            page.locator("#body").fill("Budget validation only")
+            for invalid in ("0", "21", "1.5"):
+                page.locator("#options-open").click()
+                page.locator("#budget").fill(invalid)
+                page.keyboard.press("Escape")
+                page.locator("#send").click()
+                expect(page.locator("#options-dialog")).to_be_visible()
+                expect(page.locator("#budget")).to_be_focused()
+                assert not page.locator("#budget").evaluate("n => n.checkValidity()")
+                page.locator("#budget").fill("4")
+                page.locator("#options-dialog .close").click()
+            assert len(store.state(store.list_rooms()[0]["id"])["runs"]) == before_runs
+            page.locator("#body").fill("")
+            for _ in range(3):
+                page.locator("#manage").click()
+                expect(page.locator("#details")).to_be_visible()
+                page.keyboard.press("Escape")
+                expect(page.locator("#manage")).to_be_focused()
+                page.locator("#mcp-open").click()
+                page.locator("#mcp-dialog .close").click()
+                expect(page.locator("#mcp-open")).to_be_focused()
             assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
             page.locator("#language").select_option("zh")
             # Reload retains language only; no tokens or messages are persisted in browser storage.

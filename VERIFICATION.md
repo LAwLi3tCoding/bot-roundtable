@@ -4,7 +4,11 @@
 
 2026-10-31: ruff lint/format, mypy (5 modules), Python compilation, JS syntax and 41 unit/MCP/security tests passed with `requirements.lock` in a local Python 3.12 venv. Static DOM references resolve (70 unique IDs, 65 JS references). Independent source review found polling focus, budget-validation and dialog-label issues; these were corrected.
 
-Desktop browser tests were extended for two-column layout, left/right bubble styles, discussion options, search, dismissal/focus and secret clearing. **Browser launch is blocked in this executor by Chromium `socket() Operation not permitted`; no browser assertions ran and no new screenshots were produced here.** The supported escalation failed before launch. Do not treat the historical browser result below as verification of this branch. Mobile design/acceptance is deferred at the user’s request. No deployment or real-provider integration was performed.
+Independent cloud QA materialized the exact eight changed files from remote commit `59bda253bb356f95b8d647dedc4d0567f7a28602`; its local Git tree matched `95730e4876d2aa2b95aaa97ddc873ef43da17435` before testing. This executor can run Chromium. The full 41-test suite, Ruff lint/format, mypy, Python compilation, JS syntax and actual desktop browser flows passed. No product-code fixes were needed in this QA pass.
+
+Browser coverage includes EN/ZH, two-column layout, right black user bubbles/left gray bot bubbles, group creation and selection, search without navigation, bounded demo Lead, membership registration/removal, waiting/stop, history, XSS-as-text, options and management dialogs, Escape/close/focus restoration, repeated opening/closing, invalid budgets 0/21/1.5 (no run queued), secret clearing and language-only persistence. Screenshots at 1280×900 show the complete desktop shell and composer, EN/ZH and management, using only synthetic demo data. All screenshots were visually inspected for sensitive values; no credentials appear.
+
+This confirms desktop functional behavior, not fidelity acceptance against Grok: final pixel comparison is performed by the parent task/user. Mobile design/acceptance remains deferred; no mobile checks ran in this pass. No real Grok/DS Bot/dot account, deployment or external provider test was performed. No design skill files are in the product tree.
 
 ## Historical verification / 历史验证
 

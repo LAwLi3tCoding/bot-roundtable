@@ -146,12 +146,18 @@ MIT License. Contributions should target verified communication interfaces of ex
 
 ## Actual UI screenshots
 
-These historical screenshots are from `3f171f5`, not this branch’s redesigned desktop UI. New browser acceptance and screenshots are pending; the old images remain for comparison. They use deterministic demo bots, not real provider conversations.
+Actual screenshots of this branch at 1280×900, using deterministic demo bots. EN/ZH browser flows passed; visual acceptance remains pending. These are not real provider conversations.
 
-![Desktop / 桌面中文](docs/screenshots/desktop-zh.png)
+![Desktop Chinese / 桌面中文](docs/screenshots/desktop-zh.png)
 
-<details><summary>Mobile / 手机中文</summary>
+<details><summary>English / 英文</summary>
 
-![Mobile / 手机中文](docs/screenshots/mobile-zh.png)
+![Desktop English](docs/screenshots/desktop-en.png)
+
+</details>
+
+<details><summary>Group management / 群管理</summary>
+
+![Group management](docs/screenshots/desktop-manage-zh.png)
 
 </details>
