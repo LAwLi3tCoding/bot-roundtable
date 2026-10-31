@@ -43,6 +43,12 @@ DS Bot is the independent Fei2411/DS-Bot community plugin for DeepSeek Harness, 
 
 ## Streamable HTTP verification / HTTP 验证
 
-`tests/test_mcp_http.py` uses real SDK HTTP clients against the official SDK server. It verifies initialization, seven tools, interleaved scoped identities, message delivery and result polling, stop authorization, missing/invalid/owner-token rejection, Host/Origin rejection, configured proxy origin, and live token revocation. This establishes protocol feasibility without provider accounts. HTTPS proxy examples are configuration guidance, not a public deployment or a tested Grok/dot/DS Bot account connection. 认证使用预配置 Bot Bearer 令牌，不冒称 OAuth 授权服务。
+`tests/test_mcp_http.py` uses real SDK HTTP clients against the official SDK server. It verifies initialization, sixteen tools, interleaved scoped identities, message delivery and result polling, stop authorization, missing/invalid/owner-token rejection, Host/Origin rejection, configured proxy origin, and live token revocation. This establishes protocol feasibility without provider accounts. HTTPS proxy examples are configuration guidance, not a public deployment or a tested Grok/dot/DS Bot account connection. 认证使用预配置 Bot Bearer 令牌，不冒称 OAuth 授权服务。
 
 Final local checks: 41 unit/protocol/security tests passed, Ruff lint/format, mypy (5 modules), Python compilation, JS syntax, and EN/ZH Chromium product flows passed. Independent HTTP review added concurrent slow-backend isolation, post-auth revocation, duplicate Authorization rejection and sensitive-log regressions. These checks use synthetic credentials and messages. 最终本地检查通过，不包含真实产品账号联调。
+
+## Native handoff / 原生交接接线门槛
+
+The new task/assignment protocol is locally testable independently of real accounts. Grok Bot + dot is the first requested real pairing. **Static bearer credentials are not a drop-in dot hosted-plugin authentication method.** OpenAI's [plugin authentication guide](https://developers.openai.com/plugins/build/auth) expects OAuth 2.1; its [connection guide](https://developers.openai.com/plugins/deploy/connect-chatgpt) requires adding and installing an HTTPS MCP plugin, followed by actual tool-visibility verification in dot. [Dots documentation](https://learn.chatgpt.com/docs/dots) describes use of enabled account plugins. This project does not implement OAuth authorization/discovery and has not tested that product path.
+
+当前 dot OAuth/插件接线是未完成的实际 gate，不用静态 token 冒充兼容；owner 必须主动发起，MCP 不自动唤醒。Grok 的桌面界面也可能在其云电脑执行，本地 command 的 localhost 不等于用户电脑的 localhost。需要用户选定运行/部署环境后验证网络、认证与工具可见性。本轮不部署、不创建凭据、不发真实 Bot 消息。任务交接机制见 [中文](docs/HANDOFFS.zh.md) / [English](docs/HANDOFFS.en.md)。

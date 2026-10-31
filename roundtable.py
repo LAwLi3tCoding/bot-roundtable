@@ -70,6 +70,9 @@ class Store:
         self.db.execute("UPDATE runs SET status='interrupted' WHERE status='running'")
         self.db.execute("UPDATE jobs SET status='interrupted' WHERE status='pending'")
         self.db.commit()
+        from handoffs import Handoffs
+
+        self.handoffs = Handoffs(self)
 
     @contextmanager
     def transaction(self):
@@ -413,6 +416,7 @@ class Store:
     def remove_agent(self, room: str, aid: str):
         with self.transaction():
             self.idle(room)
+            self.handoffs.revoke(room, aid)
             self.db.execute("DELETE FROM agents WHERE room=? AND id=?", (room, aid))
             self.db.execute("UPDATE rooms SET lead='' WHERE id=? AND lead=?", (room, aid))
 
@@ -439,7 +443,7 @@ class Store:
                 raise Problem(403, "Cannot stop another identity's discussion")
             self.stop(room)
 
-    def state(self, room: str) -> dict:
+    def state(self, room: str, actor: str = "user") -> dict:
         self.expire()
         with self.lock:
             room_row = self.db.execute(
@@ -449,6 +453,7 @@ class Store:
                 raise Problem(404, "Room not found")
             return dict(
                 room=dict(room_row),
+                tasks=self.handoffs.listing(room, actor),
                 agents=[
                     dict(r)
                     for r in self.db.execute(
@@ -472,6 +477,8 @@ class Store:
 
     def demo_tick(self):
         self.expire()
+        with self.lock:
+            self.handoffs.demo_tick()
         with self.lock:
             agents = self.db.execute("SELECT room,id FROM agents WHERE kind='demo'").fetchall()
         for agent in agents:

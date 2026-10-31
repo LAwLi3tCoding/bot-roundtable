@@ -64,7 +64,7 @@ async function refresh(force = false) {
 function renderState() {
  const connected = Boolean(active && state); $('welcome').hidden = connected; $('thread-bar').hidden = !connected; $('composer-wrap').classList.toggle('inactive', !connected);
  $('manage').disabled = !connected; $('options-open').disabled = !connected; $('stop').hidden = true; $('send').disabled = !connected; $('stop').disabled = !connected;
- if (!connected) { $('room-title').textContent = t('welcomeTitle'); $('room-subtitle').textContent = t('welcomeSub'); $('status').textContent = t('disconnected'); $('messages').replaceChildren(); $('participants').replaceChildren(); $('member-list').replaceChildren(); $('participant-count').textContent='0'; return; }
+ if (!connected) { $('room-title').textContent = t('welcomeTitle'); $('room-subtitle').textContent = t('welcomeSub'); $('status').textContent = t('disconnected'); $('messages').replaceChildren(); $('participants').replaceChildren(); $('member-list').replaceChildren(); $('participant-count').textContent='0'; window.HandoffUI?.render(); return; }
  $('room-title').textContent = state.room.name; $('room-subtitle').textContent = `${state.agents.length} ${t('participants')} · ${state.room.lead ? t('leadBadge') : t('noneLead')}`;
  const currentRun = state.runs.at(-1); const running = currentRun?.status === 'running';
  const displayRun = state.runs.find(r => r.id === threadId) || currentRun; $('status').textContent = displayRun ? `${t('run_' + displayRun.status)} · ${displayRun.turn}/${displayRun.budget}` : t('idle'); $('status').classList.toggle('running', running);
@@ -80,7 +80,7 @@ function renderState() {
   $('messages').dataset.signature=signature; $('messages').replaceChildren();
   if (!messages.length) $('messages').append(element('div','empty-thread',t('noMessages')));
   for (const message of messages) {
-   const agent = state.agents.find(a => a.id === message.sender); const human = message.sender === 'user' && message.source === 'human'; const article = element('article', 'message ' + (human ? 'human' : 'bot'));
+   const senderId=message.sender.startsWith('bot:')?message.sender.slice(4):message.sender; const agent = state.agents.find(a => a.id === senderId); const human = message.sender === 'user' && message.source === 'human'; const article = element('article', 'message ' + (human ? 'human' : 'bot'));
    const avatar = element('div','avatar' + (message.sender === state.room.lead ? ' lead-avatar' : ''), human ? '↗' : '◈');
    const content = element('div','message-content'); const meta = element('div','message-meta'); meta.append(element('strong','', human ? t('human') : agent?.name || message.sender), element('span','source',sourceLabel(message.source)));
    if (message.sender === state.room.lead) meta.append(element('span','lead-badge',t('lead')));
@@ -98,6 +98,7 @@ function renderState() {
   const row=element('div','member'); row.append(element('div','avatar small-avatar','◈')); const info=element('div','member-info'); info.append(element('strong','',agent.name),element('span','',agent.kind==='demo'?t('ready'):t('waiting'))); row.append(info); if(agent.id===state.room.lead) row.append(element('span','lead-badge',t('lead'))); $('member-list').append(row);
  }
  if(!state.agents.length)$('member-list').append(element('p','muted',t('noBots')));
+ window.HandoffUI?.render();
  $('lead-note').textContent=state.room.lead ? `${t('lead')}: ${state.agents.find(a=>a.id===state.room.lead)?.name||state.room.lead}` : '';
 }
 function renderCreate() {

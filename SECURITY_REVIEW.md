@@ -37,3 +37,15 @@
 ### English review summary
 
 An independent reviewer reproduced and fixed partial commits from nested transactions, a membership-revocation authentication race, and the reserved human identity display ambiguity. SAVEPOINTs now make group creation atomic; authentication and operations share a lock while network I/O stays outside; bot ID `user` is reserved and the UI additionally checks message source. Regression tests include real SDK MCP clients, agent-scoped receiving/replying, cumulative allowances, Lead budgets, replay, revocation and isolation. These tests use synthetic messages, not live provider accounts. The remaining local-only/production limitations described above still apply.
+
+## Native handoff review — 2026-10-31
+
+Independent review covered `handoffs.py`, `server.py`, `mcp_bridge.py` and `static/handoffs.js`, with ten new security regressions in `tests/test_handoff_security.py`. Fixed recursive cancellation of descendants, preventing failed tasks from reviving after cancellation, pending inbox truncation, parent/root deadline checks inside writes, unclaimable budget-exhausted retries, rejoined-worker epoch mismatches, and unbounded context additions. Final reports remain possible after progress reaches its event cap.
+
+A second pass reproduced a 2 MB bridge truncation after 26 legitimate large historical tasks. Task listings now return bounded previews; full instructions/results/artifacts are available through scoped `get_task`, and an explicit 8 MB bridge cap replaces silent JSON truncation (allowing bounded single-task Unicode event pages). A regression creates 30 large histories and checks the bounded list while full task data remains available.
+
+UI review reproduced stale task A controls surviving while task B loaded. Reset now clears details and disables actions until B is loaded. Mutations capture their room/task and do not apply late responses to another selection. Budget changes invalidate the render signature; cancelled/timed-out work no longer offers retry. Global errors remain visible in task mode and task errors are translated. Browser tests hold a query in flight and verify no stale instruction or enabled cancel remains.
+
+Authentication supplies identity; no caller-provided actor/room replaces it. Assignment views filter other workers' instructions/results/events. Revocation uses membership epochs. Bot results and artifacts stay inert text. Temporary leases are hashed in assignments but included in idempotency claim receipts: the database/backup remains sensitive and is not encrypted. External exactly-once execution, remote cancellation and product-level isolation behind shared connectors are not guaranteed. Parent status aggregates its own assignments rather than an entire dependency graph.
+
+原生交接独立复核修复了递归取消、旧成员 epoch、预算与过期竞态、上下文数量、历史列表过大和跨任务旧 UI 操作残留。验证仅使用合成身份与本机服务；未配置真实 Bot、OAuth 或公网服务。

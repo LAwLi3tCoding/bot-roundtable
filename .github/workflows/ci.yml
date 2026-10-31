@@ -21,9 +21,10 @@ jobs:
       - run: ruff format --check .
       - run: mypy
       - run: python -m unittest discover -s tests -v
-      - run: python -m compileall -q roundtable.py server.py grok_adapter.py mcp_bridge.py mcp_http.py
+      - run: python -m compileall -q roundtable.py server.py grok_adapter.py mcp_bridge.py mcp_http.py handoffs.py
       - run: node --check static/app.js
       - run: node --check static/i18n.js
+      - run: node --check static/handoffs.js
   browser:
     runs-on: ubuntu-latest
     steps:
@@ -34,3 +35,4 @@ jobs:
       - run: pip install -r requirements.lock
       - run: python -m playwright install --with-deps chromium
       - run: PYTHONPATH=. python tests/browser_smoke.py
+      - run: PYTHONPATH=. python tests/browser_handoffs.py

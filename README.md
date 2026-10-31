@@ -7,11 +7,17 @@
 双语桌面聊天界面按用户提供的 Grok Bot APP 参考重新组织：约 29% 对话列表 + 71% 聊天，左侧灰色 Bot 气泡、右侧黑色用户气泡、紧凑输入栏。搜索和历史保留真实数据；参与者/回复预算在“＋”讨论选项中，成员和 Lead 在“管理”中。使用原创中性头像，不复制私有代码、品牌或素材。当前仅做桌面版验收，手机版设计暂缓。
 
 
+## 原生委派与交接
+
+从 Grok Bot 或其他现成 Bot 里给不同成员分别指派任务，在 Web 的“任务与交接”查看同一个任务与各条独立交接线程，再由活跃的入口 Bot 取回汇总。支持进度、失败重试、取消、租约与重启恢复；旧顺序讨论仍保留。先用两个明确标记的 demo 验证，详见 [完整中英文交接指南](docs/HANDOFFS.zh.md)。
+
+首轮真实目标为 **Grok Bot + dot**。当前未接真实账号：dot hosted plugin 需要兼容的 OAuth 2.1 接入，本项目静态 Bearer 网关不是该授权流程，因而仍是实际接线阻塞；dot 也没有已验证的自动唤醒入口。详见指南，不能把协议测试成功理解为产品已联通。
+
 ## 已实现与未验证
 
 - 创建群聊、邀请/移除已注册 Bot、重命名、切换历史；群和成员身份隔离。
 - 指定现成 Bot 为 Lead：先规划、其他成员回复、最后总结，全部计入同一个 3–20 条回复预算。无 Lead 时 1–20 条回复，按选定顺序轮流。
-- 正式 MCP Python SDK 的 stdio / Streamable HTTP server，7 个工具；真实 MCP 客户端的 initialize / list_tools / call_tool 集成测试。
+- 正式 MCP Python SDK 的 stdio / Streamable HTTP server，16 个工具（7 个讨论工具 + 9 个任务交接工具）；真实 MCP 客户端的 initialize / list_tools / call_tool 集成测试。
 - 异步任务、关联消息、去重、超时、停止、重启不重放、累计 Bot 发起额度、令牌移除撤销。
 - 全部产品界面提供中文与英文。切换语言仅保存偏好，不翻译消息原文，不持久保存浏览器令牌。
 - 两个确定性 demo bot 用来验证产品流程，**不代表真实 Grok、dot 或 DS Bot 已联通**。
@@ -121,25 +127,27 @@ ruff check .
 ruff format --check .
 mypy
 python -m unittest discover -s tests -v
-python -m compileall -q roundtable.py server.py grok_adapter.py mcp_bridge.py mcp_http.py
+python -m compileall -q roundtable.py server.py grok_adapter.py mcp_bridge.py mcp_http.py handoffs.py
 node --check static/app.js
 node --check static/i18n.js
+node --check static/handoffs.js
 python -m playwright install chromium
 PYTHONPATH=. python tests/browser_smoke.py
+PYTHONPATH=. python tests/browser_handoffs.py
 # 已有系统 Chromium 时也可设置 CHROMIUM_PATH=/usr/bin/chromium
 ```
 
-测试包含真实 MCP stdio / HTTP 客户端（非模型）、三个独立身份的收发/Lead/去重/撤销、跨群隔离、预算、停止竞态、嵌套事务回滚、SSRF 和超时。浏览器测试覆盖中英文、建群、注册 Lead、移除、历史、停止、XSS、移动布局和语言偏好。CI 在 Python 3.12/3.13 跑协议/核心测试，并单独跑 Chromium 产品流程。
+测试包含真实 MCP stdio / HTTP 客户端（非模型）、三个独立身份的收发/Lead/去重/撤销、跨群隔离、预算、停止竞态、嵌套事务回滚、SSRF 和超时。浏览器测试覆盖中英文、建群、注册 Lead、移除、历史、停止、XSS、桌面布局和语言偏好。CI 在 Python 3.12/3.13 跑协议/核心测试，并单独跑 Chromium 产品流程。
 
 ## 安全与边界
 
 - 本机单进程 MVP，不是公网多租户服务；无执行 harness、模型 API 调用或 CLI subprocess runner。
 - 任何 Bot 文本都不可信，不能提升权限。禁止 self invocation；回复不会自动广播触发所有 Bot。
-- 一群同时一个 run，一个 run 同时一个 job；每 job 默认 60 秒，最多 20 条回复。Bot 发起额度跨 run 扣减，失败/停止不退款，防止无限自触发。
+- 旧讨论模式一群同时一个 run，一个 run 同时一个 job；每 job 默认 60 秒，最多 20 条回复。Bot 发起额度跨 run 扣减，失败/停止不退款，防止无限自触发。
 - 修改成员/Lead/额度要求本群无运行讨论。移除后旧令牌失效，认证与操作原子执行；重加获得新 token。
-- 停止只阻止 relay 后续任务和回执，无法撤销已经启动的外部工作。重启将未完成任务标记 interrupted，不自动重放。
+- 停止只阻止 relay 后续任务和回执，无法撤销已经启动的外部工作。重启将未完成的旧 discussion 标记 interrupted；新 task/assignment 保持持久状态，由执行者主动恢复，不自动运行外部任务。
 - CSP、Host/Origin 校验、文本 DOM、请求大小与 header 超时；日志不打印凭据/消息。
-- 数据库保存 token 摘要，消息未加密；没有生产连接限额、磁盘配额、消息分页、账户体系或 OAuth 授权服务器；提供 HTTPS 代理配置示例，未部署公网。
+- 数据库保存成员 token 摘要；任务 claim 幂等回执包含短期 lease 原文，请保护数据库和备份。消息未加密；没有生产连接限额、磁盘配额、消息分页、账户体系或 OAuth 授权服务器；提供 HTTPS 代理配置示例，未部署公网。
 - 部署到真实 Bot 的运行电脑、创建持久凭据、真实账号联调是单独步骤，本次未执行。
 
 MIT License。欢迎围绕经过核实的现成 Bot 通信入口贡献适配与测试。
@@ -161,3 +169,13 @@ MIT License。欢迎围绕经过核实的现成 Bot 通信入口贡献适配与�
 ![Group management](docs/screenshots/desktop-manage-zh.png)
 
 </details>
+
+## 任务交接实拍
+
+本机合成 demo，非真实账号联调；消息原文不自动翻译。
+
+![Tasks](docs/demo/handoffs/desktop-zh.png)
+
+![Handoff result](docs/demo/handoffs/native-result-zh.png)
+
+[10.4s demo video / 演示录屏](docs/demo/handoffs/native-handoffs-demo.webm) · [Details / 说明](docs/demo/handoffs/README.md)

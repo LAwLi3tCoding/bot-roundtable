@@ -11,3 +11,45 @@ window.I18N = {
   errors:{'A room can contain at most 6 bots':'每个群聊最多 6 个 Bot。','Lead coordination requires at least 3 replies':'Lead 协调至少需要 3 条回复预算。','Admin credential required':'管理员令牌无效。','Invalid room or agent credential':'群聊或 Bot 凭据无效。','Stop or finish the current run first':'请先停止或完成当前讨论。','Choose 1–6 distinct agents and 1–20 total replies':'请选择 1–6 名参与者，并设置 1–20 条回复上限。','Choose 1–6 distinct registered bots':'请选择 1–6 个已注册 Bot。','Lead coordination needs another participant':'Lead 协调至少需要另一名参与者。','Bot already registered':'这个 Bot ID 已注册。','Agent already exists':'该 Bot 已经在本群中。','Bot initiation allowance exhausted or not granted':'该 Bot 未获发起额度或额度已耗尽。','Self invocation is not allowed':'Bot 不能调用自己。','Lead must be a room participant':'Lead 必须是本群成员。','Job is no longer active':'任务已停止或过期。','Registered bot not found':'未找到该已注册 Bot。','Invalid agent id or kind':'请检查 Bot ID 和连接类型。','Room not found':'未找到群聊。','Initiation allowance must be 0–20 total replies':'发起额度必须为 0–20 的整数。'}
  }
 };
+Object.assign(I18N.en, {taskTab:'Tasks & handoffs',newTask:'Delegate task',backTasks:'← All tasks',moreEvents:'Load more events',taskTitle:'Task title',taskContext:'Shared task context',taskScopeHint:'Share only this task context. Each selected worker gets a separate instruction; no personal conversation is forwarded.',taskBudget:'Total dispatch budget',taskWakeHint:'Bots receive work only while actively polling MCP. Keep the origin bot active to retrieve results; this hub does not wake sleeping bots.',delegateTask:'Create handoffs',workerInstruction:'Instruction for this worker',taskNoteHint:'Add context or a follow-up note…',addContext:'Add context',cancelTask:'Cancel pending handoffs',retryHandoff:'Retry this handoff',taskSystem:'Relay',taskFanIn:'Collect worker results',taskOverview:'All handoffs',taskSharedContext:'Shared task context',noTasks:'Delegate a task to create independent handoff conversations.',taskLoading:'Loading task…',task_queued:'Queued',task_working:'Claimed · awaiting reply',task_running:'In progress',task_completed:'Completed',task_failed:'Failed',task_cancelled:'Cancelled',task_timeout:'Timed out',task_revoked:'Membership revoked',event_task_created:'Task created',event_delegated:'Handoff instruction',event_claimed:'Claimed',event_progress:'Progress',event_completed:'Result received',event_failed:'Failure reported',event_context:'Context added',event_cancelled:'Cancellation',event_task_completed:'All replies received',event_task_failed:'Task ended with failures',event_task_running:'Task active',event_task_timeout:'Deadline reached',event_lease_expired:'Lease expired',event_retry_requested:'Retry requested',event_origin_revoked:'Origin removed',event_worker_revoked:'Worker removed'});
+Object.assign(I18N.zh, {taskTab:'任务与交接',newTask:'委派任务',backTasks:'← 全部任务',moreEvents:'加载更多事件',taskTitle:'任务标题',taskContext:'共享任务上下文',taskScopeHint:'只分享本次任务上下文。每名执行者有独立指令，不转发个人会话历史。',taskBudget:'累计派发预算',taskWakeHint:'Bot 仅在主动轮询 MCP 时接取任务。入口 Bot 需保持活跃并取回结果；本项目不会唤醒休眠 Bot。',delegateTask:'创建交接',workerInstruction:'给这名执行者的独立指令',taskNoteHint:'补充上下文或追问…',addContext:'补充上下文',cancelTask:'取消待完成交接',retryHandoff:'重试此交接',taskSystem:'协作服务',taskFanIn:'汇集执行者结果',taskOverview:'全部交接',taskSharedContext:'共享任务上下文',noTasks:'委派一项任务，为各执行者建立独立交接会话。',taskLoading:'正在读取任务…',task_queued:'待领取',task_working:'已领取 · 等待回复',task_running:'进行中',task_completed:'已完成',task_failed:'失败',task_cancelled:'已取消',task_timeout:'已超时',task_revoked:'成员权限已撤销',event_task_created:'创建任务',event_delegated:'交接指令',event_claimed:'领取任务',event_progress:'进度',event_completed:'收到结果',event_failed:'失败回执',event_context:'补充上下文',event_cancelled:'取消任务',event_task_completed:'已汇集全部回复',event_task_failed:'任务含失败交接',event_task_running:'任务继续',event_task_timeout:'已到截止时间',event_lease_expired:'领取租约到期',event_retry_requested:'请求重试',event_origin_revoked:'入口成员已移除',event_worker_revoked:'执行成员已移除'});
+// Task errors stay actionable in both UI languages without exposing server details.
+for (const [message, zh] of Object.entries({
+ 'Task identity required':'需要有效的任务身份。',
+ 'Task not found':'找不到此任务。',
+ 'Task scope denied':'当前身份无权查看此任务。',
+ 'Only task origin or room owner may coordinate':'只有任务发起者或群所有者可以协调此任务。',
+ 'Idempotency key conflicts with original payload':'请求编号已用于不同内容，请重新发起操作。',
+ 'Task budget must be 1–20 and timeout 30–3600 seconds':'任务预算须为 1–20，超时须为 30–3600 秒。',
+ 'Invalid parent task':'父任务无效。',
+ 'Choose 1–6 independent assignments':'请选择 1–6 个独立执行者。',
+ 'Each assignment needs worker and instruction':'每次交接都需要执行者和独立指令。',
+ 'Choose distinct workers other than the coordinator':'请选择不同执行者，不能给协调者自己排队。',
+ 'Parent must be active with same origin and depth below 2':'父任务须仍在运行、由同一身份发起且深度小于 2。',
+ 'Task dispatch budget exhausted':'任务分配预算已用完。',
+ 'Task budget is smaller than assignment count':'预算不能小于执行者数量。',
+ 'Room active task limit reached':'本群已达到 20 个活跃任务上限。',
+ 'Worker is not a room member':'执行者不是本群成员。',
+ 'Bot initiation allowance exhausted or not granted':'Bot 发起额度不足或尚未授权。',
+ 'Invalid event cursor':'事件游标无效。',
+ 'Worker identity required':'需要执行者身份。',
+ 'Only the assigned worker may claim or report':'只有被分配的执行者可以领取或回报。',
+ 'Assignment not found':'找不到此交接。',
+ 'Task context limit reached':'此任务已达到 100 条补充上下文上限。',
+ 'Task is closed':'任务已关闭，无法继续执行。',
+ 'Only failed assignments with attempts remaining can retry':'只能重试仍有尝试次数的失败交接。',
+ 'Original worker membership is no longer authorized':'原执行者成员权限已失效，请创建新任务。',
+ 'Assignment is not claimable at this attempt':'当前交接已被领取或尝试编号已变化。',
+ 'Assignment attempt limit reached':'此交接已达到 3 次领取上限。',
+ 'Lease is stale or assignment is closed':'领取租约已失效或交接已关闭。',
+ 'Report kind must be progress, completed or failed':'回报类型须为进度、完成或失败。',
+ 'Artifacts must be up to 3 named text results':'最多可以附带 3 个有名称的纯文本结果。',
+ 'Assignment progress limit reached':'此交接已达到进度条数上限，请提交最终结果。'
+})) {
+ I18N.en.errors[message]=message+'.';I18N.zh.errors[message]=zh;
+}
+for (const max of [40,80,120,2000,4000]) {
+ const key=`Expected nonempty text, at most ${max} characters`;
+ I18N.en.errors[key]=`Enter text of 1–${max} characters.`;
+ I18N.zh.errors[key]=`请输入 1–${max} 个字符，不能留空。`;
+}

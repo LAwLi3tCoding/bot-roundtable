@@ -1,5 +1,15 @@
 # Verification / 验证记录
 
+## Native bot handoffs — current feature branch / 当前功能分支
+
+2026-10-31: **62 Python unit/MCP/security tests passed** locally with Python 3.12, including real official SDK stdio and Streamable HTTP initialization/list-tools/calls. The new HTTP test uses two independent workers, distinct assignments, progress, failure/retry, fan-in, cancellation and scope rejection; actual owner HTTP snapshots/events match MCP task IDs and events. Core tests cover idempotency payload conflicts, concurrent claim/report/cancel, lease expiry, restart recovery, membership epochs, parent budgets/depth, deadlines and bounded list payloads. The independent reviewer added ten targeted security regressions; fixes are documented in SECURITY_REVIEW.md.
+
+Ruff lint/format, mypy (six production modules), Python compilation and all three JavaScript syntax checks passed. `tests/browser_smoke.py` passed existing desktop discussion flows. `tests/browser_handoffs.py` passed actual Chromium plus three real stdio MCP clients: native task → Web handoff, individual instructions, progress, scoped context/XSS, failure/retry, fan-in, cancelled late reply rejection, delayed-navigation safety, visible errors, Web demo task creation, room isolation and English/Chinese. Browser-generated screenshots/video contain synthetic DEMO work only, not real provider accounts.
+
+CI runs both browser scripts and Python 3.12/3.13 checks. A local result is not a remote CI result; the published commit's Actions run is the source of truth. Main is not merged as part of this feature review.
+
+真实 Grok/dot/DS Bot 联调未执行。dot hosted plugin 的 OAuth 2.1 接线尚未实现，当前静态 Bearer 网关不能宣称兼容；没有部署、持久账号凭据或自动 wake。新任务仅支持活跃 Bot 主动读取、领取与回报，入口活跃轮询汇总。没有 CLI runner 或模型替身。桌面优先，未新增移动端验收。
+
 ## Desktop reference correction — current branch / 当前分支
 
 2026-10-31: ruff lint/format, mypy (5 modules), Python compilation, JS syntax and 41 unit/MCP/security tests passed with `requirements.lock` in a local Python 3.12 venv. Static DOM references resolve (70 unique IDs, 65 JS references). Independent source review found polling focus, budget-validation and dialog-label issues; these were corrected.

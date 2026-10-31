@@ -7,11 +7,17 @@
 The bilingual desktop UI follows the user-supplied Grok Bot APP visual reference: approximately 29% conversation list and 71% chat, left gray bot bubbles, right black human bubbles, and a compact composer. Search and history use real data. The composer + opens participant/budget options; Manage holds membership and Lead controls. Neutral original avatars replace vendor art. No proprietary code, branding, or assets are copied. Current design/acceptance scope is desktop only; mobile design is deferred.
 
 
+## Native delegation and handoffs
+
+Delegate separate instructions from Grok Bot or another existing bot, inspect the same task and individual handoff threads in the Web workspace, then poll the structured results from the active origin. Progress, retry, cancellation, leases and restart recovery coexist with the original sequential discussion mode. Start with two clearly labelled demos; see the [handoff guide](docs/HANDOFFS.en.md).
+
+The first real target pairing is **Grok Bot + dot**, not yet connected. A dot hosted plugin needs compatible OAuth 2.1 authentication; this project's static Bearer gateway does not implement that flow, so it remains a real integration gate. No automatic dot wake entry point is verified. Protocol tests do not establish product interoperability.
+
 ## Implemented / not verified
 
 - Create and rename rooms, invite/remove registered bots, and browse discussion history with room-scoped identities.
 - Assign an existing participant as Lead: plan first, receive peer contributions, summarize last. All replies share a 3–20 reply budget; without Lead, use 1–20 round-robin replies.
-- A genuine stdio / Streamable HTTP MCP server using the official Python SDK, with seven tools and actual client initialize/list_tools/call_tool tests.
+- A genuine stdio / Streamable HTTP MCP server using the official Python SDK, with sixteen tools (seven discussion tools and nine handoff tools) and actual client initialize/list_tools/call_tool tests.
 - Correlated asynchronous jobs, replay deduplication, deadlines, stop, restart interruption, cumulative bot initiation allowances, and membership credential revocation.
 - Complete Chinese/English product UI. Only language preference is persisted in browser storage; messages are never automatically translated and tokens are memory-only.
 - Two deterministic demo receivers validate the flow. **They do not prove Grok, dot, or DS Bot interoperability.**
@@ -121,11 +127,13 @@ ruff check .
 ruff format --check .
 mypy
 python -m unittest discover -s tests -v
-python -m compileall -q roundtable.py server.py grok_adapter.py mcp_bridge.py mcp_http.py
+python -m compileall -q roundtable.py server.py grok_adapter.py mcp_bridge.py mcp_http.py handoffs.py
 node --check static/app.js
 node --check static/i18n.js
+node --check static/handoffs.js
 python -m playwright install chromium
 PYTHONPATH=. python tests/browser_smoke.py
+PYTHONPATH=. python tests/browser_handoffs.py
 # Or set CHROMIUM_PATH=/usr/bin/chromium for an installed system Chromium.
 ```
 
@@ -137,9 +145,9 @@ Tests cover actual MCP stdio / HTTP clients, three independent identities, Lead 
 - Bot messages are untrusted data. They cannot expand permissions. Self-invocation is denied; replies are not broadcast to trigger everyone.
 - One active run per room and one pending job per run. Default deadline is 60 seconds/job; maximum 20 replies. Bot initiation allowance is charged across runs and not refunded after failure/stop.
 - Membership, Lead and allowance changes require an idle room. Removal invalidates credentials; authentication and operations are atomic. Rejoining produces a new token.
-- Stop prevents further relay work/replies, but cannot recall external work already started. Restart marks unfinished runs interrupted and does not replay them.
+- Stop prevents further relay work/replies, but cannot recall external work already started. Restart marks unfinished discussion runs interrupted; new task/assignment state persists for active workers to inspect and recover, without automatic external execution.
 - CSP, Host/Origin validation, text-only DOM rendering, request-size/header timeout limits; logs exclude credentials and messages.
-- DB stores token hashes, but messages are not encrypted. No production connection/disk quotas, pagination, account system or OAuth authorization server. An HTTPS proxy example is provided, not deployed.
+- DB stores member-token hashes and temporary claim lease plaintext in idempotency receipts; protect it and backups. Messages are not encrypted. No production connection/disk quotas, pagination, account system or OAuth authorization server. An HTTPS proxy example is provided, not deployed.
 - Deployment on a real Bot’s machine, persistent user credential setup, and real provider tests are separate steps and have not been performed.
 
 MIT License. Contributions should target verified communication interfaces of existing bots.
@@ -161,3 +169,13 @@ Actual screenshots of this branch at 1280×900, using deterministic demo bots. E
 ![Group management](docs/screenshots/desktop-manage-zh.png)
 
 </details>
+
+## Handoff screenshots
+
+Local synthetic demos, not real-provider interoperability; message text is not translated.
+
+![Tasks](docs/demo/handoffs/desktop-en.png)
+
+![Handoff result](docs/demo/handoffs/native-result-en.png)
+
+[10.4s demo video / 演示录屏](docs/demo/handoffs/native-handoffs-demo.webm) · [Details / 说明](docs/demo/handoffs/README.md)

@@ -62,10 +62,17 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
                 if origin and origin not in {f"http://{h}" for h in allowed}:
                     raise Problem(403, "Origin rejected")
                 path = urlsplit(self.path).path
-                if method == "GET" and path in ("/", "/app.js", "/i18n.js", "/style.css"):
+                if method == "GET" and path in (
+                    "/",
+                    "/app.js",
+                    "/i18n.js",
+                    "/style.css",
+                    "/handoffs.js",
+                ):
                     file, mime = {
                         "/": ("index.html", "text/html; charset=utf-8"),
                         "/app.js": ("app.js", "text/javascript; charset=utf-8"),
+                        "/handoffs.js": ("handoffs.js", "text/javascript; charset=utf-8"),
                         "/i18n.js": ("i18n.js", "text/javascript; charset=utf-8"),
                         "/style.css": ("style.css", "text/css; charset=utf-8"),
                     }[path]
@@ -97,6 +104,25 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
                 logging.error("request_failed")
                 self.respond(500, {"error": "Internal server error"})
 
+        def task_dispatch(self, room, actor, tail, method, body):
+            if not tail:
+                if method == "GET":
+                    return (200, store.handoffs.listing(room, actor))
+                return (201, store.handoffs.create(room, actor, body))
+            if len(tail) != 1 or method != "POST":
+                raise Problem(404, "Not found")
+            operation = tail[0]
+            if operation == "query":
+                return (
+                    200,
+                    store.handoffs.snapshot(room, actor, body.get("task_id"), body.get("after", 0)),
+                )
+            if operation == "inbox":
+                return (200, store.handoffs.inbox(room, actor))
+            if operation in ("claim", "update", "context", "cancel", "retry"):
+                return (200, store.handoffs.operate(room, actor, operation, body))
+            raise Problem(404, "Not found")
+
         def dispatch(self, method, path, token, body):
             if path in ("/api/rooms", "/api/bots"):
                 if not hmac.compare_digest(token, admin):
@@ -127,8 +153,10 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
                 if len(parts) == 6 and parts[5] == "access" and method == "GET":
                     return (200, {"authorized": True, "room": room, "agent": agent})
                 if parts[5] == "peer":
+                    if len(parts) >= 7 and parts[6] == "tasks":
+                        return self.task_dispatch(room, "bot:" + agent, parts[7:], method, body)
                     if len(parts) == 6 and method == "GET":
-                        return (200, store.state(room))
+                        return (200, store.state(room, "bot:" + agent))
                     if len(parts) == 7 and method == "POST" and parts[6] == "runs":
                         return (
                             200,
@@ -162,6 +190,8 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
             if not hmac.compare_digest(token, admin):
                 store.authorize(room, token)
             store.state(room)  # Verify existence even for an admin credential.
+            if len(parts) >= 4 and parts[3] == "tasks":
+                return self.task_dispatch(room, "user", parts[4:], method, body)
             if len(parts) == 3 and method == "GET":
                 return (200, store.state(room))
             if len(parts) == 4 and method == "POST":

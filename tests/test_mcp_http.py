@@ -37,6 +37,7 @@ class HTTPMCPTests(unittest.IsolatedAsyncioTestCase):
         self.other = self.store.room("Private HTTP room")
         self.caller = self.store.add_agent(self.room["id"], "http-caller")
         self.receiver = self.store.add_agent(self.room["id"], "http-receiver")
+        self.second = self.store.add_agent(self.room["id"], "http-second")
         self.foreign = self.store.add_agent(self.other["id"], "http-foreign")
         self.store.grant(self.room["id"], "http-caller", 4)
         self.backend = make_server(self.store, secrets.token_urlsafe(32), port=0)
@@ -44,7 +45,7 @@ class HTTPMCPTests(unittest.IsolatedAsyncioTestCase):
         self.backend_thread.start()
         grants = [
             {"room": self.room["id"], "agent": c["id"], "token": c["token"]}
-            for c in (self.caller, self.receiver)
+            for c in (self.caller, self.receiver, self.second)
         ] + [
             {"room": self.other["id"], "agent": self.foreign["id"], "token": self.foreign["token"]}
         ]
@@ -109,7 +110,7 @@ class HTTPMCPTests(unittest.IsolatedAsyncioTestCase):
             receiver = await self.connect(stack, self.receiver)
             foreign = await self.connect(stack, self.foreign)
             tools = {tool.name for tool in (await caller.list_tools()).tools}
-            self.assertEqual(len(tools), 7)
+            self.assertEqual(len(tools), 16)
             # Interleave different authenticated principals; no session or context leakage.
             listed = await asyncio.gather(
                 caller.call_tool("list_rooms"), foreign.call_tool("list_rooms")
@@ -167,6 +168,188 @@ class HTTPMCPTests(unittest.IsolatedAsyncioTestCase):
                     "status"
                 ],
                 "stopped",
+            )
+
+    async def test_native_task_two_workers_fanin_web_events_and_cancel(self):
+        self.store.settings(self.room["id"], "HTTP room", self.caller["id"])
+        async with AsyncExitStack() as stack:
+            origin = await self.connect(stack, self.caller)
+            one = await self.connect(stack, self.receiver)
+            two = await self.connect(stack, self.second)
+            outsider = await self.connect(stack, self.foreign)
+            payload = dict(
+                title="Native task",
+                context="Explicit scoped context",
+                assignments=[
+                    dict(worker=self.receiver["id"], instruction="Research independently"),
+                    dict(worker=self.second["id"], instruction="Review independently"),
+                ],
+                request_id="native-task",
+                budget=4,
+            )
+            task = unpack(await origin.call_tool("create_task", payload))
+            self.assertEqual(task, unpack(await origin.call_tool("create_task", payload)))
+            self.assertTrue(
+                (await origin.call_tool("create_task", {**payload, "context": "conflict"})).isError
+            )
+            tid = task["task_id"]
+            self.assertEqual(task["origin"], "bot:" + self.caller["id"])
+            self.assertTrue((await outsider.call_tool("get_task", {"task_id": tid})).isError)
+            inbox_one = unpack(await one.call_tool("receive_assignments"))
+            inbox_two = unpack(await two.call_tool("receive_assignments"))
+            self.assertEqual(len(inbox_one), 1)
+            self.assertEqual(len(inbox_two), 1)
+            self.assertNotEqual(inbox_one[0]["id"], inbox_two[0]["id"])
+            claims = []
+            for client, job in ((one, inbox_one[0]), (two, inbox_two[0])):
+                claims.append(
+                    unpack(
+                        await client.call_tool(
+                            "claim_assignment",
+                            dict(
+                                task_id=tid,
+                                assignment_id=job["id"],
+                                expected_attempt=0,
+                                request_id="claim",
+                            ),
+                        )
+                    )
+                )
+            report = dict(
+                task_id=tid,
+                assignment_id=claims[0]["assignment_id"],
+                lease=claims[0]["lease"],
+                attempt=1,
+                kind="progress",
+                body="Research progress",
+                request_id="progress",
+            )
+            self.assertTrue((await two.call_tool("report_assignment", report)).isError)
+            unpack(await one.call_tool("report_assignment", report))
+            unpack(
+                await origin.call_tool(
+                    "add_task_context", dict(task_id=tid, body="Owner follow-up", request_id="note")
+                )
+            )
+            async with httpx.AsyncClient(trust_env=False) as web:
+                url = f"http://127.0.0.1:{self.backend.server_port}/api/rooms/{self.room['id']}"
+                headers = {"Authorization": "Bearer " + self.room["token"]}
+                state = (await web.get(url, headers=headers)).json()
+                self.assertEqual(state["tasks"][0]["task"]["id"], tid)
+                web_task = (
+                    await web.post(url + "/tasks/query", headers=headers, json={"task_id": tid})
+                ).json()
+                native = unpack(await origin.call_tool("get_task", {"task_id": tid}))
+                self.assertEqual(web_task["events"], native["events"])
+                self.assertIn("Research progress", str(web_task))
+                cursor = native["cursor"]
+            unpack(
+                await one.call_tool(
+                    "report_assignment",
+                    {
+                        **report,
+                        "kind": "completed",
+                        "body": "Research result",
+                        "request_id": "done",
+                        "artifacts": [{"name": "Notes", "text": "Inert result text"}],
+                    },
+                )
+            )
+            failed = dict(
+                task_id=tid,
+                assignment_id=claims[1]["assignment_id"],
+                lease=claims[1]["lease"],
+                attempt=1,
+                kind="failed",
+                body="Synthetic failure",
+                request_id="failed",
+            )
+            unpack(await two.call_tool("report_assignment", failed))
+            unpack(
+                await origin.call_tool(
+                    "retry_assignment",
+                    dict(task_id=tid, assignment_id=claims[1]["assignment_id"], request_id="retry"),
+                )
+            )
+            retry = unpack(
+                await two.call_tool(
+                    "claim_assignment",
+                    dict(
+                        task_id=tid,
+                        assignment_id=claims[1]["assignment_id"],
+                        expected_attempt=1,
+                        request_id="claim2",
+                    ),
+                )
+            )
+            unpack(
+                await two.call_tool(
+                    "report_assignment",
+                    {
+                        **failed,
+                        "lease": retry["lease"],
+                        "attempt": 2,
+                        "kind": "completed",
+                        "body": "Review result",
+                        "request_id": "done",
+                    },
+                )
+            )
+            final = unpack(await origin.call_tool("get_task", dict(task_id=tid, after=cursor)))
+            self.assertEqual(final["task"]["status"], "completed")
+            self.assertEqual(
+                {a["result"] for a in final["assignments"]}, {"Research result", "Review result"}
+            )
+            self.assertTrue(all(e["id"] > cursor for e in final["events"]))
+            cancelled = unpack(
+                await origin.call_tool(
+                    "create_task",
+                    {
+                        **payload,
+                        "assignments": payload["assignments"][:1],
+                        "request_id": "cancelled",
+                    },
+                )
+            )
+            job = unpack(await one.call_tool("receive_assignments"))[0]
+            claim = unpack(
+                await one.call_tool(
+                    "claim_assignment",
+                    dict(
+                        task_id=cancelled["task_id"],
+                        assignment_id=job["id"],
+                        expected_attempt=0,
+                        request_id="claim-cancel",
+                    ),
+                )
+            )
+            self.assertTrue(
+                (
+                    await one.call_tool(
+                        "cancel_task", dict(task_id=cancelled["task_id"], request_id="forbidden")
+                    )
+                ).isError
+            )
+            unpack(
+                await origin.call_tool(
+                    "cancel_task", dict(task_id=cancelled["task_id"], request_id="cancel")
+                )
+            )
+            self.assertTrue(
+                (
+                    await one.call_tool(
+                        "report_assignment",
+                        dict(
+                            task_id=cancelled["task_id"],
+                            assignment_id=job["id"],
+                            lease=claim["lease"],
+                            attempt=1,
+                            kind="completed",
+                            body="Late",
+                            request_id="late",
+                        ),
+                    )
+                ).isError
             )
 
     async def test_unauthorized_origin_host_revocation_and_no_cors(self):

@@ -20,7 +20,7 @@ This hub transports task messages and results. It never controls a Bot's coding 
 - `server.py`: loopback HTTP authentication and routing. Parsing/response I/O occur outside the Store lock; authentication and operation occur together inside it. 避免撤销凭据与请求之间的竞态。
 - `mcp_bridge.py`: official FastMCP stdio tools backed by HTTP. Environment selects one room and optional agent identity; tool payload cannot replace either. No second Store process is opened. 工具参数无法自报身份或任意选择群。
 - `grok_adapter.py`: optional explicitly invoked routine webhook. Validated public IP pinning, TLS hostname verification, no redirects/retries, no proxy bypass. Not scheduled automatically.
-- `static/`: original three-column responsive chat UI; translation dictionaries; no CDN/framework. Language is the only localStorage key; credentials remain memory-only.
+- `static/`: original two-column desktop chat and handoff UI; translation dictionaries; no CDN/framework. Language is the only localStorage key; credentials remain memory-only.
 
 ## Trust and scope / 权限
 
@@ -34,7 +34,7 @@ Agent registration is not connectivity or authentication to the named provider. 
 
 注册仅是身份登记，不证明产品已连接。新增成员能够读取该群共享历史，这是群权限的一部分；单个任务只发送当前讨论上下文。
 
-## Scheduler / 调度
+## Discussion scheduler / 旧讨论调度
 
 - A run freezes its actor, participants, Lead, plan and total budget. No response text can change them.
 - Without Lead: repeat the selected participant order, budget 1–20.
@@ -51,6 +51,14 @@ job: pending → done | stopped | timeout | failed | interrupted
 ```
 
 上述调度由 hub 唯一控制，Lead 只在明确角色与预算内规划和总结。终态不自动重试；重启标记 interrupted，不重放可能已经发生的外部动作。
+
+## Independent native tasks / 原生独立任务
+
+`handoffs.py` adds persistent tasks, assignments, events and idempotency receipts. Server authentication derives origin/coordinator; Web and MCP call the same operations. Multiple workers receive distinct instructions, claim their own short leases, report progress/results, and fan in to one task. The active origin reads those results. Task mode allows a Lead to coordinate other members without weakening the old discussion guard.
+
+新任务按 room 和成员 epoch 隔离，预算/深度/deadline 有界；取消递归到子任务，重启保留任务状态而不自行执行。父子关联不是 DAG，父状态只汇总自身 assignments。列表仅提供有界摘要，完整结果与分页事件由 get_task 获取。详见 [协议与恢复](docs/HANDOFFS.zh.md) / [protocol and recovery](docs/HANDOFFS.en.md).
+
+Task callbacks do not enter the old discussion scheduler. The Grok routine adapter remains an explicitly invoked old-job adapter; no automatic assignment wake or outbound queue is claimed. No account connections or public deployment were performed. A hosted dot plugin expects OAuth 2.1, which this static-Bearer MCP gateway does not implement.
 
 ## MCP semantics / MCP 语义
 
