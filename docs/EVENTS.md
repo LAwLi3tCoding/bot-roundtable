@@ -25,3 +25,7 @@ Callback verification and delivery both require exact approved HTTPS hosts on po
 `tests/test_mcp_events.py` covers real SDK initialization plus raw documented draft JSON-RPC methods on the same authenticated HTTP server, signature contract, failed verification, filters, self-notification exclusion, duplicate refresh, bounded verification cache, rotation, restart, expiry, revocation, retries and permanent rejection. Ordinary `test_mcp_http.py` tests still cover default transport authorization and room isolation.
 
 中文：用户须先在 dot 明确要求监听。当前为默认关闭的 HTTP Events 扩展，不是 stdio 的自动唤醒能力。群/成员权限来自认证，任务通知仅带 ID 和状态类别；正文仍需工具按权限读取。内部持久 outbox 扫描不等于向 ChatGPT 提供 polling/streaming Events。订阅、签名、验证、轮换、重启和重试已做契约测试，但没有真实账号验收。回调 host 必须由操作者明确批准；代理环境不受支持时拒绝外连，不绕过网络策略。订阅数据库含签名秘密，需保护文件和备份。公网 OAuth/私有 tunnel 配置与本扩展是不同接线层，详见 [本机指南](LOCAL.zh.md)。
+
+### Concurrent delivery and cancellation
+
+Network I/O runs outside the subscription database lock. Each scan uses at most four workers; verification also has four slots. Callback transport has four bounded slots and a 10-second total caller deadline covering DNS, TLS, headers and body, including slow trickle responses. Uninterruptible DNS retains its slot until resolution returns and cannot subsequently send after cancellation; saturation fails closed rather than creating unbounded threads. In-flight requests may already have reached their destination when unsubscribe returns, but subscription-generation checks discard their receipts and prevent resurrection or retries after cancellation/refresh.

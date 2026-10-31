@@ -148,6 +148,7 @@ def main():
                 )
             page.locator("#connection-refresh").click()
             expect(page.locator("#connection-results")).to_contain_text("Last scoped request")
+            expect(page.locator("#connection-results")).to_contain_text("browser-probe-nonce")
             page.locator("#mcp-dialog .close").click()
             page.locator("#language").select_option("zh")
             page.locator("#mcp-open").click()

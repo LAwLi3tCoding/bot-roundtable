@@ -293,6 +293,122 @@ class EventsFixture(unittest.TestCase):
         self.assertEqual(status, 302)
         self.assertEqual(connection.return_value.request.call_count, 1)
 
+    def test_slow_callback_does_not_block_healthy_delivery_or_unsubscribe(self):
+        slow, healthy = subscription(), subscription()
+        slow["delivery"]["url"] += "/slow"
+        healthy["delivery"]["url"] += "/healthy"
+        sid = self.broker.rpc("events/subscribe", slow)["id"]
+        self.broker.rpc("events/subscribe", healthy)
+        entered, release, delivered = threading.Event(), threading.Event(), threading.Event()
+        original = self.receiver.post
+
+        def post(url, body, headers):
+            if json.loads(body).get("name"):
+                if url.endswith("/slow"):
+                    entered.set()
+                    release.wait(3)
+                    return 503, b"{}"
+                delivered.set()
+            return original(url, body, headers)
+
+        self.receiver.post = post
+        self.create()
+        scan = threading.Thread(target=self.broker.dispatch_once)
+        scan.start()
+        try:
+            self.assertTrue(entered.wait(2))
+            self.assertTrue(delivered.wait(1))
+            del slow["delivery"]["secret"]
+            began = time.monotonic()
+            self.broker.rpc("events/unsubscribe", slow)
+            self.assertLess(time.monotonic() - began, 0.5)
+        finally:
+            release.set()
+            scan.join(5)
+        self.assertFalse(scan.is_alive())
+        self.assertIsNone(
+            self.broker.db.execute("SELECT 1 FROM subscriptions WHERE id=?", (sid,)).fetchone()
+        )
+        self.assertIsNone(
+            self.broker.db.execute(
+                "SELECT 1 FROM deliveries WHERE subscription=?", (sid,)
+            ).fetchone()
+        )
+
+    def test_unsubscribe_invalidates_inflight_verification(self):
+        entered, release = threading.Event(), threading.Event()
+        original = self.receiver.post
+        failures = []
+
+        def post(url, body, headers):
+            entered.set()
+            release.wait(3)
+            return original(url, body, headers)
+
+        self.receiver.post = post
+
+        def subscribe():
+            try:
+                self.broker.rpc("events/subscribe", subscription())
+            except EventError as exc:
+                failures.append(exc.reason)
+
+        thread = threading.Thread(target=subscribe)
+        thread.start()
+        try:
+            self.assertTrue(entered.wait(2))
+            params = subscription()
+            del params["delivery"]["secret"]
+            self.broker.rpc("events/unsubscribe", params)
+        finally:
+            release.set()
+            thread.join(5)
+        self.assertEqual(failures, ["subscription_changed"])
+        self.assertEqual(
+            self.broker.db.execute("SELECT COUNT(*) FROM subscriptions").fetchone()[0], 0
+        )
+
+    @patch.dict("os.environ", {}, clear=True)
+    def test_total_callback_deadline_and_bounded_stuck_dns(self):
+        transport = CallbackTransport(["callback.example.com"], deadline_seconds=0.05)
+        release = threading.Event()
+
+        def dns(*args, **kwargs):
+            release.wait(3)
+            return [(2, 1, 6, "", ("8.8.8.8", 443))]
+
+        with (
+            patch("event_delivery.socket.getaddrinfo", side_effect=dns),
+            patch("event_delivery.PinnedHTTPSConnection") as connection,
+        ):
+            try:
+                for _ in range(5):
+                    began = time.monotonic()
+                    with self.assertRaises(TimeoutError):
+                        transport.post("https://callback.example.com/x", b"{}", {})
+                    self.assertLess(time.monotonic() - began, 0.4)
+                connection.assert_not_called()
+            finally:
+                release.set()
+                time.sleep(0.1)
+        with (
+            patch(
+                "event_delivery.socket.getaddrinfo", return_value=[(2, 1, 6, "", ("8.8.8.8", 443))]
+            ),
+            patch("event_delivery.PinnedHTTPSConnection") as connection,
+        ):
+
+            def trickle(size):
+                for _ in range(30):
+                    time.sleep(0.01)
+                return b"{}"
+
+            connection.return_value.getresponse.return_value.read.side_effect = trickle
+            with self.assertRaises(TimeoutError):
+                transport.post("https://callback.example.com/x", b"{}", {})
+            connection.return_value.sock.shutdown.assert_called_once()
+            time.sleep(0.35)
+
     def test_real_sdk_http_initialize_and_events_extension_on_same_auth_endpoint(self):
         sock = socket.socket()
         sock.bind(("127.0.0.1", 0))

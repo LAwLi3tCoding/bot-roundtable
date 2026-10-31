@@ -14,6 +14,12 @@ import sys
 from urllib.parse import urlsplit
 
 
+class LocalFailure(ValueError):
+    def __init__(self, code):
+        self.code = code
+        super().__init__(code)
+
+
 class LocalClient:
     def __init__(self, base, room, agent, token):
         parsed = urlsplit(base)
@@ -71,12 +77,21 @@ class LocalClient:
                 {"Authorization": "Bearer " + self.token, "Content-Type": "application/json"},
             )
             response = conn.getresponse()
+            if response.status in (401, 403):
+                raise LocalFailure("authorization_rejected")
             raw = response.read(8_000_001)
             if len(raw) > 8_000_000:
                 raise ValueError("Response too large")
             if response.status != 200 and response.status != 201:
                 raise ValueError(f"Local service rejected operation ({response.status})")
-            result = json.loads(raw)
+            try:
+                result = json.loads(raw)
+            except (ValueError, UnicodeError):
+                raise LocalFailure("protocol_mismatch") from None
+            if operation in ("doctor", "capabilities", "probe") and (
+                not isinstance(result, dict) or result.get("protocol") != "roundtable-local-v1"
+            ):
+                raise LocalFailure("protocol_mismatch")
             if operation == "probe" and (
                 payload is None or result.get("nonce") != payload["nonce"]
             ):
@@ -102,6 +117,12 @@ class LocalClient:
                     "secrets_included": False,
                 }
             return result
+        except LocalFailure:
+            raise
+        except (OSError, http.client.HTTPException):
+            raise LocalFailure("backend_unreachable") from None
+        except (ValueError, TypeError, AttributeError):
+            raise LocalFailure("protocol_mismatch") from None
         finally:
             conn.close()
 
@@ -126,13 +147,21 @@ def main():
         ],
     )
     args = parser.parse_args()
+    phase = "configuration_missing"
     try:
+        if any(
+            not os.environ.get(n)
+            for n in ("ROUNDTABLE_ROOM", "ROUNDTABLE_AGENT", "ROUNDTABLE_TOKEN")
+        ):
+            raise LocalFailure("configuration_missing")
+        phase = "configuration_invalid"
         client = LocalClient(
             os.environ.get("ROUNDTABLE_URL", "http://127.0.0.1:8765"),
             os.environ.get("ROUNDTABLE_ROOM", ""),
             os.environ.get("ROUNDTABLE_AGENT", ""),
             os.environ.get("ROUNDTABLE_TOKEN", ""),
         )
+        phase = "request_invalid"
         data = None
         if args.operation not in ("probe", "doctor", "capabilities", "tasks", "inbox"):
             raw = sys.stdin.buffer.read(32769)
@@ -140,13 +169,14 @@ def main():
                 raise ValueError("Payload too large")
             data = json.loads(raw)
         print(json.dumps(client.call(args.operation, data), ensure_ascii=False))
-    except Exception:
+    except Exception as exc:
+        code = exc.code if isinstance(exc, LocalFailure) else phase
         # Network exceptions may include secrets/URLs; never echo their details.
         print(
             json.dumps(
                 {
                     "ok": False,
-                    "reason": "local_connection_or_request_failed",
+                    "reason": code,
                     "next": "Check loopback service, scoped environment references and payload; no vendor login was attempted.",
                 }
             )

@@ -2,7 +2,7 @@
 
 ## Local connectivity + event contracts — current feature branch
 
-2026-10-31: local Python 3.12 checks cover **75 unit/MCP/security tests**, Ruff lint/format, mypy on ten production modules, compilation and JavaScript syntax. Both actual Chromium scripts passed, including the bilingual connection evidence panel and unchanged native handoff flows. CI additionally runs Python 3.13; consult the published commit's Actions result.
+2026-10-31: local Python 3.12 checks cover **80 unit/MCP/security tests**, Ruff lint/format, mypy on ten production modules, compilation and JavaScript syntax. Both actual Chromium scripts passed, including the bilingual connection evidence panel and unchanged native handoff flows. CI additionally runs Python 3.13; consult the published commit's Actions result.
 
 New tests: real loopback scoped client/probe/doctor, no arbitrary URL or operation, revocation/epoch evidence reset, existing task claim/report through the thin client, Grok assignment payload with acceptance-only semantics. Events tests use official SDK initialization/tools plus documented draft event JSON-RPC methods on the same authenticated HTTP endpoint; callback transport is an injected synthetic receiver, never a real vendor callback. Covered signing exact bytes, tampering mismatch, failed challenge, idempotent refresh, non-sliding verification cache, origin-only filtered updates without self-trigger, retry bounds/stable IDs, secret rotation, restart, expiry/revocation, 410/413, private/reserved-address rejection and no redirects. Events IDs include a persistent local-store namespace.
 
@@ -51,3 +51,5 @@ Browser coverage: English/Chinese UI, invalid-token error, group creation, Lead 
 浏览器测试覆盖完整中英文流程；消息原文不随语言切换而翻译。测试数据均为合成内容，未联系真实 Bot、未设置用户持久产品凭据。
 
 Independent review details and reproduced issues are recorded in [SECURITY_REVIEW.md](SECURITY_REVIEW.md). Remote CI is commit-specific; consult the repository Actions run for the published commit rather than treating this local report as a remote CI result.
+
+Review follow-up: persisted membership-bound probe nonce with legacy schema migration; tested cross-room/rejoin isolation and browser display. Added safe local diagnosis stages, bounded callback deadlines, concurrent healthy delivery during slow callbacks, unsubscribe during delivery and verification, and stale receipt rejection. All external callback tests use injected/mocked transport, not vendor accounts.

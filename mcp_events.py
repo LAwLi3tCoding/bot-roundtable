@@ -14,6 +14,7 @@ import secrets
 import sqlite3
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -64,6 +65,10 @@ class EventBroker:
     def __init__(self, path, verifier, transport):
         self.verifier, self.transport = verifier, transport
         self.lock = threading.RLock()
+        self.generations = {}
+        self.pending_generations = set()
+        self.scanning = threading.Lock()
+        self.subscribing = threading.BoundedSemaphore(4)
         if path != ":memory:":
             target = Path(path)
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -154,26 +159,55 @@ class EventBroker:
         subscribing = method == "events/subscribe"
         sid, name, arguments, delivery, canonical = self.identity(principal, params, subscribing)
         with self.lock:
+            generation = secrets.token_hex(16)
+            self.generations[sid] = generation
+            if subscribing:
+                self.pending_generations.add(generation)
             if not subscribing:
                 self.db.execute("DELETE FROM deliveries WHERE subscription=?", (sid,))
                 self.db.execute(
                     "DELETE FROM subscriptions WHERE id=? AND principal=?", (sid, principal)
                 )
                 self.db.commit()
+                self.generations.pop(sid, None)
                 return {}
-            # Validate resource scope before resolving/contacting any callback.
-            initial = self.feed(grant, name, arguments, None)
-            ttl = params.get("ttlMs", 3600000)
-            if ttl is None:
-                ttl = 3600000  # Never grant perpetual subscriptions.
-            if type(ttl) is not int or ttl <= 0:
-                raise EventError(-32602, "invalid_ttl")
-            ttl = min(ttl, 3600000)
-            try:
-                signing_key(delivery.get("secret"))
-            except ValueError:
-                raise EventError(-32602, "invalid_signing_secret") from None
-            now = time.time()
+        if not self.subscribing.acquire(blocking=False):
+            with self.lock:
+                self.pending_generations.discard(generation)
+                if self.generations.get(sid) == generation:
+                    self.generations.pop(sid, None)
+            raise EventError(-32015, "subscription_capacity")
+        try:
+            return self.subscribe(
+                sid, principal, grant, name, arguments, delivery, canonical, params, generation
+            )
+        except Exception:
+            with self.lock:
+                if self.generations.get(sid) == generation:
+                    self.generations.pop(sid, None)
+            raise
+        finally:
+            with self.lock:
+                self.pending_generations.discard(generation)
+            self.subscribing.release()
+
+    def subscribe(
+        self, sid, principal, grant, name, arguments, delivery, canonical, params, generation
+    ):
+        # Validate resource scope before resolving/contacting any callback.
+        initial = self.feed(grant, name, arguments, None)
+        ttl = params.get("ttlMs", 3600000)
+        if ttl is None:
+            ttl = 3600000  # Never grant perpetual subscriptions.
+        if type(ttl) is not int or ttl <= 0:
+            raise EventError(-32602, "invalid_ttl")
+        ttl = min(ttl, 3600000)
+        try:
+            signing_key(delivery.get("secret"))
+        except ValueError:
+            raise EventError(-32602, "invalid_signing_secret") from None
+        now = time.time()
+        with self.lock:
             self.cleanup(now)
             old = self.db.execute("SELECT * FROM subscriptions WHERE id=?", (sid,)).fetchone()
             if (
@@ -189,29 +223,44 @@ class EventBroker:
                 and self.db.execute("SELECT COUNT(*) FROM subscriptions").fetchone()[0] >= 100
             ):
                 raise EventError(-32602, "subscription_limit")
-            verified = old["verified"] if old else 0
-            if not old or old["secret"] != delivery["secret"] or now - old["verified"] > 60:
-                challenge = secrets.token_urlsafe(32)
-                body = encode({"type": "verification", "challenge": challenge})
-                event_id = "verify_" + secrets.token_hex(12)
-                try:
-                    status, raw = self.transport.post(
-                        delivery["url"],
-                        body,
-                        signed_headers(delivery["secret"], sid, event_id, body),
-                    )
-                    echoed = json.loads(raw).get("challenge")
-                    if (
-                        not 200 <= status < 300
-                        or not isinstance(echoed, str)
-                        or not hmac.compare_digest(echoed, challenge)
-                    ):
-                        raise ValueError("challenge_failed")
-                except Exception:
-                    raise EventError(-32015, "challenge_failed") from None
-                if time.time() - now > 15 or not self.verifier.still_authorized(grant):
-                    raise EventError(-32015, "verification_expired_or_access_revoked")
-                verified = time.time()
+        verified = old["verified"] if old else 0
+        if not old or old["secret"] != delivery["secret"] or now - old["verified"] > 60:
+            challenge = secrets.token_urlsafe(32)
+            body = encode({"type": "verification", "challenge": challenge})
+            event_id = "verify_" + secrets.token_hex(12)
+            try:
+                status, raw = self.transport.post(
+                    delivery["url"],
+                    body,
+                    signed_headers(delivery["secret"], sid, event_id, body),
+                )
+                echoed = json.loads(raw).get("challenge")
+                if (
+                    not 200 <= status < 300
+                    or not isinstance(echoed, str)
+                    or not hmac.compare_digest(echoed, challenge)
+                ):
+                    raise ValueError("challenge_failed")
+            except Exception:
+                raise EventError(-32015, "challenge_failed") from None
+            if time.time() - now > 15 or not self.verifier.still_authorized(grant):
+                raise EventError(-32015, "verification_expired_or_access_revoked")
+            verified = time.time()
+        if not self.verifier.still_authorized(grant):
+            raise EventError(-32015, "access_revoked")
+        with self.lock:
+            if self.generations.get(sid) != generation:
+                raise EventError(-32015, "subscription_changed")
+            self.cleanup(time.time())
+            # Recheck limits after the network phase; concurrent new subscriptions count.
+            count = self.db.execute("SELECT COUNT(*) FROM subscriptions").fetchone()[0]
+            own = self.db.execute(
+                "SELECT COUNT(*) FROM subscriptions WHERE principal=?", (principal,)
+            ).fetchone()[0]
+            current = self.db.execute("SELECT * FROM subscriptions WHERE id=?", (sid,)).fetchone()
+            if not current and (count >= 100 or own >= 10):
+                raise EventError(-32602, "subscription_limit")
+            old = current
             changed = old and old["secret"] != delivery["secret"]
             previous = old["secret"] if changed else old["previous"] if old else ""
             rotation = now + 60 if changed else old["rotate_until"] if old else 0
@@ -242,6 +291,11 @@ class EventBroker:
             }
 
     def cleanup(self, now):
+        for row in self.db.execute(
+            "SELECT id FROM subscriptions WHERE expires<=?", (now,)
+        ).fetchall():
+            if self.generations.get(row["id"]) not in self.pending_generations:
+                self.generations.pop(row["id"], None)
         self.db.execute(
             "DELETE FROM deliveries WHERE subscription IN (SELECT id FROM subscriptions WHERE expires<=?)",
             (now,),
@@ -250,86 +304,121 @@ class EventBroker:
         self.db.execute("UPDATE subscriptions SET previous='' WHERE rotate_until<=?", (now,))
         self.db.commit()
 
+    def current(self, sub, generation):
+        """Called with DB lock held. In-flight callbacks cannot resurrect revoked state."""
+        row = self.db.execute("SELECT * FROM subscriptions WHERE id=?", (sub["id"],)).fetchone()
+        return (
+            row is not None
+            and row["expires"] > time.time()
+            and self.generations.get(sub["id"]) == generation
+        )
+
     def dispatch_once(self):
-        """Internal durable-outbox scan; external delivery is signed HTTPS only."""
+        """Bounded concurrent scan; DB lock never spans network operations."""
+        if not self.scanning.acquire(blocking=False):
+            return
+        try:
+            with self.lock:
+                self.cleanup(time.time())
+                snapshots = [
+                    (dict(sub), self.generations.get(sub["id"]))
+                    for sub in self.db.execute("SELECT * FROM subscriptions ORDER BY id").fetchall()
+                ]
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                list(pool.map(lambda item: self.dispatch_subscription(*item), snapshots))
+        finally:
+            self.scanning.release()
+
+    def dispatch_subscription(self, sub, generation):
+        sid = sub["id"]
         with self.lock:
-            now = time.time()
-            self.cleanup(now)
-            for sub in self.db.execute("SELECT * FROM subscriptions ORDER BY id").fetchall():
-                grant = self.verifier.grants.get(sub["principal"])
-                if not grant or not self.verifier.still_authorized(grant):
+            if not self.current(sub, generation):
+                return
+            pending = self.db.execute(
+                "SELECT 1 FROM deliveries WHERE subscription=?", (sid,)
+            ).fetchone()
+        grant = self.verifier.grants.get(sub["principal"])
+        error = ""
+        try:
+            if not grant or not self.verifier.still_authorized(grant):
+                error = "access_revoked"
+                raise ValueError()
+            feed = self.feed(
+                grant,
+                sub["name"],
+                json.loads(sub["arguments"]),
+                sub["cursor"] if not pending else None,
+            )
+        except Exception:
+            with self.lock:
+                if self.current(sub, generation):
                     self.db.execute(
-                        "UPDATE subscriptions SET expires=0,last_error='access_revoked' WHERE id=?",
-                        (sub["id"],),
+                        "UPDATE subscriptions SET last_error=? WHERE id=?",
+                        (error or "backend_unavailable_or_scope_denied", sid),
                     )
+                    if error:
+                        self.db.execute("UPDATE subscriptions SET expires=0 WHERE id=?", (sid,))
                     self.db.commit()
-                    continue
-                pending = self.db.execute(
-                    "SELECT 1 FROM deliveries WHERE subscription=?", (sub["id"],)
-                ).fetchone()
-                try:
-                    # Also rechecks task-level scope on every delivery iteration.
-                    feed = self.feed(
-                        grant,
-                        sub["name"],
-                        json.loads(sub["arguments"]),
-                        sub["cursor"] if not pending else None,
-                    )
-                except Exception:
+            return
+        with self.lock:
+            if not self.current(sub, generation):
+                return
+            if not pending:
+                for event in feed["events"]:
                     self.db.execute(
-                        "UPDATE subscriptions SET last_error='backend_unavailable_or_scope_denied' WHERE id=?",
-                        (sub["id"],),
+                        "INSERT OR IGNORE INTO deliveries VALUES(?,?,?,0,0)",
+                        (sid, event["eventId"], encode(event)),
                     )
-                    self.db.commit()
-                    continue
-                if not pending:
-                    for event in feed["events"]:
-                        self.db.execute(
-                            "INSERT OR IGNORE INTO deliveries VALUES(?,?,?,0,0)",
-                            (sub["id"], event["eventId"], encode(event)),
-                        )
-                    self.db.execute(
-                        "UPDATE subscriptions SET cursor=? WHERE id=?", (feed["cursor"], sub["id"])
-                    )
-                    self.db.commit()
-                # One delivery per subscription per scan, bounded retries, stable ID.
-                row = self.db.execute(
-                    "SELECT * FROM deliveries WHERE subscription=? ORDER BY rowid LIMIT 1",
-                    (sub["id"],),
-                ).fetchone()
-                if not row or row["next_try"] > now or sub["expires"] <= time.time():
-                    continue
-                status = 0
-                try:
-                    headers = signed_headers(
-                        sub["secret"],
-                        sub["id"],
-                        row["event_id"],
-                        row["body"],
-                        sub["previous"] if sub["rotate_until"] > time.time() else "",
-                    )
-                    status, _ = self.transport.post(sub["url"], row["body"], headers)
-                except Exception:
-                    pass  # Bounded retry; no URLs, payloads, secrets or raw errors in logs.
-                attempt = row["attempt"] + 1
-                transient = status == 0 or status == 429 or status >= 500
-                if transient and attempt < 3:
-                    self.db.execute(
-                        "UPDATE deliveries SET attempt=?,next_try=? WHERE subscription=? AND event_id=?",
-                        (attempt, time.time() + 5 * 2**attempt, sub["id"], row["event_id"]),
-                    )
-                else:
-                    self.db.execute(
-                        "DELETE FROM deliveries WHERE subscription=? AND event_id=?",
-                        (sub["id"], row["event_id"]),
-                    )
-                error = "" if 200 <= status < 300 else "delivery_rejected_or_exhausted"
                 self.db.execute(
-                    "UPDATE subscriptions SET last_error=? WHERE id=?", (error, sub["id"])
+                    "UPDATE subscriptions SET cursor=? WHERE id=?", (feed["cursor"], sid)
                 )
-                if status == 410:
-                    self.db.execute("UPDATE subscriptions SET expires=0 WHERE id=?", (sub["id"],))
                 self.db.commit()
+            row = self.db.execute(
+                "SELECT * FROM deliveries WHERE subscription=? ORDER BY rowid LIMIT 1", (sid,)
+            ).fetchone()
+            if not row or row["next_try"] > time.time():
+                return
+        status = 0
+        try:
+            headers = signed_headers(
+                sub["secret"],
+                sid,
+                row["event_id"],
+                row["body"],
+                sub["previous"] if sub["rotate_until"] > time.time() else "",
+            )
+            status, _ = self.transport.post(sub["url"], row["body"], headers)
+        except Exception:
+            pass
+        # Authorization/network checks stay outside the DB lock.
+        authorized = self.verifier.still_authorized(grant)
+        with self.lock:
+            if not self.current(sub, generation):
+                return
+            if not authorized:
+                self.db.execute(
+                    "UPDATE subscriptions SET expires=0,last_error='access_revoked' WHERE id=?",
+                    (sid,),
+                )
+                self.db.commit()
+                return
+            attempt = row["attempt"] + 1
+            transient = status == 0 or status == 429 or status >= 500
+            if transient and attempt < 3:
+                self.db.execute(
+                    "UPDATE deliveries SET attempt=?,next_try=? WHERE subscription=? AND event_id=?",
+                    (attempt, time.time() + 5 * 2**attempt, sid, row["event_id"]),
+                )
+            else:
+                self.db.execute(
+                    "DELETE FROM deliveries WHERE subscription=? AND event_id=?",
+                    (sid, row["event_id"]),
+                )
+            error = "" if 200 <= status < 300 else "delivery_rejected_or_exhausted"
+            self.db.execute("UPDATE subscriptions SET last_error=? WHERE id=?", (error, sid))
+            if status == 410:
+                self.db.execute("UPDATE subscriptions SET expires=0 WHERE id=?", (sid,))
+            self.db.commit()
 
 
 class EventsHTTP:

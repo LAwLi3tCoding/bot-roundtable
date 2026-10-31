@@ -64,3 +64,7 @@ Current gates: this executor is not the user's computer and has no Grok/dot auth
 `doctor` is read-only and reports separate configured, transport_verified, native_roundtrip_verified and wake_verified evidence. The last two remain false without real product acceptance. It prints no tokens, leases, callback URLs or secrets.
 
 `doctor` 只读诊断将已配置、传输已验证、原生回环已验证、唤醒已验证分开；后两项不能由本机持有 token 推断，也不会输出令牌/lease/签名秘密。
+
+The latest probe nonce is persisted for the current membership and displayed in Web connection evidence. Compare it exactly with the native bot response; it is not a credential and does not survive membership replacement. Doctor returns safe stage codes: `configuration_missing` / `configuration_invalid`, `backend_unreachable`, `authorization_rejected`, and `protocol_mismatch`.
+
+Keep claim leases in local machine-to-machine flows: use stdin/stdout pipes or private temporary files in an owner-only directory (Unix `umask 077`; equivalent current-user ACL on Windows), then remove temporary files. Never paste claim output into chat, shared logs or screenshots. Return only non-secret task IDs, progress and results to the native conversation.

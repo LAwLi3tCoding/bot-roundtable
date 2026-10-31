@@ -10,7 +10,10 @@ class Connections:
     def __init__(self, store):
         self.store = store
         store.db.execute("""CREATE TABLE IF NOT EXISTS connection_probes(
-            room TEXT,agent TEXT,epoch TEXT,observed REAL,PRIMARY KEY(room,agent))""")
+            room TEXT,agent TEXT,epoch TEXT,observed REAL,nonce TEXT,PRIMARY KEY(room,agent))""")
+        columns = {row[1] for row in store.db.execute("PRAGMA table_info(connection_probes)")}
+        if "nonce" not in columns:
+            store.db.execute("ALTER TABLE connection_probes ADD COLUMN nonce TEXT")
         store.db.commit()
 
     def probe(self, room, agent, nonce):
@@ -20,8 +23,8 @@ class Connections:
         now = time.time()
         with self.store.transaction():
             self.store.db.execute(
-                "INSERT OR REPLACE INTO connection_probes VALUES(?,?,?,?)",
-                (room, agent, epoch, now),
+                "INSERT OR REPLACE INTO connection_probes(room,agent,epoch,observed,nonce) VALUES(?,?,?,?,?)",
+                (room, agent, epoch, now, nonce),
             )
         return {
             "protocol": "roundtable-local-v1",
@@ -37,7 +40,7 @@ class Connections:
         return [
             dict(row) | {"vendor_account_verified": False}
             for row in self.store.db.execute(
-                "SELECT a.id,COALESCE(b.name,a.id) AS name,a.kind,p.observed FROM agents a LEFT JOIN bots b ON b.id=a.id LEFT JOIN connection_probes p "
+                "SELECT a.id,COALESCE(b.name,a.id) AS name,a.kind,p.observed,p.nonce FROM agents a LEFT JOIN bots b ON b.id=a.id LEFT JOIN connection_probes p "
                 "ON p.room=a.room AND p.agent=a.id AND p.epoch=a.token WHERE a.room=?",
                 (room,),
             )

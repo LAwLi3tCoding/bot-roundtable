@@ -146,6 +146,6 @@ async function refreshConnections(){
  if(!active){results.textContent=t('needConnection');return;}
  const room=active.id;const data=await api(roomPath('/connections'),roomAuth());
  if(active?.id!==room)return;
- for(const member of data.members){const row=element('p','small');row.append(element('strong','',member.name+' · '),element('span','',member.observed?`${t('connectionObserved')} ${new Date(member.observed*1000).toLocaleString()}`:t('connectionUnseen')));results.append(row);}
+ for(const member of data.members){const row=element('p','small');row.append(element('strong','',member.name+' · '),element('span','',member.observed?`${t('connectionObserved')} ${new Date(member.observed*1000).toLocaleString()}`:t('connectionUnseen')));if(member.observed&&member.nonce)row.append(element('code','',` · nonce: ${member.nonce}`));results.append(row);}
 }
 $('connection-refresh').onclick=()=>action(refreshConnections,$('mcp-dialog'));

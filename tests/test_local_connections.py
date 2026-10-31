@@ -1,13 +1,14 @@
 import json
+import io
 import secrets
 import threading
 import time
 import unittest
 from unittest.mock import patch
 
-from connections import capabilities
+from connections import Connections, capabilities
 from grok_adapter import GrokWebhook
-from local_client import LocalClient
+from local_client import LocalClient, LocalFailure, main
 from roundtable import Store
 from server import make_server
 
@@ -37,11 +38,54 @@ class LocalConnectionTests(unittest.TestCase):
         self.assertFalse(result["vendor_account_verified"])
         self.assertEqual(self.client.call("capabilities"), capabilities())
         self.assertTrue(any(m["observed"] for m in self.store.connections.status(self.room["id"])))
+        observed = next(
+            m for m in self.store.connections.status(self.room["id"]) if m["id"] == "local-bot"
+        )
+        self.assertEqual(observed["nonce"], result["nonce"])
+        self.assertNotIn(self.agent["token"], json.dumps(observed))
+        other = self.store.room("Other room")
+        self.store.add_agent(other["id"], "local-bot")
+        self.assertIsNone(
+            next(m for m in self.store.connections.status(other["id"]) if m["id"] == "local-bot")[
+                "nonce"
+            ]
+        )
         self.store.remove_agent(self.room["id"], "local-bot")
         self.store.add_agent(self.room["id"], "local-bot")
         self.assertFalse(any(m["observed"] for m in self.store.connections.status(self.room["id"])))
+        self.assertIsNone(
+            next(
+                m for m in self.store.connections.status(self.room["id"]) if m["id"] == "local-bot"
+            )["nonce"]
+        )
         with self.assertRaises(ValueError):
             self.client.call("probe")
+
+    def test_legacy_probe_schema_migrates_without_fabricating_nonce(self):
+        self.store.db.execute("DROP TABLE connection_probes")
+        self.store.db.execute(
+            "CREATE TABLE connection_probes(room TEXT,agent TEXT,epoch TEXT,observed REAL,PRIMARY KEY(room,agent))"
+        )
+        epoch = self.store.handoffs.member(self.room["id"], "bot:local-bot")
+        self.store.db.execute(
+            "INSERT INTO connection_probes VALUES(?,?,?,?)",
+            (self.room["id"], "local-bot", epoch, time.time()),
+        )
+        self.store.db.commit()
+        Connections(self.store)
+        self.assertIsNone(
+            next(
+                m for m in self.store.connections.status(self.room["id"]) if m["id"] == "local-bot"
+            )["nonce"]
+        )
+        result = self.client.call("probe")
+        Connections(self.store)
+        self.assertEqual(
+            next(
+                m for m in self.store.connections.status(self.room["id"]) if m["id"] == "local-bot"
+            )["nonce"],
+            result["nonce"],
+        )
 
     def test_doctor_reports_transport_not_native_or_wake_and_does_not_write_probe(self):
         result = self.client.call("doctor")
@@ -51,6 +95,32 @@ class LocalConnectionTests(unittest.TestCase):
         self.assertFalse(result["wake_verified"]["verified"])
         self.assertNotIn(self.agent["token"], json.dumps(result))
         self.assertFalse(any(m["observed"] for m in self.store.connections.status(self.room["id"])))
+
+    def test_doctor_safe_failure_stages_and_protocol_validation(self):
+        with (
+            patch.dict("os.environ", {}, clear=True),
+            patch("sys.argv", ["local_client.py", "doctor"]),
+            patch("sys.stdout", new_callable=io.StringIO) as output,
+        ):
+            with self.assertRaises(SystemExit):
+                main()
+            self.assertEqual(json.loads(output.getvalue())["reason"], "configuration_missing")
+        with patch("local_client.http.client.HTTPConnection") as connection:
+            response = connection.return_value.getresponse.return_value
+            response.status = 403
+            with self.assertRaises(LocalFailure) as error:
+                self.client.call("doctor")
+            self.assertEqual(error.exception.code, "authorization_rejected")
+            response.status = 200
+            for body in (b"not-json", b"[]", b'{"protocol":"wrong"}'):
+                response.read.return_value = body
+                with self.assertRaises(LocalFailure) as error:
+                    self.client.call("doctor")
+                self.assertEqual(error.exception.code, "protocol_mismatch")
+            connection.return_value.request.side_effect = OSError("SECRET MUST NOT APPEAR")
+            with self.assertRaises(LocalFailure) as error:
+                self.client.call("doctor")
+            self.assertEqual(str(error.exception), "backend_unreachable")
 
     def test_narrow_client_rejects_remote_urls_and_arbitrary_operations(self):
         for url in (

@@ -74,3 +74,7 @@ Grok 的 `grok_adapter.py --dispatch --assignment` 可显式发送一份刚读�
 `doctor` is read-only and reports separate configured, transport_verified, native_roundtrip_verified and wake_verified evidence. The last two remain false without real product acceptance. It prints no tokens, leases, callback URLs or secrets.
 
 `doctor` 只读诊断将已配置、传输已验证、原生回环已验证、唤醒已验证分开；后两项不能由本机持有 token 推断，也不会输出令牌/lease/签名秘密。
+
+探针 nonce 会保存在当前成员身份的观测中，并在 Web 连接证据显示，供与原生 Bot 返回值逐字核对；它不是凭据。成员重新加入不会继承旧 nonce。doctor 安全错误码：`configuration_missing` / `configuration_invalid`、`backend_unreachable`、`authorization_rejected`、`protocol_mismatch`。
+
+领取返回的 lease 仅供本机程序使用。可在权限受限的本机目录（Unix `umask 077`，Windows 使用仅当前用户 ACL）通过 stdin/stdout 管道或私有临时文件连接 claim 与 report；完成后删除临时文件。不要把 claim 输出粘贴到聊天、共享日志或截图；需要返回给原生会话的仅是非秘密任务 ID、进度和结果。
