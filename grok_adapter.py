@@ -79,9 +79,10 @@ class GrokWebhook:
                 (ips[0], 443), timeout, source_address
             )
         )
-        payload = json.dumps(
-            {k: job[k] for k in ("id", "room", "run", "deadline", "messages")}
-        ).encode()
+        payload_data = {k: job[k] for k in ("id", "room", "run", "deadline", "messages")}
+        if "phase" in job:
+            payload_data["phase"] = job["phase"]
+        payload = json.dumps(payload_data).encode()
         if len(payload) > 100000:
             raise ValueError("Payload too large")
         try:

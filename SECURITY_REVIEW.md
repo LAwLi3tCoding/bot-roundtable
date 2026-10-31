@@ -21,3 +21,19 @@
 ## 剩余边界
 
 单进程本机 MVP，无公网 TLS 网关、账户体系、令牌撤销、速率限制、资源配额、数据加密或多副本协调。响应历史尚未分页，长时间大量使用可增加内存/磁盘消耗。停止 relay 不会取消已启动的外部 bot 工作。Grok adapter 没有真实端到端联调，HTTP 200 不代表完成，回程需要 owner 接线。通用 mailbox 的外部消费者必须自己保存 dispatch 去重状态，不承诺外部执行 exactly-once。官方 dot 通道未实现，也没有绕过 owner 限制。
+
+## MCP / 群管理升级复核（2026-10-31）
+
+独立 reviewer 再次检查 `roundtable.py`、`server.py`、`mcp_bridge.py` 与前端，实际复现并修复：
+
+1. **嵌套事务部分提交**：第二个成员插入失败时，旧嵌套 connection context 已提前提交房间及第一个成员。改用嵌套 SAVEPOINT，整次建群失败原子回滚；有 SQLite 失败触发器回归测试。
+2. **撤销认证竞态**：旧 token 校验后到操作前，成员可被移除/重加并获得新额度，旧请求误用了新成员权限。现在认证与操作同处 Store 锁内，解析/网络写在锁外；并发回归验证撤销语义。
+3. **人类身份混淆**：不再允许新 Bot ID 为 `user`；前端同时要求 `source=human` 和 `sender=user`，兼容防护历史数据。
+
+新增测试覆盖累计发起额度、错误 agent 抢答、Lead 自调用拒绝、Lead 最低/总预算、修改活跃群拒绝、旧令牌/回调撤销与真实 MCP receiver 收发。正式 SDK 三个独立客户端模拟发起者/Lead/接收者，经过 initialize/tools/call，验证角色、关联、重复回调、跨群隔离和撤销。没有执行真实产品联调。
+
+本版不实现或调用任何编码 CLI runner。Bot 消息不能更改身份、群成员、Lead 或工具权限。Agent 能读取其已加入群的共享历史；job 只携带当前讨论。MCP 本身不提供自动唤醒，现有远程 Bot 的账号接线仍需 owner 单独完成。
+
+### English review summary
+
+An independent reviewer reproduced and fixed partial commits from nested transactions, a membership-revocation authentication race, and the reserved human identity display ambiguity. SAVEPOINTs now make group creation atomic; authentication and operations share a lock while network I/O stays outside; bot ID `user` is reserved and the UI additionally checks message source. Regression tests include real SDK MCP clients, agent-scoped receiving/replying, cumulative allowances, Lead budgets, replay, revocation and isolation. These tests use synthetic messages, not live provider accounts. The remaining local-only/production limitations described above still apply.

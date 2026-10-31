@@ -62,10 +62,11 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
                 if origin and origin not in {f"http://{h}" for h in allowed}:
                     raise Problem(403, "Origin rejected")
                 path = urlsplit(self.path).path
-                if method == "GET" and path in ("/", "/app.js", "/style.css"):
+                if method == "GET" and path in ("/", "/app.js", "/i18n.js", "/style.css"):
                     file, mime = {
                         "/": ("index.html", "text/html; charset=utf-8"),
                         "/app.js": ("app.js", "text/javascript; charset=utf-8"),
+                        "/i18n.js": ("i18n.js", "text/javascript; charset=utf-8"),
                         "/style.css": ("style.css", "text/css; charset=utf-8"),
                     }[path]
                     return self.respond(200, (STATIC / file).read_bytes(), mime)
@@ -80,54 +81,12 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
                     body = json.loads(self.rfile.read(size))
                     if not isinstance(body, dict):
                         raise Problem(400, "Expected JSON object")
-                if path == "/api/rooms" and method == "POST":
-                    if not hmac.compare_digest(token, admin):
-                        raise Problem(403, "Admin credential required")
-                    return self.respond(201, store.room(body.get("name")))
-                parts = path.strip("/").split("/")
-                if len(parts) < 3 or parts[:2] != ["api", "rooms"]:
-                    raise Problem(404, "Not found")
-                room = parts[2]
-                if len(parts) >= 6 and parts[3] == "agents":
-                    agent = parts[4]
-                    store.authorize(room, token, agent)
-                    if len(parts) == 6 and parts[5] == "inbox" and method == "GET":
-                        return self.respond(200, store.inbox(room, agent))
-                    if len(parts) == 6 and parts[5] == "reply" and method == "POST":
-                        return self.respond(
-                            200,
-                            store.reply(
-                                room,
-                                agent,
-                                body.get("job_id"),
-                                body.get("body"),
-                                body.get("failed", False),
-                            ),
-                        )
-                    raise Problem(404, "Not found")
-                store.authorize(room, token)
-                if len(parts) == 3 and method == "GET":
-                    return self.respond(200, store.state(room))
-                if len(parts) == 4 and method == "POST":
-                    if parts[3] == "runs":
-                        return self.respond(
-                            200,
-                            store.start(
-                                room,
-                                body.get("body"),
-                                body.get("targets"),
-                                body.get("budget"),
-                                body.get("request_id"),
-                            ),
-                        )
-                    if parts[3] == "stop":
-                        store.stop(room)
-                        return self.respond(200, {"stopped": True})
-                    if parts[3] == "agents":
-                        return self.respond(
-                            201, store.add_agent(room, body.get("id"), body.get("kind", "mailbox"))
-                        )
-                raise Problem(404, "Not found")
+                # Authenticate and execute under one store lock, so a revoked
+                # membership cannot act with a previously validated token.
+                # Parse input and write responses outside this critical section.
+                with store.lock:
+                    status, result = self.dispatch(method, path, token, body)
+                return self.respond(status, result)
             except Problem as exc:
                 self.respond(exc.status, {"error": str(exc)})
             except (ValueError, TypeError):
@@ -137,6 +96,99 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
             except Exception:
                 logging.error("request_failed")
                 self.respond(500, {"error": "Internal server error"})
+
+        def dispatch(self, method, path, token, body):
+            if path in ("/api/rooms", "/api/bots"):
+                if not hmac.compare_digest(token, admin):
+                    raise Problem(403, "Admin credential required")
+                if method == "GET":
+                    return (200, store.list_rooms() if path == "/api/rooms" else store.registry())
+                if path == "/api/bots":
+                    return (
+                        201,
+                        store.register_bot(
+                            body.get("id"),
+                            body.get("name"),
+                            body.get("kind"),
+                            body.get("description", ""),
+                        ),
+                    )
+            if path == "/api/rooms" and method == "POST":
+                if not hmac.compare_digest(token, admin):
+                    raise Problem(403, "Admin credential required")
+                return (201, store.create_group(body.get("name"), body.get("bots")))
+            parts = path.strip("/").split("/")
+            if len(parts) < 3 or parts[:2] != ["api", "rooms"]:
+                raise Problem(404, "Not found")
+            room = parts[2]
+            if len(parts) >= 6 and parts[3] == "agents":
+                agent = parts[4]
+                store.authorize(room, token, agent)
+                if parts[5] == "peer":
+                    if len(parts) == 6 and method == "GET":
+                        return (200, store.state(room))
+                    if len(parts) == 7 and method == "POST" and parts[6] == "runs":
+                        return (
+                            200,
+                            store.start(
+                                room,
+                                body.get("body"),
+                                body.get("targets"),
+                                body.get("budget"),
+                                body.get("request_id"),
+                                actor="bot:" + agent,
+                            ),
+                        )
+                    if len(parts) == 7 and method == "POST" and parts[6] == "stop":
+                        store.stop_peer(room, agent)
+                        return (200, {"stopped": True})
+                    raise Problem(404, "Not found")
+                if len(parts) == 6 and parts[5] == "inbox" and method == "GET":
+                    return (200, store.inbox(room, agent))
+                if len(parts) == 6 and parts[5] == "reply" and method == "POST":
+                    return (
+                        200,
+                        store.reply(
+                            room,
+                            agent,
+                            body.get("job_id"),
+                            body.get("body"),
+                            body.get("failed", False),
+                        ),
+                    )
+                raise Problem(404, "Not found")
+            if not hmac.compare_digest(token, admin):
+                store.authorize(room, token)
+            store.state(room)  # Verify existence even for an admin credential.
+            if len(parts) == 3 and method == "GET":
+                return (200, store.state(room))
+            if len(parts) == 4 and method == "POST":
+                if parts[3] == "settings":
+                    return (200, store.settings(room, body.get("name"), body.get("lead", "")))
+                if parts[3] == "join":
+                    return (201, store.join(room, body.get("id")))
+                if parts[3] == "remove":
+                    store.remove_agent(room, body.get("id"))
+                    return (200, {"removed": True})
+                if parts[3] == "grant":
+                    return (200, store.grant(room, body.get("id"), body.get("allowance")))
+                if parts[3] == "runs":
+                    return (
+                        200,
+                        store.start(
+                            room,
+                            body.get("body"),
+                            body.get("targets"),
+                            body.get("budget"),
+                            body.get("request_id"),
+                        ),
+                    )
+                if parts[3] == "stop":
+                    store.stop(room)
+                    return (200, {"stopped": True})
+                if parts[3] == "agents":
+                    return (201, store.add_agent(room, body.get("id"), body.get("kind", "mailbox")))
+            raise Problem(404, "Not found")
 
     return ThreadingHTTPServer((host, port), Handler)
 

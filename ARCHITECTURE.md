@@ -1,29 +1,65 @@
-# 架构与状态机
+# Architecture / 架构
 
-浏览器 → loopback HTTP 服务 → Store / SQLite → 单任务 mailbox → bot / 受信桥接程序 → 关联 reply → 下一任务。
+## Boundaries / 边界
 
-- `server.py`：HTTP 输入限制、管理员/room/agent 认证边界、静态页面、每 0.5 秒 demo 调度。
-- `roundtable.py`：SQLite 持久化与 RLock 串行事务；创建房间、讨论、任务；来源标签由服务端身份决定。
-- `grok_adapter.py`：可选单次 outbound routine 调用，不接管状态机，不生成虚假 completion。
-- `static/`：无外部 CDN、框架和构建链；token 只留在页面内存，内容用 textContent。
+```
+Existing Bot / 现成 Bot (owns tools + runtime)
+    ↕ MCP stdio: official SDK, explicit room + agent credential
+mcp_bridge.py (no model, no tool runner, no DB ownership)
+    ↕ authenticated loopback HTTP
+server.py → Store / SQLite → one pending mailbox job
+    ↕ same room, correlated job/run, bounded plan
+Other existing Bot / 其他现成 Bot (pull + reply)
+```
 
-## 调度与幂等
+This hub transports task messages and results. It never controls a Bot's coding CLI, model, tools or runtime. A provider webhook may wake its own routine, but acceptance is separate from completion. 本项目只传递消息与结果，外部 Bot 自己决定并执行其已授权的工具。
 
-每次讨论唯一 `(room, request_id)`，固定 targets/budget。创建人类消息后只生成一个 pending job。成功回调在同一数据库事务中标记 job、写入 bot 消息、递增 turn、生成下一 job 或完成。相同 job 相同回复去重；冲突拒绝。DB 与 RLock 保护并发回调不会多推进一轮。API 不承诺多进程部署安全。
+## Components / 组件
+
+- `roundtable.py`: global identity registry; room memberships with independent token hashes; lead configuration; run/job/message persistence; nested SAVEPOINT transactions under one RLock. 全局目录只存身份信息，加入每个群生成独立凭据。
+- `server.py`: loopback HTTP authentication and routing. Parsing/response I/O occur outside the Store lock; authentication and operation occur together inside it. 避免撤销凭据与请求之间的竞态。
+- `mcp_bridge.py`: official FastMCP stdio tools backed by HTTP. Environment selects one room and optional agent identity; tool payload cannot replace either. No second Store process is opened. 工具参数无法自报身份或任意选择群。
+- `grok_adapter.py`: optional explicitly invoked routine webhook. Validated public IP pinning, TLS hostname verification, no redirects/retries, no proxy bypass. Not scheduled automatically.
+- `static/`: original three-column responsive chat UI; translation dictionaries; no CDN/framework. Language is the only localStorage key; credentials remain memory-only.
+
+## Trust and scope / 权限
+
+| Credential / 凭据 | Allowed / 允许 | Denied / 禁止 |
+|---|---|---|
+| Admin | Owner UI: registry and all rooms | Never hand it to a Bot / 不提供给 Bot |
+| Room | One room: settings, membership, discussion, stop | Other rooms / 其他群 |
+| Agent | Assigned jobs + own room's shared history; initiate only with allowance; stop own runs | Identity spoofing, other rooms/jobs, membership/Lead/grant changes, self invocation |
+
+Agent registration is not connectivity or authentication to the named provider. External availability is `owner-setup-required`; demo is `demo-local`. No “online” status is fabricated. Agent removal revokes credentials and rejoining issues a different token. Membership/Lead/grant changes require no active run.
+
+注册仅是身份登记，不证明产品已连接。新增成员能够读取该群共享历史，这是群权限的一部分；单个任务只发送当前讨论上下文。
+
+## Scheduler / 调度
+
+- A run freezes its actor, participants, Lead, plan and total budget. No response text can change them.
+- Without Lead: repeat the selected participant order, budget 1–20.
+- With Lead: `lead-plan` → peer `contribute` tasks → `lead-summary`; minimum 3, maximum 20 replies, all included. Lead is an existing membership, not another model. Users specify authorized peers; Lead prose cannot expand the roster or execute tools.
+- At most one pending job per run and one active run per room. No fan-out or automatic reply broadcast.
+- Initiating Bot spends its cumulative allowance at run creation, inside the transaction. Same `(room,request_id)` retries do not spend again. Another identity cannot reuse the key. Budgets are not refunded, preventing failed/stopped loops.
+- Same job/body/failure replays are idempotent. Conflicting replays and late callbacks are rejected. Actor/source is derived from authentication and server membership.
+- Stop/reply order is serialized; a reply committed before stop remains, but stop cancels its pending successor. Stop does not cancel remote provider execution.
+- Reply deadline is checked inside its write transaction. Timeout persists before error response. Nested group mutations roll back completely on failure.
 
 ```
 run: running → completed | stopped | timeout | failed | interrupted
 job: pending → done | stopped | timeout | failed | interrupted
 ```
 
-达到 budget 完成；失败与超时停止整场讨论，避免自动重试花费或无限反馈。停止与回调竞争时由事务顺序决定：若回调先完成，其已提交消息保留；stop 会取消下一 pending job。重启终止所有未完成 run/job。没有自动恢复不确定外部动作。
+上述调度由 hub 唯一控制，Lead 只在明确角色与预算内规划和总结。终态不自动重试；重启标记 interrupted，不重放可能已经发生的外部动作。
 
-Mailbox 是 at-least-once 可读任务；对结果使用幂等提交，不声称外部执行 exactly-once。桥接程序必须保存其 dispatch 状态，网络异常后不能盲目重发。Grok CLI 为显式单次发送，操作人负责去重；不会自动消费 mailbox。
+## MCP semantics / MCP 语义
 
-## 信任边界
+`initialize` / `tools/list` / `tools/call` use the official MCP SDK and stdio transport. `send_message` returns immediately with a run ID. `get_thread` polls results. `receive_jobs`/`reply_to_job` make the receiver side accessible through MCP too. A consumer must actively run these calls; the protocol does not guarantee wake-up after the consumer's turn ends.
 
-管理员只能创建房间，房间控制 token 不会发送给 bot。Agent token 只读取本房间本讨论中分配给它的 job，并回复其 job。Bot 不可伪造 sender/source、选择下一发言者、启动讨论或调用 shell。与 bot 对话的内容本身不可信，即使标记为 bot 来源也不授予工具权限。
+One configured MCP process maps to one identity and room; extra groups use separately granted connections. No arbitrary backend URL: only explicit loopback HTTP origins are accepted. The server validates Host/Origin and credentials. Remote Streamable HTTP, OAuth resource-server integration, and public HTTPS gateway are intentionally not implemented; cloud clients cannot reach another machine's localhost.
 
-每个新讨论仅携带用户在本房间提交的议题及该讨论已有的 bot 回复。例子、测试均使用人工编写的合成内容；不包含开发会话或真实用户数据。
+## Persistence and verification / 持久化与验证
 
-本地停止只是 relay 停止，外部 Bot 的执行取消需要其自己的官方机制。未实现 remote gateway；公开部署必须另行设计 TLS、入口认证、代理策略、配额、超时、令牌撤销和数据库运维。
+SQLite schema migrations add columns while retaining old rows. Old pending work becomes interrupted at startup. There is no downgrade migration; back up before upgrading. Single-process service only.
+
+Core tests exercise state/race/rollback properties. Official SDK clients negotiate protocol and exchange synthetic messages across distinct identities. Browser tests cover both locales and the real HTTP server. Real Grok/dot/DSH product connection tests are separate and have not occurred. No claims about provider interoperability are inferred from demo success.

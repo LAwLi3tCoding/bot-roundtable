@@ -1,4 +1,4 @@
-"""Optional Playwright smoke; needs playwright and Chromium, no external bot access."""
+"""Bilingual product flow with real local HTTP backend, synthetic demo data only."""
 
 import os
 import secrets
@@ -20,7 +20,7 @@ def main():
     stop = threading.Event()
 
     def tick():
-        while not stop.wait(0.1):
+        while not stop.wait(0.15):
             store.demo_tick()
 
     worker = threading.Thread(target=tick)
@@ -28,36 +28,125 @@ def main():
     try:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(
-                executable_path=os.environ.get("CHROMIUM_PATH", "/usr/bin/chromium"),
+                executable_path=os.environ.get("CHROMIUM_PATH") or None,
                 headless=True,
                 args=["--no-sandbox"],
             )
-            page = browser.new_page(viewport={"width": 1280, "height": 1000})
+            page = browser.new_page(viewport={"width": 1440, "height": 1000}, locale="en-US")
             errors = []
             page.on("pageerror", lambda error: errors.append(str(error)))
+            page.on("dialog", lambda dialog: dialog.accept())
             page.goto(f"http://127.0.0.1:{server.server_port}")
-            page.locator("#admin").fill(token)
-            page.locator("#create").click()
-            expect(page.locator("#status")).to_contain_text("已连接")
-            page.locator("#body").fill(
-                "如何把开源 bot 群聊项目拆成可验收的小步骤？<script>window.pwned=true</script>"
+            expect(page.locator(".welcome h2")).to_have_text("Bring your bots to the table.")
+            page.locator("#access").click()
+            page.locator("#admin").fill("wrong-token")
+            page.locator("#access-form button[type=submit]").click()
+            expect(page.locator("#access-dialog .dialog-error")).to_have_text(
+                "Invalid admin token."
             )
-            page.locator("button[type=submit]").click()
-            expect(page.locator("#status")).to_contain_text("completed")
-            assert page.locator("article").count() == 5
+            page.locator("#admin").fill(token)
+            page.locator("#access-form button[type=submit]").click()
+            expect(page.locator("#access-dialog")).not_to_be_visible()
+            page.locator("#new-room").click()
+            page.locator("#name").fill("Product lab")
+            page.locator("#create").click()
+            expect(page.locator("#secret-dialog")).to_be_visible()
+            page.locator("#secret-dialog .close").click()
+            expect(page.locator("#room-title")).to_have_text("Product lab")
+            page.locator("#manage").click()
+            page.locator("#lead-select").select_option("demo-planner")
+            page.locator("#settings-form button[type=submit]").click()
+            page.locator("#manage-dialog .close").click()
+            page.locator("#body").fill(
+                "Plan a safe collaboration. <script>window.pwned=true</script>"
+            )
+            page.locator("#send").click()
+            expect(page.locator("#status")).to_contain_text("Completed", timeout=10000)
+            expect(page.locator("article.message")).to_have_count(5)
             assert page.evaluate("window.pwned") is None
-            assert not errors, errors
-            # No credentials in screenshots.
-            page.locator("#token").fill("")
-            page.locator("#room").fill("")
+            expect(page.locator("#messages")).to_contain_text("[DEMO Lead]")
+            original = page.locator("#messages").inner_text()
+            page.locator("#language").select_option("zh")
+            expect(page.locator("#manage")).to_have_text("管理")
+            expect(page.locator("#status")).to_contain_text("已完成")
+            expect(page.locator("#body")).to_have_attribute(
+                "placeholder", "这次想让大家一起讨论什么？"
+            )
+            # Message body is not translated when switching the UI language.
+            expect(page.locator("#messages")).to_contain_text("Plan a safe collaboration.")
+            assert "[DEMO Lead]" in original
+            # Register a standalone Lead identity, join it, and exercise waiting/stop.
+            page.locator("#manage").click()
+            page.locator("#create-lead").click()
+            page.locator("#bot-name").fill("Research Lead")
+            page.locator("#bot-id").fill("research-lead")
+            page.locator("#bot-kind").select_option("mailbox")
+            page.locator("#bot-form button[type=submit]").click()
+            expect(page.locator("#secret-dialog")).to_be_visible()
+            page.locator("#secret-dialog .close").click()
+            expect(page.locator("#lead-select")).to_have_value("research-lead")
+            page.locator("#manage-dialog .close").click()
+            page.locator("#body").fill("Waiting for owner-connected Lead")
+            page.locator("#send").click()
+            expect(page.locator("#status")).to_contain_text("进行中")
+            page.locator("#stop").click()
+            expect(page.locator("#status")).to_contain_text("已停止")
+            # History is real, stable and room-scoped.
+            first_run = store.state(store.list_rooms()[0]["id"])["runs"][0]["id"]
+            page.locator("#thread-select").select_option(first_run)
+            expect(page.locator("article.message")).to_have_count(5)
+            # Remove external Lead and rename room through management.
+            page.locator("#manage").click()
+            page.locator("#edit-name").fill("协作实验室")
+            page.locator("#lead-select").select_option("demo-planner")
+            page.locator("#settings-form button[type=submit]").click()
+            external_row = page.locator(".manage-member").filter(has_text="Research Lead")
+            external_row.locator(".danger").click()
+            expect(page.locator(".manage-member")).to_have_count(2)
+            page.locator("#manage-dialog .close").click()
+            expect(page.locator("#room-title")).to_have_text("协作实验室")
             Path("artifacts").mkdir(exist_ok=True)
-            page.screenshot(path="artifacts/desktop.png", full_page=True)
+            page.screenshot(path="artifacts/desktop-zh.png", full_page=True)
+            page.locator("#language").select_option("en")
+            page.screenshot(path="artifacts/desktop-en.png", full_page=True)
+            page.locator("#mcp-open").click()
+            expect(page.locator("#mcp-config")).to_contain_text("ROOM_SCOPED_AGENT_TOKEN")
+            assert token not in page.locator("#mcp-config").inner_text()
+            page.locator("#mcp-dialog .close").click()
+            # Create a second room; no prior discussion is visible.
+            page.locator("#new-room").click()
+            page.locator("#name").fill("Separate room")
+            page.locator("#create").click()
+            page.locator("#secret-dialog .close").click()
+            expect(page.locator("article.message")).to_have_count(0)
+            page.locator(".room-nav").filter(has_text="协作实验室").click()
+            page.locator("#thread-select").select_option(first_run)
+            expect(page.locator("article.message")).to_have_count(5)
+            # All static translation keys exist in both dictionaries.
+            missing = page.evaluate(
+                "() => [...document.querySelectorAll('[data-i18n],[data-i18n-placeholder]')].flatMap(n => ['en','zh'].filter(l => !I18N[l][n.dataset.i18n || n.dataset.i18nPlaceholder]))"
+            )
+            assert missing == [], missing
+            assert page.evaluate(
+                "Object.keys(I18N.en).sort().join() === Object.keys(I18N.zh).sort().join()"
+            )
             page.set_viewport_size({"width": 390, "height": 844})
-            assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
-            page.screenshot(path="artifacts/mobile.png", full_page=True)
+            assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+            page.screenshot(path="artifacts/mobile-en.png", full_page=True)
+            page.locator("#menu").click()
+            page.locator("#language").select_option("zh")
+            page.locator("#menu").click()
+            page.wait_for_timeout(250)  # Finish the sidebar transition before capture.
+            page.screenshot(path="artifacts/mobile-zh.png", full_page=True)
+            # Reload retains language only; no tokens or messages are persisted in browser storage.
+            page.reload()
+            expect(page.locator("#manage")).to_have_text("管理")
+            expect(page.locator("#status")).to_have_text("尚未连接")
+            assert page.evaluate("Object.keys(localStorage)") == ["roundtable-language"]
+            assert not errors, errors
             browser.close()
         print(
-            "Browser smoke passed: create room, 4 replies, completed, XSS inert, mobile layout, no JS errors"
+            "Browser product checks passed: EN/ZH, group creation/isolation, Lead, register/remove, history, stop, XSS, responsive layout, language-only persistence"
         )
     finally:
         stop.set()

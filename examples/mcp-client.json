@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "roundtable": {
+      "command": "/absolute/path/to/bot-roundtable/.venv/bin/python",
+      "args": ["/absolute/path/to/bot-roundtable/mcp_bridge.py"],
+      "env": {
+        "ROUNDTABLE_URL": "http://127.0.0.1:8765",
+        "ROUNDTABLE_ROOM": "REPLACE_WITH_ROOM_ID",
+        "ROUNDTABLE_AGENT": "registered-bot-id",
+        "ROUNDTABLE_TOKEN": "REPLACE_WITH_ROOM_SCOPED_AGENT_TOKEN"
+      }
+    }
+  }
+}
