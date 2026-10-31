@@ -1,0 +1,19 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Original volume study / 原创体积预览</title>
+<style>body{background:#f4f3ef;color:#263735;font:15px system-ui;margin:40px}h1{font-size:24px}p{color:#68736e}section{background:#fff;border:1px solid #e0e4dd;border-radius:20px;padding:24px;margin:20px 0;max-width:1080px}.row{display:flex;align-items:center;gap:32px}.cell{text-align:center;width:160px}.label{font-size:12px;color:#718079}svg{display:block;margin:auto}button{padding:10px 18px;border:1px solid #bdc8bf;background:#fff;border-radius:10px}#small .cell{width:120px}</style>
+<h1>Volume before motion · 先看体积，再看动作</h1><p>Original analytic ellipsoids + surface-mapped eyes. Independent study, not a vendor asset or a pixel match. 原创几何，无第三方素材。</p>
+<section><b>128 px · front / three-quarter / side / rear · 正面 / 斜侧 / 侧面 / 背面</b><div id="poses" class="row"></div></section>
+<section><b>96 px · solid paint versus optional soft volume · 纯色与柔和明暗</b><div id="materials" class="row"></div></section>
+<section><b>Actual UI sizes · 实际界面尺寸 32 / 48 px</b><div id="small" class="row"></div></section>
+<section><b>Independent pose channels · 独立姿态通道</b><div id="motion" class="row"></div><button id="toggle">Pause / 暂停</button></section>
+<script src="volume.js"></script><script>
+const cell=(root,options,label)=>{const d=document.createElement('div');d.className='cell';const avatar=VolumeAvatar.create(options);d.append(avatar.svg);const p=document.createElement('p');p.className='label';p.textContent=label;d.append(p);document.getElementById(root).append(d);return avatar;};
+[0,.65,1.57,2.7].forEach((yaw,i)=>cell('poses',{pose:{yaw,pitch:-.12}},['Front · 正面','Quarter · 斜侧','Side · 侧面','Rear · 背面'][i]));
+[0,1,2].forEach(variant=>[false,true].forEach(volume=>cell('materials',{variant,size:96,volume,pose:{yaw:.65,pitch:-.15}},volume?'Soft volume · 明暗':'Solid · 纯色')));
+[32,48].forEach(size=>[0,.65,1.57].forEach(yaw=>cell('small',{size,pose:{yaw,pitch:-.12}},`${size} px`)));
+const moving=[0,1,2].map(variant=>cell('motion',{variant,size:128},['Yaw · 转头','Pitch · 俯仰','Combined · 复合'][variant]));
+let paused=false,start=performance.now(),frame=null,visible=true,disposed=false;const reduce=matchMedia('(prefers-reduced-motion: reduce)');
+function tick(now){frame=null;if(!paused&&!document.hidden&&!reduce.matches&&visible&&!disposed){const t=(now-start)/1000;moving[0].draw({yaw:Math.sin(t*.7)*1.8});moving[1].draw({pitch:Math.sin(t*.9)*.55,yaw:.4});moving[2].draw({yaw:Math.sin(t*.7)*.9,pitch:Math.sin(t*.9)*.2,roll:Math.sin(t*.6)*.08},1-.92*Math.pow(Math.max(0,Math.cos(t*1.2)),50));frame=requestAnimationFrame(tick);}}
+function refresh(){if(frame!==null)cancelAnimationFrame(frame);frame=null;if(!paused&&!document.hidden&&!reduce.matches&&visible&&!disposed)frame=requestAnimationFrame(tick);}
+const observer=new IntersectionObserver(entries=>{visible=entries[0].isIntersecting;refresh();});observer.observe(document.getElementById("motion"));document.addEventListener("visibilitychange",refresh);reduce.addEventListener("change",refresh);refresh();
+document.getElementById('toggle').onclick=()=>{paused=!paused;document.getElementById('toggle').textContent=paused?'Play / 播放':'Pause / 暂停';refresh();};window.addEventListener('pagehide',()=>{disposed=true;refresh();observer.disconnect();document.removeEventListener('visibilitychange',refresh);reduce.removeEventListener('change',refresh);});
+</script></html>
