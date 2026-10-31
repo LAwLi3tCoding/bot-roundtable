@@ -12,6 +12,7 @@ from typing import cast
 from urllib.parse import urlsplit
 
 from roundtable import Problem, Store
+from connections import capabilities
 
 STATIC = Path(__file__).parent / "static"
 
@@ -153,6 +154,12 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
                 if len(parts) == 6 and parts[5] == "access" and method == "GET":
                     return (200, {"authorized": True, "room": room, "agent": agent})
                 if parts[5] == "peer":
+                    if len(parts) == 7 and parts[6] == "probe" and method == "POST":
+                        return (200, store.connections.probe(room, agent, body.get("nonce")))
+                    if len(parts) == 7 and parts[6] == "capabilities" and method == "GET":
+                        return (200, capabilities())
+                    if len(parts) == 7 and parts[6] == "event-feed" and method == "POST":
+                        return (200, store.handoffs.event_feed(room, "bot:" + agent, body))
                     if len(parts) >= 7 and parts[6] == "tasks":
                         return self.task_dispatch(room, "bot:" + agent, parts[7:], method, body)
                     if len(parts) == 6 and method == "GET":
@@ -190,6 +197,11 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
             if not hmac.compare_digest(token, admin):
                 store.authorize(room, token)
             store.state(room)  # Verify existence even for an admin credential.
+            if len(parts) == 4 and parts[3] == "connections" and method == "GET":
+                return (
+                    200,
+                    {"members": store.connections.status(room), "capabilities": capabilities()},
+                )
             if len(parts) >= 4 and parts[3] == "tasks":
                 return self.task_dispatch(room, "user", parts[4:], method, body)
             if len(parts) == 3 and method == "GET":

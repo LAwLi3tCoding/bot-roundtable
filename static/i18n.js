@@ -53,3 +53,6 @@ for (const max of [40,80,120,2000,4000]) {
  I18N.en.errors[key]=`Enter text of 1–${max} characters.`;
  I18N.zh.errors[key]=`请输入 1–${max} 个字符，不能留空。`;
 }
+
+Object.assign(I18N.en,{connectionCheck:'Connection evidence',connectionCheckHint:'A probe proves that a scoped credential reached this local service. It does not prove a vendor account, online bot or wake path.',connectionRefresh:'Refresh evidence',connectionObserved:'Last scoped request:',connectionUnseen:'No probe observed for this membership',connectionCommandHint:'Run with the scoped ROUNDTABLE_* environment references on the same computer as the service. No UI automation or coding CLI control. Grok local execution requires owner permission. Dot private access/events still require product setup.'});
+Object.assign(I18N.zh,{connectionCheck:'连接证据',connectionCheckHint:'探针仅证明某个群成员凭据到达了本机服务，不证明厂商账号、Bot 在线或唤醒链路。',connectionRefresh:'刷新证据',connectionObserved:'最近一次身份范围内请求：',connectionUnseen:'此成员身份尚无探针记录',connectionCommandHint:'在服务所在电脑上，使用该成员的 ROUNDTABLE_* 环境引用运行。不使用界面自动化，也不控制编码 CLI。Grok 本机执行需要 owner 授权；dot 私有连接与事件仍需产品侧接线。'});

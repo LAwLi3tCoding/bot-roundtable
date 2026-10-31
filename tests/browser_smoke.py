@@ -141,6 +141,20 @@ def main():
             page.locator("#mcp-open").click()
             expect(page.locator("#mcp-config")).to_contain_text("ROOM_SCOPED_AGENT_TOKEN")
             assert token not in page.locator("#mcp-config").inner_text()
+            expect(page.locator("#connection-results")).to_contain_text("No probe observed")
+            with store.lock:
+                store.connections.probe(
+                    store.list_rooms()[0]["id"], "demo-planner", "browser-probe-nonce"
+                )
+            page.locator("#connection-refresh").click()
+            expect(page.locator("#connection-results")).to_contain_text("Last scoped request")
+            page.locator("#mcp-dialog .close").click()
+            page.locator("#language").select_option("zh")
+            page.locator("#mcp-open").click()
+            expect(page.locator("#connection-check")).to_contain_text("连接证据")
+            page.locator("#mcp-dialog .close").click()
+            page.locator("#language").select_option("en")
+            page.locator("#mcp-open").click()
             page.locator("#mcp-dialog .close").click()
             # Create a second room; no prior discussion is visible.
             page.locator("#new-room").click()

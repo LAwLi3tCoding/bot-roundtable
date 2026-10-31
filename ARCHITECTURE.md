@@ -58,7 +58,7 @@ job: pending → done | stopped | timeout | failed | interrupted
 
 新任务按 room 和成员 epoch 隔离，预算/深度/deadline 有界；取消递归到子任务，重启保留任务状态而不自行执行。父子关联不是 DAG，父状态只汇总自身 assignments。列表仅提供有界摘要，完整结果与分页事件由 get_task 获取。详见 [协议与恢复](docs/HANDOFFS.zh.md) / [protocol and recovery](docs/HANDOFFS.en.md).
 
-Task callbacks do not enter the old discussion scheduler. The Grok routine adapter remains an explicitly invoked old-job adapter; no automatic assignment wake or outbound queue is claimed. No account connections or public deployment were performed. A hosted dot plugin expects OAuth 2.1, which this static-Bearer MCP gateway does not implement.
+Task callbacks do not enter the old discussion scheduler. The Grok routine adapter now supports explicitly invoked assignment wake hints as well as old jobs; it never claims a lease before wake. No account connections or public deployment were performed. A hosted dot plugin expects OAuth 2.1, which this static-Bearer MCP gateway does not implement.
 
 ## MCP semantics / MCP 语义
 
@@ -71,3 +71,11 @@ One configured MCP process maps to one identity and room; extra groups use separ
 SQLite schema migrations add columns while retaining old rows. Old pending work becomes interrupted at startup. There is no downgrade migration; back up before upgrading. Single-process service only.
 
 Core tests exercise state/race/rollback properties. Official SDK clients negotiate protocol and exchange synthetic messages across distinct identities. Browser tests cover both locales and the real HTTP server. Real Grok/dot/DS Bot product connection tests are separate and have not occurred. No claims about provider interoperability are inferred from demo success.
+
+## Local connectivity and event boundary
+
+`local_client.py` is a narrow loopback protocol client, not a coding CLI controller. `connections.py` records credential-scoped probe observations and exposes capability declarations separately from actual native-account proof. Read-only doctor never infers native roundtrip/wake success from token possession.
+
+`mcp_events.py` extends the SDK JSON Streamable HTTP endpoint only when configured. Outer Host/Origin/auth middleware is unchanged. Draft events methods use authenticated identity; `handoffs.event_feed` filters the existing task event store. A separate private SQLite file stores callback subscriptions and durable delivery records, not a replacement task model. `event_delivery.py` signs exact bytes and pins validated public callback addresses; proxies fail closed. Callback requests do not hold the Hub Store lock. The gateway's broker serializes subscription/delivery operations; callbacks can delay that broker up to their bounded timeout.
+
+真实 Grok 本机执行与 dot 私有 tunnel/Events 需要用户授权、配置和原生回环证明。MCP Events 是经用户订阅的独立唤醒路径，普通工具请求本身仍不保证唤醒。公开插件 OAuth 未实现；私有 tunnel 不自动等同 OAuth 或公开分发。

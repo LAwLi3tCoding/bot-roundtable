@@ -1,5 +1,13 @@
 # Verification / 验证记录
 
+## Local connectivity + event contracts — current feature branch
+
+2026-10-31: local Python 3.12 checks cover **75 unit/MCP/security tests**, Ruff lint/format, mypy on ten production modules, compilation and JavaScript syntax. Both actual Chromium scripts passed, including the bilingual connection evidence panel and unchanged native handoff flows. CI additionally runs Python 3.13; consult the published commit's Actions result.
+
+New tests: real loopback scoped client/probe/doctor, no arbitrary URL or operation, revocation/epoch evidence reset, existing task claim/report through the thin client, Grok assignment payload with acceptance-only semantics. Events tests use official SDK initialization/tools plus documented draft event JSON-RPC methods on the same authenticated HTTP endpoint; callback transport is an injected synthetic receiver, never a real vendor callback. Covered signing exact bytes, tampering mismatch, failed challenge, idempotent refresh, non-sliding verification cache, origin-only filtered updates without self-trigger, retry bounds/stable IDs, secret rotation, restart, expiry/revocation, 410/413, private/reserved-address rejection and no redirects. Events IDs include a persistent local-store namespace.
+
+No native Grok/dot account connection, local-user computer access, tunnel runtime, public OAuth, real webhook delivery, or real bot task was performed. Doctor reports native_roundtrip_verified=false and wake_verified=false even when local transport succeeds. The product is ready for the explicit account acceptance gates in docs/LOCAL.zh.md; simulated callbacks are not a substitute for that acceptance. Main remains unchanged.
+
 ## Native bot handoffs — current feature branch / 当前功能分支
 
 2026-10-31: **62 Python unit/MCP/security tests passed** locally with Python 3.12, including real official SDK stdio and Streamable HTTP initialization/list-tools/calls. The new HTTP test uses two independent workers, distinct assignments, progress, failure/retry, fan-in, cancellation and scope rejection; actual owner HTTP snapshots/events match MCP task IDs and events. Core tests cover idempotency payload conflicts, concurrent claim/report/cancel, lease expiry, restart recovery, membership epochs, parent budgets/depth, deadlines and bounded list payloads. The independent reviewer added ten targeted security regressions; fixes are documented in SECURITY_REVIEW.md.

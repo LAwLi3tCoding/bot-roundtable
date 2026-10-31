@@ -115,7 +115,7 @@ function renderManage() {
  $('manage-members').replaceChildren();for(const agent of state.agents){const row=element('div','manage-member');const identity=element('div');identity.append(element('strong','',agent.name),element('small','muted',agent.id));const number=element('input');number.type='number';number.min='0';number.max='20';number.value=agent.allowance;number.setAttribute('aria-label',`${agent.name} ${t('allowance')}`);const grant=element('button','secondary compact',t('grant'));grant.type='button';grant.onclick=()=>action(async()=>{await api(roomPath('/grant'),roomAuth(),{id:agent.id,allowance:Number(number.value)});await refresh(true);renderManage();},$('manage-dialog'));const remove=element('button','danger compact',t('remove'));remove.type='button';remove.onclick=()=>action(async()=>{if(!confirm(t('deleteConfirm')))return;await api(roomPath('/remove'),roomAuth(),{id:agent.id});await refresh(true);renderManage();},$('manage-dialog'));row.append(identity,number,grant,remove);$('manage-members').append(row);}
  $('join-select').replaceChildren();for(const bot of bots.filter(b=>!state.agents.some(a=>a.id===b.id))){const option=element('option','',bot.name);option.value=bot.id;$('join-select').append(option);}$('join-form').querySelector('button').disabled=!$('join-select').options.length;
 }
-function renderMCP(){const config={mcpServers:{roundtable:{command:'/absolute/path/to/.venv/bin/python',args:['/absolute/path/to/bot-roundtable/mcp_bridge.py'],env:{ROUNDTABLE_URL:'http://127.0.0.1:8765',ROUNDTABLE_ROOM:active?.id||'ROOM_ID',ROUNDTABLE_AGENT:'REGISTERED_BOT_ID',ROUNDTABLE_TOKEN:'ROOM_SCOPED_AGENT_TOKEN'}}}};$('mcp-config').textContent=JSON.stringify(config,null,2);}
+function renderMCP(){void action(refreshConnections,$('mcp-dialog'));const config={mcpServers:{roundtable:{command:'/absolute/path/to/.venv/bin/python',args:['/absolute/path/to/bot-roundtable/mcp_bridge.py'],env:{ROUNDTABLE_URL:'http://127.0.0.1:8765',ROUNDTABLE_ROOM:active?.id||'ROOM_ID',ROUNDTABLE_AGENT:'REGISTERED_BOT_ID',ROUNDTABLE_TOKEN:'ROOM_SCOPED_AGENT_TOKEN'}}}};$('mcp-config').textContent=JSON.stringify(config,null,2);}
 function showBotForm(leadRoom=null){requireAdmin();leadContext=leadRoom;$('bot-form').reset();$('bot-dialog-title').textContent=t(leadRoom?'createLead':'registerBot');openDialog('bot-dialog');}
 $('language').onchange=()=>{language=$('language').value;localStorage.setItem('roundtable-language',language);translate();};
 $('menu').onclick=()=>{document.querySelector('.app-shell').classList.remove('chat-open'); $('room-search').focus();};
@@ -140,3 +140,12 @@ $('join-form').onsubmit=event=>{event.preventDefault();action(async()=>{const cr
 $('copy-secrets').onclick=()=>action(async()=>{await navigator.clipboard.writeText($('secrets').textContent);$('copy-secrets').textContent=t('copied');});
 $('mcp-open').onclick=()=>{renderMCP();openDialog('mcp-dialog');};
 translate();setInterval(()=>refresh().catch(error=>setError(error)),1200);
+
+async function refreshConnections(){
+ const results=$('connection-results');results.replaceChildren();
+ if(!active){results.textContent=t('needConnection');return;}
+ const room=active.id;const data=await api(roomPath('/connections'),roomAuth());
+ if(active?.id!==room)return;
+ for(const member of data.members){const row=element('p','small');row.append(element('strong','',member.name+' · '),element('span','',member.observed?`${t('connectionObserved')} ${new Date(member.observed*1000).toLocaleString()}`:t('connectionUnseen')));results.append(row);}
+}
+$('connection-refresh').onclick=()=>action(refreshConnections,$('mcp-dialog'));

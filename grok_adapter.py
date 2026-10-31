@@ -99,6 +99,36 @@ class GrokWebhook:
         finally:
             connection.close()
 
+    def dispatch_assignment(self, assignment: dict) -> dict:
+        """Explicit wake hint from an authorized inbox; never claim or complete work."""
+        if assignment.get("status") != "queued":
+            raise ValueError("Only queued assignments may request a wake")
+        required = ("id", "task_id", "origin", "context", "instruction")
+        if any(not isinstance(assignment.get(k), str) or not assignment[k] for k in required):
+            raise ValueError("Use a current scoped assignment inbox record")
+        room = assignment.get("room")
+        if not isinstance(room, str) or not room:
+            raise ValueError("Explicit scoped room required")
+        result = self.dispatch(
+            {
+                "id": assignment["id"],
+                "room": room,
+                "run": assignment["task_id"],
+                "deadline": assignment.get("deadline"),
+                "phase": "assignment",
+                "messages": [
+                    {"sender": assignment["origin"], "body": assignment["context"]},
+                    {"sender": assignment["origin"], "body": assignment["instruction"]},
+                ],
+            }
+        )
+        return {
+            "accepted": result["accepted"],
+            "completed": False,
+            "task_id": assignment["task_id"],
+            "assignment_id": assignment["id"],
+        }
+
 
 def main():
     import argparse
@@ -108,7 +138,12 @@ def main():
         description="Explicitly dispatch ONE mailbox job to a configured Grok routine"
     )
     parser.add_argument("--dispatch", action="store_true", required=True)
-    parser.parse_args()
+    parser.add_argument(
+        "--assignment",
+        action="store_true",
+        help="Use a current scoped task assignment instead of a discussion job",
+    )
+    args = parser.parse_args()
     try:
         adapter = GrokWebhook(
             os.environ["GROK_ROUTINE_URL"],
@@ -116,7 +151,11 @@ def main():
             os.environ["GROK_ALLOWED_HOST"],
         )
         job = json.loads(sys.stdin.read(100001))
-        print(json.dumps(adapter.dispatch(job)))
+        print(
+            json.dumps(
+                adapter.dispatch_assignment(job) if args.assignment else adapter.dispatch(job)
+            )
+        )
     except Exception:
         # The underlying exception can contain URL or network details.
         print(

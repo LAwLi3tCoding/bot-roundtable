@@ -73,6 +73,9 @@ class Store:
         from handoffs import Handoffs
 
         self.handoffs = Handoffs(self)
+        from connections import Connections
+
+        self.connections = Connections(self)
 
     @contextmanager
     def transaction(self):

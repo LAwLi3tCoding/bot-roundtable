@@ -14,10 +14,10 @@ Web 也能查看从原生 MCP 创建的任务，补充共享或单个执行者�
 
 1. 分别注册现成 Grok 和 dot 身份并加入同一群；注册本身不表示已接通。为入口 Bot 授予最小发起额度，保管不同的群成员 token，不能把 admin/room token 给 Bot。
 2. 在产品允许的 MCP 设置中连接本项目的 stdio 或认证 Streamable HTTP。云端产品访问不了另一台电脑的 localhost；需要操作者准备可达 HTTPS 地址与客户端支持的认证方式，参见 [HTTP 指南](HTTP.zh.md)。本项目未部署公网，也没有 OAuth 授权服务器。
-3. **dot 的直接 MCP 挂载路径及账号联调尚未验证**。必须先由 owner 在 dot 中明确发起限定任务，再确认该环境能使用此连接；没有此能力时应停在“尚未接通”，不能用 CLI 或模型 API 冒充 dot。dot 没有已验证的公开自动 wake 入口。
+3. **dot 的直接 MCP 挂载路径及账号联调尚未验证**。必须先由 owner 在 dot 中明确发起限定任务，再确认该环境能使用此连接；没有此能力时应停在“尚未接通”，不能用 CLI 或模型 API 冒充 dot。dot 官方 MCP Events 支持用户先订阅的触发路径，真实账号仍待验证，见 LOCAL.zh.md。
 4. 双方活跃且接线验证成功后，入口调用 `create_task`，执行者主动 `receive_assignments` → `claim_assignment` → `report_assignment`，入口 `get_task`。没有读取时显示排队/到期，不伪造回复。MCP 不保证 turn 结束后自动唤醒，入口休眠也不会被本项目自动拉回。
 
-Grok 官方 routine webhook 是潜在可选 wake 路径，200 只代表 accepted。当前 `grok_adapter.py` 保留的是旧讨论 `job` 协议，**未自动接入本页的 assignment 调度**；没有配置真实 routine、发送请求或验证回程。DS Bot 的独立配置仍见 [DS Bot 指南](DS_BOT.zh.md)，本轮不要求安装。
+Grok 官方 routine webhook 是潜在可选 wake 路径，200 只代表 accepted。当前 `grok_adapter.py --dispatch --assignment` 增加显式 assignment 通知（不提前领取），仍保留旧 job 协议；没有配置真实 routine、发送请求或验证回程。DS Bot 的独立配置仍见 [DS Bot 指南](DS_BOT.zh.md)，本轮不要求安装。
 
 共享产品 connector 的 token 只证明持有凭据，不证明产品内部多个 Bot 的强身份隔离。请使用产品实际支持的独立配置与最小权限；若无法独立隔离，应将它视为共享主体，不能假称各 Bot 已隔离。
 
@@ -75,6 +75,8 @@ Owner 路径为 `/api/rooms/{room}/tasks`；Bot 路径为 `/api/rooms/{room}/age
 
 ## dot hosted plugin authentication gate / dot 托管插件认证门槛
 
-[Official authentication guidance](https://developers.openai.com/plugins/build/auth) requires OAuth 2.1 for authenticated hosted MCP plugins; an OAuth access token is not an arbitrary custom static API key. The current static-Bearer gateway does not implement this flow. Follow the [official connection steps](https://developers.openai.com/plugins/deploy/connect-chatgpt) only after compatible HTTPS/OAuth infrastructure exists, install the plugin, then verify actual tool visibility in the owner's active dot task. This remains unverified and blocked on that infrastructure; no fake OAuth compatibility is claimed. Grok desktop also executes on its cloud computer, so a desktop UI does not make the user's localhost reachable.
+[Official authentication guidance](https://developers.openai.com/plugins/build/auth) requires OAuth 2.1 for authenticated hosted MCP plugins; an OAuth access token is not an arbitrary custom static API key. The current static-Bearer gateway does not implement this flow. Follow the [official connection steps](https://developers.openai.com/plugins/deploy/connect-chatgpt) only after compatible HTTPS/OAuth infrastructure exists, install the plugin, then verify actual tool visibility in the owner's active dot task. This remains unverified and blocked on that infrastructure; no fake OAuth compatibility is claimed. Grok also has separately authorized local execution; verify its actual execution host before assuming localhost reachability.
 
-认证 hosted MCP plugin 预期 OAuth 2.1，不能直接把当前静态 token 当作自定义 API key 填入后宣称可用。需先准备兼容 HTTPS/OAuth 接入，再按官方步骤添加/安装 plugin，并在 owner 主动发起的 dot 任务中验证工具可见性。本项目尚未实现或验证这条产品接线路径；Grok 桌面端的云电脑同样不能直接访问用户电脑的 localhost。
+认证 hosted MCP plugin 预期 OAuth 2.1，不能直接把当前静态 token 当作自定义 API key 填入后宣称可用。需先准备兼容 HTTPS/OAuth 接入，再按官方步骤添加/安装 plugin，并在 owner 主动发起的 dot 任务中验证工具可见性。本项目尚未实现或验证这条产品接线路径；Grok 也有单独授权的本机执行能力，应先验证执行位置。
+
+Current local/private integration paths and evidence gates: [中文](LOCAL.zh.md) / [English](LOCAL.en.md). Public hosted-plugin OAuth requirements do not establish or rule out the separately permissioned private tunnel route. 当前公共 OAuth、私有 tunnel 和授权本机 API 是不同接线路径，不能互相冒称已验证。

@@ -27,10 +27,17 @@ class Handoffs:
         CREATE TABLE IF NOT EXISTS task_receipts(
           room TEXT, actor TEXT, operation TEXT, nonce TEXT, fingerprint TEXT, response TEXT,
           PRIMARY KEY(room,actor,operation,nonce));
+        CREATE TABLE IF NOT EXISTS event_namespace(id INTEGER PRIMARY KEY, value TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS task_room_idx ON tasks(room,created);
         CREATE INDEX IF NOT EXISTS assignment_worker_idx ON assignments(worker,task);
         CREATE INDEX IF NOT EXISTS task_event_idx ON task_events(task,id);
         """)
+        self.db.execute(
+            "INSERT OR IGNORE INTO event_namespace VALUES(1,?)", (secrets.token_hex(16),)
+        )
+        self.event_namespace = self.db.execute(
+            "SELECT value FROM event_namespace WHERE id=1"
+        ).fetchone()[0]
         # Persist in-flight leases across restart; never auto-replay external work.
         self.db.commit()
 
@@ -373,6 +380,88 @@ class Handoffs:
                 result.append({"task": task, "assignments": assignments})
             return result
 
+    def event_feed(self, room, actor, data):
+        """Internal cursor feed for signed webhook delivery; not MCP event polling."""
+        from datetime import datetime, timezone
+
+        name, arguments, after = data.get("name"), data.get("arguments"), data.get("after")
+        if name not in ("handoff.available", "task.updated") or not isinstance(arguments, dict):
+            raise Problem(400, "Invalid event subscription")
+        if set(arguments) != ({"task_id"} if name == "task.updated" else set()):
+            raise Problem(400, "Invalid event filters")
+        if after is not None and (type(after) is not int or after < 0):
+            raise Problem(400, "Invalid event cursor")
+        self.expire()
+        with self.store.lock:
+            epoch = self.member(room, actor)
+            if actor == "user":
+                raise Problem(403, "Worker identity required")
+            if name == "task.updated":
+                if not isinstance(arguments["task_id"], str):
+                    raise Problem(400, "Invalid task ID")
+                subscribed_task = self.task(room, actor, arguments["task_id"])
+                if subscribed_task["origin"] != actor:
+                    raise Problem(403, "Only task origin may subscribe to task updates")
+            if after is None:
+                latest = self.db.execute("SELECT COALESCE(MAX(id),0) FROM task_events").fetchone()[
+                    0
+                ]
+                return {"cursor": latest, "events": []}
+            rows = self.db.execute(
+                "SELECT e.* FROM task_events e JOIN tasks t ON t.id=e.task "
+                "WHERE t.room=? AND e.id>? ORDER BY e.id LIMIT 100",
+                (room, after),
+            ).fetchall()
+            result = []
+            for row in rows:
+                if name == "task.updated" and row["task"] != arguments["task_id"]:
+                    continue
+                try:
+                    task = self.task(room, actor, row["task"])
+                except Problem as exc:
+                    if exc.status == 403:
+                        continue
+                    raise
+                assignment = self.db.execute(
+                    "SELECT * FROM assignments WHERE id=? AND task=?",
+                    (row["assignment"], row["task"]),
+                ).fetchone()
+                own = (
+                    assignment
+                    and assignment["worker"] == actor[4:]
+                    and assignment["epoch"] == epoch
+                )
+                if name == "handoff.available":
+                    if not (
+                        own
+                        and row["kind"] in ("delegated", "retry_requested", "lease_expired")
+                        and assignment["status"] == "queued"
+                        and task["status"] == "running"
+                    ):
+                        continue
+                elif row["actor"] == actor or row["kind"] in (
+                    "task_created",
+                    "delegated",
+                    "task_running",
+                ):
+                    continue
+                result.append(
+                    {
+                        "eventId": f"evt_{self.event_namespace}_{row['id']}",
+                        "name": name,
+                        "timestamp": datetime.fromtimestamp(
+                            row["created"], timezone.utc
+                        ).isoformat(),
+                        "data": {
+                            "task_id": row["task"],
+                            "assignment_id": row["assignment"],
+                            "kind": row["kind"],
+                        },
+                        "cursor": None,
+                    }
+                )
+            return {"cursor": rows[-1]["id"] if rows else after, "events": result}
+
     def inbox(self, room, actor):
         if actor == "user":
             raise Problem(403, "Worker identity required")
@@ -400,6 +489,7 @@ class Handoffs:
                                 task_id=snapshot["task"]["id"],
                                 origin=snapshot["task"]["origin"],
                                 title=snapshot["task"]["title"],
+                                deadline=snapshot["task"]["deadline"],
                                 context=snapshot["task"]["context"],
                                 **assignment,
                             )

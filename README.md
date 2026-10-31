@@ -7,11 +7,15 @@
 双语桌面聊天界面按用户提供的 Grok Bot APP 参考重新组织：约 29% 对话列表 + 71% 聊天，左侧灰色 Bot 气泡、右侧黑色用户气泡、紧凑输入栏。搜索和历史保留真实数据；参与者/回复预算在“＋”讨论选项中，成员和 Lead 在“管理”中。使用原创中性头像，不复制私有代码、品牌或素材。当前仅做桌面版验收，手机版设计暂缓。
 
 
+## 本机接入优先
+
+[本机接入与真实验收步骤](docs/LOCAL.zh.md) · [Events 配置](docs/EVENTS.md)。新增只访问 loopback 的窄协议客户端与只读 `doctor`，分别报告 configured / transport_verified / native_roundtrip_verified / wake_verified；探针证据也可在 Web 连接面板查看。Grok 已有授权本机 API 路径；dot 私有 tunnel 是需权限与实际验证的候选，不等同公开 OAuth 插件。当前不是“安装后已自动联通”，没有创建真实账号连接、凭据或外发任务。
+
 ## 原生委派与交接
 
 从 Grok Bot 或其他现成 Bot 里给不同成员分别指派任务，在 Web 的“任务与交接”查看同一个任务与各条独立交接线程，再由活跃的入口 Bot 取回汇总。支持进度、失败重试、取消、租约与重启恢复；旧顺序讨论仍保留。先用两个明确标记的 demo 验证，详见 [完整中英文交接指南](docs/HANDOFFS.zh.md)。
 
-首轮真实目标为 **Grok Bot + dot**。当前未接真实账号：dot hosted plugin 需要兼容的 OAuth 2.1 接入，本项目静态 Bearer 网关不是该授权流程，因而仍是实际接线阻塞；dot 也没有已验证的自动唤醒入口。详见指南，不能把协议测试成功理解为产品已联通。
+首轮真实目标为 **Grok Bot + dot**。当前未接真实账号：dot hosted plugin 需要兼容的 OAuth 2.1 接入，本项目静态 Bearer 网关不是该授权流程，因而仍是实际接线阻塞；dot 官方已有用户订阅式 MCP Events；本项目新增默认关闭的事件契约实现，但账号唤醒尚未验证。详见指南，不能把协议测试成功理解为产品已联通。
 
 ## 已实现与未验证
 
@@ -71,7 +75,7 @@ python server.py
 }
 ```
 
-此配置示例不包含真实凭据。各客户端设置格式可能不同，请按其官方界面填写。Grok 的 local command 运行在它的电脑上；如果 hub 在另一台电脑，localhost 不会指向 hub。远程云端客户端可通过本项目认证 HTTP 通道和自行配置的 HTTPS 代理接入；未实际部署公网或验证产品账号。
+此配置示例不包含真实凭据。各客户端设置格式可能不同，请按其官方界面填写。Grok 可在用户单独授权后于本机执行 API/client；应实际确认运行位置。云电脑与用户电脑的 localhost 不同。远程云端客户端可通过本项目认证 HTTP 通道和自行配置的 HTTPS 代理接入；未实际部署公网或验证产品账号。
 
 | MCP 工具 | 行为 |
 |---|---|
@@ -127,7 +131,7 @@ ruff check .
 ruff format --check .
 mypy
 python -m unittest discover -s tests -v
-python -m compileall -q roundtable.py server.py grok_adapter.py mcp_bridge.py mcp_http.py handoffs.py
+python -m compileall -q roundtable.py server.py grok_adapter.py mcp_bridge.py mcp_http.py handoffs.py local_client.py connections.py mcp_events.py event_delivery.py
 node --check static/app.js
 node --check static/i18n.js
 node --check static/handoffs.js

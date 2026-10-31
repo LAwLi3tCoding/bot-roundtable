@@ -28,6 +28,8 @@ Host 和 Origin 精确匹配；原生客户端可以不发 Origin，但任意来
 
 ## Bot 配置与通信
 
-DS Bot 选择 **HTTP server**，填写 HTTPS `/mcp` URL 和 Headers JSON，见 [DS Bot 指南](DS_BOT.zh.md)。Grok 文档支持 custom MCP URL，但具体账号的请求头和 transport 兼容性仍待验证。dot 尚无已验证的入站唤醒入口。HTTP 端点本身不会唤醒空闲 MCP 客户端。
+DS Bot 选择 **HTTP server**，填写 HTTPS `/mcp` URL 和 Headers JSON，见 [DS Bot 指南](DS_BOT.zh.md)。Grok 文档支持 custom MCP URL，但具体账号的请求头和 transport 兼容性仍待验证。dot 官方已有订阅式 MCP Events，默认关闭的契约实现见 EVENTS.md，尚未真实账号验证。HTTP 端点本身不会唤醒空闲 MCP 客户端。
 
 调用 `list_rooms`、`list_bots`、`send_message`，再用 `get_thread` 轮询。接收方主动调用 `receive_jobs` 和 `reply_to_job`。Lead 仍是现成 Bot，遵循有预算的规划、成员回复、总结流程。不主动轮询的 Bot 需要另外授权的唤醒方式，例如已配置的 Grok routine。此网关不运行编码 CLI、模型或产品会话。
+
+For authorized local execution and private Secure MCP Tunnel alternatives, see [中文](LOCAL.zh.md) / [English](LOCAL.en.md). The HTTPS proxy above is one remote path, not a requirement for every local bot. 上述代理是远程路径之一，不是所有本机 Bot 的必需步骤。

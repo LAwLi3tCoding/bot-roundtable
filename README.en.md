@@ -7,11 +7,15 @@
 The bilingual desktop UI follows the user-supplied Grok Bot APP visual reference: approximately 29% conversation list and 71% chat, left gray bot bubbles, right black human bubbles, and a compact composer. Search and history use real data. The composer + opens participant/budget options; Manage holds membership and Lead controls. Neutral original avatars replace vendor art. No proprietary code, branding, or assets are copied. Current design/acceptance scope is desktop only; mobile design is deferred.
 
 
+## Local connectivity first
+
+See the [local integration and real acceptance guide](docs/LOCAL.en.md) and [Events configuration](docs/EVENTS.md). The narrow loopback client and read-only `doctor` separate configured, transport_verified, native_roundtrip_verified and wake_verified evidence; the Web shows observed scoped probes. Grok has an authorized local API path. dot private tunnels require permissions and actual validation, distinct from public-plugin OAuth. This is not verified install-and-go connectivity; no real account connection, credential setup or outbound bot task was performed.
+
 ## Native delegation and handoffs
 
 Delegate separate instructions from Grok Bot or another existing bot, inspect the same task and individual handoff threads in the Web workspace, then poll the structured results from the active origin. Progress, retry, cancellation, leases and restart recovery coexist with the original sequential discussion mode. Start with two clearly labelled demos; see the [handoff guide](docs/HANDOFFS.en.md).
 
-The first real target pairing is **Grok Bot + dot**, not yet connected. A dot hosted plugin needs compatible OAuth 2.1 authentication; this project's static Bearer gateway does not implement that flow, so it remains a real integration gate. No automatic dot wake entry point is verified. Protocol tests do not establish product interoperability.
+The first real target pairing is **Grok Bot + dot**, not yet connected. A dot hosted plugin needs compatible OAuth 2.1 authentication; this project's static Bearer gateway does not implement that flow, so it remains a real integration gate. Official dot MCP Events provides user-requested event triggers; the new opt-in contract implementation is not real-account wake verification. Protocol tests do not establish product interoperability.
 
 ## Implemented / not verified
 
@@ -71,7 +75,7 @@ The official SDK is explicitly pinned to the maintained `mcp==1.30.0` v1 API. Bo
 }
 ```
 
-This contains placeholders, not credentials. Client-specific settings may differ. A Grok local command runs on the Bot’s computer; localhost on another machine will not reach your hub. Remote cloud clients can use the authenticated HTTP gateway behind an operator-managed HTTPS proxy; no public deployment or provider-account test has been performed. Protections are not disabled to make a client connect.
+This contains placeholders, not credentials. Client-specific settings may differ. Grok can call local APIs after separate owner authorization; verify the actual execution host. Cloud and user-computer localhost are different. Remote cloud clients can use the authenticated HTTP gateway behind an operator-managed HTTPS proxy; no public deployment or provider-account test has been performed. Protections are not disabled to make a client connect.
 
 | MCP tool | Behavior |
 |---|---|
@@ -127,7 +131,7 @@ ruff check .
 ruff format --check .
 mypy
 python -m unittest discover -s tests -v
-python -m compileall -q roundtable.py server.py grok_adapter.py mcp_bridge.py mcp_http.py handoffs.py
+python -m compileall -q roundtable.py server.py grok_adapter.py mcp_bridge.py mcp_http.py handoffs.py local_client.py connections.py mcp_events.py event_delivery.py
 node --check static/app.js
 node --check static/i18n.js
 node --check static/handoffs.js
