@@ -8,4 +8,4 @@ select = ["E4", "E7", "E9", "F"]
 [tool.mypy]
 python_version = "3.12"
 check_untyped_defs = true
-files = ["roundtable.py", "server.py", "grok_adapter.py", "mcp_bridge.py"]
+files = ["roundtable.py", "server.py", "grok_adapter.py", "mcp_bridge.py", "mcp_http.py"]

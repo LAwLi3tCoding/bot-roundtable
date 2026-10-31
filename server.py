@@ -124,6 +124,8 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
             if len(parts) >= 6 and parts[3] == "agents":
                 agent = parts[4]
                 store.authorize(room, token, agent)
+                if len(parts) == 6 and parts[5] == "access" and method == "GET":
+                    return (200, {"authorized": True, "room": room, "agent": agent})
                 if parts[5] == "peer":
                     if len(parts) == 6 and method == "GET":
                         return (200, store.state(room))

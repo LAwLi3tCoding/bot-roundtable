@@ -4,7 +4,7 @@
 
 ```
 Existing Bot / 现成 Bot (owns tools + runtime)
-    ↕ MCP stdio: official SDK, explicit room + agent credential
+    ↕ MCP stdio / authenticated Streamable HTTP: official SDK, explicit room + agent credential
 mcp_bridge.py (no model, no tool runner, no DB ownership)
     ↕ authenticated loopback HTTP
 server.py → Store / SQLite → one pending mailbox job
@@ -54,12 +54,12 @@ job: pending → done | stopped | timeout | failed | interrupted
 
 ## MCP semantics / MCP 语义
 
-`initialize` / `tools/list` / `tools/call` use the official MCP SDK and stdio transport. `send_message` returns immediately with a run ID. `get_thread` polls results. `receive_jobs`/`reply_to_job` make the receiver side accessible through MCP too. A consumer must actively run these calls; the protocol does not guarantee wake-up after the consumer's turn ends.
+`initialize` / `tools/list` / `tools/call` use the official MCP SDK and stdio / Streamable HTTP transports. `send_message` returns immediately with a run ID. `get_thread` polls results. `receive_jobs`/`reply_to_job` make the receiver side accessible through MCP too. A consumer must actively run these calls; the protocol does not guarantee wake-up after the consumer's turn ends.
 
-One configured MCP process maps to one identity and room; extra groups use separately granted connections. No arbitrary backend URL: only explicit loopback HTTP origins are accepted. The server validates Host/Origin and credentials. Remote Streamable HTTP, OAuth resource-server integration, and public HTTPS gateway are intentionally not implemented; cloud clients cannot reach another machine's localhost.
+One configured MCP process maps to one identity and room; extra groups use separately granted connections. No arbitrary backend URL: only explicit loopback HTTP origins are accepted. The server validates Host/Origin and credentials. `mcp_http.py` adds stateless Streamable HTTP using the official SDK. Explicit bearer grants bind each request to one room/agent; live membership validation rejects revoked credentials. Exact Host/Origin checks precede auth, with SDK DNS-rebinding protection also enabled. It binds only loopback; docs/HTTP.en.md describes an optional HTTPS proxy. OAuth issuance/discovery is not implemented. Cloud clients cannot reach another machine's localhost without the operator configuring remote access.
 
 ## Persistence and verification / 持久化与验证
 
 SQLite schema migrations add columns while retaining old rows. Old pending work becomes interrupted at startup. There is no downgrade migration; back up before upgrading. Single-process service only.
 
-Core tests exercise state/race/rollback properties. Official SDK clients negotiate protocol and exchange synthetic messages across distinct identities. Browser tests cover both locales and the real HTTP server. Real Grok/dot/DSH product connection tests are separate and have not occurred. No claims about provider interoperability are inferred from demo success.
+Core tests exercise state/race/rollback properties. Official SDK clients negotiate protocol and exchange synthetic messages across distinct identities. Browser tests cover both locales and the real HTTP server. Real Grok/dot/DS Bot product connection tests are separate and have not occurred. No claims about provider interoperability are inferred from demo success.
