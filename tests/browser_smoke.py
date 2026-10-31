@@ -172,6 +172,41 @@ def main():
             page.keyboard.press("Escape")
             expect(page.locator("#manage-dialog")).not_to_be_visible()
             expect(page.locator("#manage")).to_be_focused()
+            # Hold an old poll response while a mutation triggers its own fresh read.
+            # The mutation must not skip refresh, and the delayed poll must not overwrite it.
+            page.evaluate(r"""() => {
+                const original = window.fetch;
+                let held = false;
+                window.staleReady = false;
+                window.fetch = async (...args) => {
+                    const response = await original(...args);
+                    if (!held && (!args[1]?.method || args[1].method === 'GET') &&
+                        /^\/api\/rooms\/[a-f0-9]{24}$/.test(args[0])) {
+                        held = true;
+                        window.staleReady = true;
+                        await new Promise(resolve => window.releaseStale = resolve);
+                    }
+                    return response;
+                };
+                window.restoreFetch = () => { window.fetch = original; };
+                void refresh(true);
+            }""")
+            for _ in range(100):
+                if page.evaluate("window.staleReady"):
+                    break
+                page.wait_for_timeout(20)
+            assert page.evaluate("window.staleReady")
+            page.locator("#manage").click()
+            page.locator("#edit-name").fill("Latest room state")
+            page.locator("#settings-form button[type=submit]").click()
+            expect(page.locator("#room-title")).to_have_text("Latest room state")
+            page.evaluate("window.releaseStale(); window.restoreFetch();")
+            page.wait_for_timeout(100)
+            expect(page.locator("#room-title")).to_have_text("Latest room state")
+            page.locator("#edit-name").fill("协作实验室")
+            page.locator("#settings-form button[type=submit]").click()
+            expect(page.locator("#room-title")).to_have_text("协作实验室")
+            page.locator("#manage-dialog .close").click()
             # Invalid values in the detached options dialog must never queue a run.
             before_runs = len(store.state(store.list_rooms()[0]["id"])["runs"])
             page.locator("#body").fill("Budget validation only")
