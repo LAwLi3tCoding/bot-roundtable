@@ -53,7 +53,7 @@ function renderNavigation() {
   content.append(title,element('span','room-preview',preview?.body||t('roomPreview')));button.append(avatar,content);
   button.onclick=()=>action(()=>selectRoom(room));$('room-list').append(button);if(focusedRoom===room.id)button.focus();
  }
- $('access').textContent = adminToken ? t('ownerScope') : active ? t('roomOnly') : t('connect'); $('bot-count').textContent = bots.length;
+ avatarMotion.sync();
 }
 async function reloadWorkspace() { requireAdmin(); [rooms,bots] = await Promise.all([api('/api/rooms',adminToken),api('/api/bots',adminToken)]); renderNavigation(); }
 async function selectRoom(room) { active = room; state = null; threadId = ''; selected = new Set(); document.querySelector('.app-shell').classList.add('chat-open'); renderNavigation(); await refresh(true); }
@@ -66,7 +66,7 @@ async function refresh(force = false) {
 function renderState() {
  const connected = Boolean(active && state); $('welcome').hidden = connected; $('thread-bar').hidden = !connected; $('composer-wrap').classList.toggle('inactive', !connected);
  $('manage').disabled = !connected; $('options-open').disabled = !connected; $('stop').hidden = true; $('send').disabled = !connected; $('stop').disabled = !connected;
- if (!connected) { $('room-title').textContent = t('welcomeTitle'); $('room-subtitle').textContent = t('welcomeSub'); $('status').textContent = t('disconnected'); $('messages').replaceChildren(); $('participants').replaceChildren(); $('member-list').replaceChildren(); $('participant-count').textContent='0'; return; }
+ if (!connected) { $('room-title').textContent = t('welcomeTitle'); $('room-subtitle').textContent = t('welcomeSub'); $('status').textContent = t('disconnected'); $('messages').replaceChildren(); $('participants').replaceChildren(); $('member-list').replaceChildren(); $('participant-count').textContent='0'; for(const id of ['messages','participants','member-list']) delete $(id).dataset.signature; avatarMotion.sync(); return; }
  $('room-mark').replaceChildren(RoundtableAvatar.create('room:'+state.room.id));
  $('room-title').textContent = state.room.name; $('room-subtitle').textContent = `${state.agents.length} ${t('participants')} · ${state.room.lead ? t('leadBadge') : t('noneLead')}`;
  const currentRun = state.runs.at(-1); const running = currentRun?.status === 'running';
@@ -84,11 +84,11 @@ function renderState() {
   $('messages').dataset.signature=signature; $('messages').replaceChildren();
   if (!messages.length) $('messages').append(element('div','empty-thread',t('noMessages')));
   for (const message of messages) {
-   const agent = state.agents.find(a => a.id === message.sender); const human = message.sender === 'user' && message.source === 'human'; const article = element('article', 'message ' + (human ? 'human' : 'bot'));
+   const messageVisual=RoundtableAvatar.messageVisual(message); const agent = state.agents.find(a => a.id === messageVisual.id); const human = message.sender === 'user' && message.source === 'human'; const article = element('article', 'message ' + (human ? 'human' : 'bot'));
    article.dataset.messageId=String(message.id); if(!existingMessages.has(String(message.id))) article.classList.add('new-message');
-   const avatar = human ? element('span','avatar','↗') : RoundtableAvatar.create(message.sender, message.source.endsWith('-error') ? 'blocked' : 'finished');
+   const avatar = human ? element('span','avatar','↗') : RoundtableAvatar.create(messageVisual.id, messageVisual.state);
    const content = element('div','message-content'); const meta = element('div','message-meta'); meta.append(element('strong','', human ? t('human') : agent?.name || message.sender), element('span','source',sourceLabel(message.source)));
-   if (message.sender === state.room.lead) meta.append(element('span','lead-badge',t('lead')));
+   if (messageVisual.id === state.room.lead) meta.append(element('span','lead-badge',t('lead')));
    const time = element('time','',new Date(message.created*1000).toLocaleTimeString(language === 'zh' ? 'zh-CN' : 'en-US',{hour:'2-digit',minute:'2-digit'})); meta.append(time);
    content.append(meta,element('p','message-body',message.body)); article.append(avatar,content); $('messages').append(article);
   }

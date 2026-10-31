@@ -19,6 +19,15 @@ const RoundtableAvatar = (() => {
   if (latest) return String(latest.source).endsWith('-error') ? 'blocked' : 'finished';
   return 'idle';
  }
+ function messageVisual(message) {
+  // A bot-initiated topic is queued work, not evidence of a completed reply.
+  // The server prefixes initiator identities with bot:; keep their usual avatar.
+  const initiation = message.source === 'mcp' && String(message.sender).startsWith('bot:');
+  return {
+   id: initiation ? String(message.sender).slice(4) : message.sender,
+   state: initiation ? 'idle' : String(message.source).endsWith('-error') ? 'blocked' : 'finished'
+  };
+ }
  const ns = 'http://www.w3.org/2000/svg';
  function shape(tag, attributes) {
   const node = document.createElementNS(ns, tag);
@@ -65,6 +74,6 @@ const RoundtableAvatar = (() => {
    dispose() { observer?.disconnect(); tracked.clear(); root.removeEventListener('visibilitychange', refresh); media.removeEventListener('change', refresh); }
   };
  }
- return {identity, stateFor, create, motionController};
+ return {identity, stateFor, messageVisual, create, motionController};
 })();
 if (typeof module !== 'undefined') module.exports = RoundtableAvatar;

@@ -80,3 +80,46 @@ test('motion observer pauses hidden and reduced-motion avatars and releases deta
   assert.equal(listeners.size, 0);
   assert.equal(mediaListeners.size, 0);
 });
+
+test('bot initiation preserves avatar identity without implying a finished reply', () => {
+  assert.deepEqual(avatar.messageVisual({sender:'bot:researcher',source:'mcp'}), {id:'researcher',state:'idle'});
+  assert.deepEqual(avatar.messageVisual({sender:'researcher',source:'mailbox'}), {id:'researcher',state:'finished'});
+  assert.deepEqual(avatar.messageVisual({sender:'researcher',source:'mailbox-error'}), {id:'researcher',state:'blocked'});
+});
+test('untrusted identity is data, never SVG markup', () => {
+  const created = [];
+  function node(tag) {
+   const result = {tag,attributes:{},children:[],dataset:{},style:{},setAttribute(key,value){this.attributes[key]=value;},append(...children){this.children.push(...children);}};
+   created.push(result); return result;
+  }
+  global.document = {createElement:node,createElementNS:(_ns,tag)=>node(tag)};
+  try {
+   const malicious = '<svg onload="alert(1)"><script>steal()</script>';
+   const result = avatar.create(malicious,'working" onmouseover="steal()',48);
+   assert.equal(result.dataset.identity,malicious);
+   assert.equal(result.dataset.state,'idle');
+   assert.ok(created.every(n=>['span','svg','g','rect','ellipse','path'].includes(n.tag)));
+   assert.ok(created.every(n=>Object.keys(n.attributes).every(k=>!/^on/i.test(k))));
+   assert.ok(created.every(n=>!Object.values(n.attributes).some(v=>String(v).includes('steal'))));
+  } finally { delete global.document; }
+});
+
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(require.resolve('../static/app.js'), 'utf8');
+const render = source.slice(source.indexOf('function renderState()'), source.indexOf('function renderCreate()'));
+
+test('clearing disconnected UI also invalidates render caches and releases avatars', () => {
+ const nodes = new Map(); let syncs = 0;
+ const $ = id => {
+  if (!nodes.has(id)) nodes.set(id,{dataset:{signature:'previous-snapshot'},classList:{toggle(){}},replaceChildren(){this.cleared=true;}});
+  return nodes.get(id);
+ };
+ const context = {active:null,state:null,$,t:key=>key,avatarMotion:{sync(){syncs++;}}};
+ vm.runInNewContext(render+'\nrenderState();', context);
+ for (const id of ['messages','participants','member-list']) {
+  assert.ok($(id).cleared);
+  assert.equal($(id).dataset.signature,undefined,'same snapshot must rebuild after clearing');
+ }
+ assert.equal(syncs,1,'detached avatar observers must be released without waiting for polling');
+});

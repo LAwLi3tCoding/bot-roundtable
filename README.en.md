@@ -146,7 +146,9 @@ MIT License. Contributions should target verified communication interfaces of ex
 
 ## Actual UI screenshots
 
-Actual screenshots of this branch at 1280×900, using deterministic demo bots. EN/ZH browser flows passed; visual acceptance remains pending. These are not real provider conversations.
+Actual 1280×900 screenshots with original SVG avatars and relay-backed states. Replies are supplied by a local test driver, with no external bots connected. This refinement remains pending visual review.
+
+[Watch the 22-second actual screen recording](docs/demo/avatar-motion.webm): pending → completed → stopped → synthetic failure reply. [Recording method and limits](docs/demo/README.md).
 
 ![Desktop Chinese / 桌面中文](docs/screenshots/desktop-zh.png)
 

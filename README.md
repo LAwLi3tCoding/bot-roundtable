@@ -146,7 +146,9 @@ MIT License。欢迎围绕经过核实的现成 Bot 通信入口贡献适配与�
 
 ## 界面实拍
 
-本分支桌面 UI 的真实运行截图（1280×900），仅使用确定性 demo Bot。中英文浏览器流程已通过；仍待视觉验收，不代表真实产品联通。
+本分支桌面 UI 的真实运行截图（1280×900），包含原创 SVG 头像和真实 relay 状态。演示回复由本地测试驱动提交，未连接外部 Bot；仍待本轮视觉验收。
+
+[观看 22 秒实际屏幕动效演示](docs/demo/avatar-motion.webm)：待回复 → 完成 → 停止 → 合成失败回执。[录制方式和验证边界](docs/demo/README.md)。
 
 ![Desktop Chinese / 桌面中文](docs/screenshots/desktop-zh.png)
 

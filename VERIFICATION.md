@@ -1,5 +1,15 @@
 # Verification / 验证记录
 
+## Avatar and motion refinement / 头像与动效细化
+
+Independent QA started from the exact remote `f94c5db2bb2339024896ca0efb78ac56ec3d720b` tree `6161a6fc28f608abd2f40c156f98ce871d591594` (all nine changes fetched via the connector). Existing backend and desktop checks remain required.
+
+Fixes from real Chromium and independent source review: escape the Bot ID HTML-pattern hyphen for modern `v` regex syntax; clear render signatures when disconnected; immediately release detached navigation avatars; normalize bot-initiated identities and keep queued initiation idle rather than falsely finished. No untrusted SVG markup is parsed, and the new static route is a fixed allowlisted filename.
+
+Verification: 41 Python tests, 10 Node avatar/state/observer tests, lint/format/typecheck, Python compilation and JS syntax. Desktop Chromium covers EN/ZH, all existing group/Lead/message flows, stable avatar identities across views, compact animations disabled, visible pending transform changing over time, reduced-motion disabling, closed-dialog/offscreen pausing, and real observer target cleanup/disposal after repeated UI updates. Document-hidden event behavior is additionally unit-tested with simulated visibility events; no physical-device or OS background-window guarantee is inferred.
+
+The recording contains 220 actual browser frames encoded as 22-second 1280×900 VP9 WebM at 10 fps. Ten decoded frames from a steady pending interval had ten distinct hashes, and working/failed video frames were visually inspected. This confirms the deliverable contains changing rendered pixels, not a still image. Demo replies/failure are explicitly test-driven through the real Store task/reply protocol. No external bot account or public deployment is involved. Screenshots and recording contain no visible credentials; only project-original assets are committed. This review branch is not authorization to merge main.
+
 ## Desktop reference correction — current branch / 当前分支
 
 2026-10-31: ruff lint/format, mypy (5 modules), Python compilation, JS syntax and 41 unit/MCP/security tests passed with `requirements.lock` in a local Python 3.12 venv. Static DOM references resolve (70 unique IDs, 65 JS references). Independent source review found polling focus, budget-validation and dialog-label issues; these were corrected.

@@ -48,6 +48,20 @@ def main():
                 else None,
             )
             page.on("dialog", lambda dialog: dialog.accept())
+            page.add_init_script("""(() => {
+                const NativeObserver = window.IntersectionObserver;
+                window.avatarObserverChecks = [];
+                window.IntersectionObserver = class extends NativeObserver {
+                    constructor(callback, options) {
+                        super(callback, options);
+                        this.nodes = new Set();
+                        window.avatarObserverChecks.push(this);
+                    }
+                    observe(node) { this.nodes.add(node); super.observe(node); }
+                    unobserve(node) { this.nodes.delete(node); super.unobserve(node); }
+                    disconnect() { this.nodes.clear(); super.disconnect(); }
+                };
+            })();""")
             page.goto(f"http://127.0.0.1:{server.server_port}")
             expect(page.locator(".welcome h2")).to_have_text("Bring your bots to the table.")
             page.locator("#access").click()
@@ -111,6 +125,12 @@ def main():
             expect(message_avatars).to_have_count(4)
             expect(message_avatars.first).to_be_visible()
             expect(message_avatars.first.locator("svg")).to_have_count(1)
+            assert (
+                message_avatars.first.locator(".avatar-eyes").evaluate(
+                    "n => getComputedStyle(n).animationName"
+                )
+                == "none"
+            ), "compact message avatars must not animate"
             planner_identity = message_avatars.first.get_attribute("data-identity")
             assert planner_identity
             page.locator("#manage").click()
@@ -149,7 +169,10 @@ def main():
             page.locator("#manage").click()
             page.locator("#create-lead").click()
             page.locator("#bot-name").fill("Research Lead")
+            page.locator("#bot-id").fill("invalid/id")
+            assert not page.locator("#bot-id").evaluate("n => n.checkValidity()")
             page.locator("#bot-id").fill("research-lead")
+            assert page.locator("#bot-id").evaluate("n => n.checkValidity()")
             page.locator("#bot-kind").select_option("mailbox")
             page.locator("#bot-form button[type=submit]").click()
             expect(page.locator("#secret-dialog")).to_be_visible()
@@ -162,6 +185,23 @@ def main():
             page.locator("#manage").click()
             lead_avatar = page.locator('.member .bot-avatar[data-identity="research-lead"]')
             expect(lead_avatar).to_have_attribute("data-state", "working")
+            expect(lead_avatar).not_to_have_class(re.compile("avatar-motion-paused"))
+            first_transform = lead_avatar.locator(".avatar-body").evaluate(
+                "n => getComputedStyle(n).transform"
+            )
+            page.wait_for_timeout(500)
+            second_transform = lead_avatar.locator(".avatar-body").evaluate(
+                "n => getComputedStyle(n).transform"
+            )
+            assert first_transform != second_transform, "visible pending avatar must actually move"
+            page.emulate_media(reduced_motion="reduce")
+            assert (
+                lead_avatar.locator(".avatar-body").evaluate(
+                    "n => getComputedStyle(n).animationName"
+                )
+                == "none"
+            )
+            page.emulate_media(reduced_motion="no-preference")
             page.locator("#manage-dialog .close").click()
             page.locator("#stop").click()
             expect(page.locator("#status")).to_contain_text("已停止")
@@ -278,6 +318,33 @@ def main():
                 expect(page.locator("#mcp-open")).to_be_focused()
             assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
             page.locator("#language").select_option("zh")
+            # A test-only offscreen fixture exercises the real IntersectionObserver.
+            page.evaluate("""() => {
+                const fixture = RoundtableAvatar.create('qa-offscreen', 'working', 64);
+                fixture.id = 'qa-offscreen-avatar';
+                fixture.style.position = 'fixed';
+                fixture.style.left = '-200px';
+                fixture.style.top = '0';
+                document.body.append(fixture);
+                avatarMotion.sync();
+            }""")
+            offscreen = page.locator("#qa-offscreen-avatar")
+            expect(offscreen).to_have_class(re.compile("avatar-motion-paused"))
+            assert (
+                offscreen.locator(".avatar-body").evaluate(
+                    "n => getComputedStyle(n).animationPlayState"
+                )
+                == "paused"
+            )
+            page.evaluate(
+                "document.getElementById('qa-offscreen-avatar').remove(); avatarMotion.sync();"
+            )
+            # Real-browser observer bookkeeping: no detached targets after UI churn.
+            assert page.evaluate("""() => window.avatarObserverChecks.length === 1 &&
+                [...window.avatarObserverChecks[0].nodes].every(node => node.isConnected)
+            """)
+            page.evaluate("avatarMotion.dispose()")
+            assert page.evaluate("window.avatarObserverChecks[0].nodes.size") == 0
             # Reload retains language only; no tokens or messages are persisted in browser storage.
             page.reload()
             expect(page.locator("#manage")).to_have_text("管理")
