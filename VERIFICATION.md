@@ -1,5 +1,13 @@
 # Verification / 验证记录
 
+## Desktop reference correction — current branch / 当前分支
+
+2026-10-31: ruff lint/format, mypy (5 modules), Python compilation, JS syntax and 41 unit/MCP/security tests passed with `requirements.lock` in a local Python 3.12 venv. Static DOM references resolve (70 unique IDs, 65 JS references). Independent source review found polling focus, budget-validation and dialog-label issues; these were corrected.
+
+Desktop browser tests were extended for two-column layout, left/right bubble styles, discussion options, search, dismissal/focus and secret clearing. **Browser launch is blocked in this executor by Chromium `socket() Operation not permitted`; no browser assertions ran and no new screenshots were produced here.** The supported escalation failed before launch. Do not treat the historical browser result below as verification of this branch. Mobile design/acceptance is deferred at the user’s request. No deployment or real-provider integration was performed.
+
+## Historical verification / 历史验证
+
 Local verification date / 本地验证日期: 2026-10-31.
 
 | Check / 检查 | Result / 结果 |

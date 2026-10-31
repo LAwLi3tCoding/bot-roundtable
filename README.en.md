@@ -4,7 +4,8 @@
 
 **A communication and coordination hub for existing bots. Each bot owns its tools and runtime.** This is not a model API wrapper, a coding CLI runner, or a replacement agent.
 
-The original bilingual chat UI includes room navigation, a bot directory, discussion history, participant state, room management, and a separately registered or selected Lead. It uses familiar chat interaction patterns without copying proprietary code, branding, or assets.
+The bilingual desktop UI follows the user-supplied Grok Bot APP visual reference: approximately 29% conversation list and 71% chat, left gray bot bubbles, right black human bubbles, and a compact composer. Search and history use real data. The composer + opens participant/budget options; Manage holds membership and Lead controls. Neutral original avatars replace vendor art. No proprietary code, branding, or assets are copied. Current design/acceptance scope is desktop only; mobile design is deferred.
+
 
 ## Implemented / not verified
 
@@ -145,7 +146,7 @@ MIT License. Contributions should target verified communication interfaces of ex
 
 ## Actual UI screenshots
 
-Captured from released version `3f171f5`, using deterministic demo bots only; these are not real provider conversations.
+These historical screenshots are from `3f171f5`, not this branch’s redesigned desktop UI. New browser acceptance and screenshots are pending; the old images remain for comparison. They use deterministic demo bots, not real provider conversations.
 
 ![Desktop / 桌面中文](docs/screenshots/desktop-zh.png)
 

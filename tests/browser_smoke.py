@@ -1,4 +1,4 @@
-"""Bilingual product flow with real local HTTP backend, synthetic demo data only."""
+"""Desktop bilingual flows against real local HTTP; deterministic demo bots only."""
 
 import os
 import secrets
@@ -52,7 +52,31 @@ def main():
             page.locator("#create").click()
             expect(page.locator("#secret-dialog")).to_be_visible()
             page.locator("#secret-dialog .close").click()
+            expect(page.locator("#secrets")).to_be_empty()
             expect(page.locator("#room-title")).to_have_text("Product lab")
+            # Management is on demand; the resting shell has just list and chat.
+            assert (
+                page.locator(".app-shell").evaluate(
+                    "n => getComputedStyle(n).gridTemplateColumns.split(' ').length"
+                )
+                == 2
+            )
+            expect(page.locator("#details")).not_to_be_visible()
+            page.locator("#options-open").click()
+            expect(page.locator("#options-dialog")).to_be_visible()
+            expect(page.locator(".participant-chip")).to_have_count(2)
+            first_target = page.locator(".participant-chip").first
+            first_target.click()
+            expect(first_target).to_have_attribute("aria-pressed", "false")
+            first_target.click()
+            expect(first_target).to_have_attribute("aria-pressed", "true")
+            page.locator("#budget").fill("4")
+            page.keyboard.press("Escape")
+            expect(page.locator("#options-dialog")).not_to_be_visible()
+            page.locator("#options-open").click()
+            expect(page.locator("#budget")).to_have_value("4")
+            page.locator("#options-dialog .close").click()
+            expect(page.locator("#options-open")).to_be_focused()
             page.locator("#manage").click()
             page.locator("#lead-select").select_option("demo-planner")
             page.locator("#settings-form button[type=submit]").click()
@@ -65,6 +89,11 @@ def main():
             expect(page.locator("article.message")).to_have_count(5)
             assert page.evaluate("window.pwned") is None
             expect(page.locator("#messages")).to_contain_text("[DEMO Lead]")
+            human = page.locator(".human .message-body").first
+            bot = page.locator(".bot .message-body").first
+            assert human.evaluate("n => getComputedStyle(n).backgroundColor") == "rgb(17, 17, 17)"
+            assert bot.evaluate("n => getComputedStyle(n).backgroundColor") == "rgb(243, 243, 242)"
+            assert human.bounding_box()["x"] > bot.bounding_box()["x"]
             original = page.locator("#messages").inner_text()
             page.locator("#language").select_option("zh")
             expect(page.locator("#manage")).to_have_text("管理")
@@ -124,20 +153,27 @@ def main():
             expect(page.locator("article.message")).to_have_count(5)
             # All static translation keys exist in both dictionaries.
             missing = page.evaluate(
-                "() => [...document.querySelectorAll('[data-i18n],[data-i18n-placeholder]')].flatMap(n => ['en','zh'].filter(l => !I18N[l][n.dataset.i18n || n.dataset.i18nPlaceholder]))"
+                "() => [...document.querySelectorAll('[data-i18n],[data-i18n-placeholder],[data-i18n-label]')].flatMap(n => ['en','zh'].filter(l => !I18N[l][n.dataset.i18n || n.dataset.i18nPlaceholder || n.dataset.i18nLabel]))"
             )
             assert missing == [], missing
             assert page.evaluate(
                 "Object.keys(I18N.en).sort().join() === Object.keys(I18N.zh).sort().join()"
             )
-            page.set_viewport_size({"width": 390, "height": 844})
+            # Search does not navigate or discard the current conversation.
+            page.locator("#room-search").fill("not a matching room")
+            expect(page.locator(".room-nav")).to_have_count(0)
+            expect(page.locator("#room-list")).to_have_text("No matching conversations")
+            expect(page.locator("#room-title")).to_have_text("协作实验室")
+            page.locator("#room-search").fill("Separate")
+            expect(page.locator(".room-nav")).to_have_count(1)
+            page.locator("#room-search").fill("")
+            expect(page.locator(".room-nav")).to_have_count(2)
+            page.locator("#manage").click()
+            page.keyboard.press("Escape")
+            expect(page.locator("#manage-dialog")).not_to_be_visible()
+            expect(page.locator("#manage")).to_be_focused()
             assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
-            page.screenshot(path="artifacts/mobile-en.png", full_page=True)
-            page.locator("#menu").click()
             page.locator("#language").select_option("zh")
-            page.locator("#menu").click()
-            page.wait_for_timeout(250)  # Finish the sidebar transition before capture.
-            page.screenshot(path="artifacts/mobile-zh.png", full_page=True)
             # Reload retains language only; no tokens or messages are persisted in browser storage.
             page.reload()
             expect(page.locator("#manage")).to_have_text("管理")
@@ -146,7 +182,7 @@ def main():
             assert not errors, errors
             browser.close()
         print(
-            "Browser product checks passed: EN/ZH, group creation/isolation, Lead, register/remove, history, stop, XSS, responsive layout, language-only persistence"
+            "Browser product checks passed: EN/ZH, group creation/isolation, Lead, register/remove, history, stop, XSS, desktop layout/search/options, language-only persistence"
         )
     finally:
         stop.set()

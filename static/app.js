@@ -5,6 +5,7 @@ if (!I18N[language]) language = 'en';
 const t = key => I18N[language][key] || key;
 let adminToken = '', active = null, rooms = [], bots = [], state = null, selected = new Set(), threadId = '', refreshing = false, leadContext = null;
 const roomTokens = new Map();
+const roomPreviews = new Map();
 function element(tag, className, value) { const node = document.createElement(tag); if (className) node.className = className; if (value !== undefined) node.textContent = value; return node; }
 function setError(error, dialog) { const target = dialog?.querySelector('.dialog-error') || $('error'); target.textContent = I18N[language].errors[error.message] || (I18N[language][error.message] ? t(error.message) : `${t('requestFailed')} ${error.status ? `(${error.status})` : ''}`); }
 async function action(fn, dialog) { $('error').textContent = ''; if(dialog) dialog.querySelectorAll('.dialog-error').forEach(n => n.textContent = ''); try { await fn(); } catch (error) { setError(error, dialog); } }
@@ -22,36 +23,56 @@ function translate() {
  document.documentElement.lang = language === 'zh' ? 'zh-CN' : 'en'; $('language').value = language;
  document.querySelectorAll('[data-i18n]').forEach(n => n.textContent = t(n.dataset.i18n));
  document.querySelectorAll('[data-i18n-placeholder]').forEach(n => n.placeholder = t(n.dataset.i18nPlaceholder));
- document.querySelectorAll('.close').forEach(n => n.setAttribute('aria-label', t('close'))); $('menu').setAttribute('aria-label', t('menu'));
+ document.querySelectorAll('.close').forEach(n => n.setAttribute('aria-label', t('close'))); document.querySelectorAll('[data-i18n-label]').forEach(n => { n.setAttribute('aria-label', t(n.dataset.i18nLabel)); n.title=t(n.dataset.i18nLabel); });
  $('budget').title = t('budgetNotice'); renderNavigation(); renderState(); renderDirectory();
  if ($('manage-dialog').open) renderManage();
  if ($('create-dialog').open) renderCreate();
  if ($('mcp-dialog').open) renderMCP();
 }
 function renderNavigation() {
+ $('access').textContent = adminToken ? t('ownerScope') : active ? t('roomOnly') : t('connect'); $('bot-count').textContent = bots.length;
+ const navSignature=JSON.stringify([language,rooms,active?.id,$('room-search').value,[...roomPreviews]]);
+ if($('room-list').dataset.signature===navSignature)return;
+ $('room-list').dataset.signature=navSignature;
+ const focusedRoom=document.activeElement?.dataset.roomId;
  $('room-list').replaceChildren();
  if (!rooms.length) $('room-list').append(element('p', 'nav-empty', t('noRooms')));
- for (const room of rooms) { const button = element('button', 'room-nav' + (active?.id === room.id ? ' active' : '')); button.append(element('span','room-symbol','◉'), element('span','room-nav-name',room.name)); button.onclick = () => action(() => selectRoom(room)); $('room-list').append(button); }
+ const query = $('room-search').value.trim().toLocaleLowerCase();
+ const matches = rooms.filter(room => room.name.toLocaleLowerCase().includes(query));
+ if (rooms.length && !matches.length) $('room-list').append(element('p','nav-empty',t('noMatches')));
+ for (const room of matches) {
+  const button=element('button','room-nav'+(active?.id===room.id?' active':''));
+  button.dataset.roomId=room.id;
+  button.setAttribute('aria-current',active?.id===room.id?'page':'false');
+  const avatar=element('span','avatar room-avatar',room.name.slice(0,1).toLocaleUpperCase());
+  const content=element('span','room-nav-content'); const title=element('span','room-nav-title');
+  title.append(element('span','room-nav-name',room.name)); const preview=roomPreviews.get(room.id);
+  if(preview) title.append(element('time','',new Date(preview.created*1000).toLocaleTimeString(language==='zh'?'zh-CN':'en-US',{hour:'2-digit',minute:'2-digit'})));
+  content.append(title,element('span','room-preview',preview?.body||t('roomPreview')));button.append(avatar,content);
+  button.onclick=()=>action(()=>selectRoom(room));$('room-list').append(button);if(focusedRoom===room.id)button.focus();
+ }
  $('access').textContent = adminToken ? t('ownerScope') : active ? t('roomOnly') : t('connect'); $('bot-count').textContent = bots.length;
 }
 async function reloadWorkspace() { requireAdmin(); [rooms,bots] = await Promise.all([api('/api/rooms',adminToken),api('/api/bots',adminToken)]); renderNavigation(); }
-async function selectRoom(room) { active = room; state = null; threadId = ''; selected = new Set(); $('sidebar').classList.remove('open'); renderNavigation(); await refresh(true); }
+async function selectRoom(room) { active = room; state = null; threadId = ''; selected = new Set(); document.querySelector('.app-shell').classList.add('chat-open'); renderNavigation(); await refresh(true); }
 async function refresh(force = false) {
  if (!active || (refreshing && !force)) return;
  const current = active; refreshing = true;
- try { const data = await api(`/api/rooms/${current.id}`, adminToken || roomTokens.get(current.id)); if (active !== current) return; const first = !state; state = data; active.name = data.room.name; active.lead = data.room.lead; rooms = rooms.map(r => r.id === current.id ? {...r,...data.room} : r); if (first) selected = new Set(data.agents.map(a => a.id)); else selected = new Set([...selected].filter(id => data.agents.some(a => a.id === id))); renderState(); renderNavigation(); }
+ try { const data = await api(`/api/rooms/${current.id}`, adminToken || roomTokens.get(current.id)); if (active !== current) return; const first = !state; state = data; if(data.messages.length) roomPreviews.set(current.id,data.messages.at(-1)); active.name = data.room.name; active.lead = data.room.lead; rooms = rooms.map(r => r.id === current.id ? {...r,...data.room} : r); if (first) selected = new Set(data.agents.map(a => a.id)); else selected = new Set([...selected].filter(id => data.agents.some(a => a.id === id))); renderState(); renderNavigation(); }
  finally { refreshing = false; }
 }
 function renderState() {
  const connected = Boolean(active && state); $('welcome').hidden = connected; $('thread-bar').hidden = !connected; $('composer-wrap').classList.toggle('inactive', !connected);
- $('manage').disabled = !connected; $('send').disabled = !connected; $('stop').disabled = !connected;
+ $('manage').disabled = !connected; $('options-open').disabled = !connected; $('stop').hidden = true; $('send').disabled = !connected; $('stop').disabled = !connected;
  if (!connected) { $('room-title').textContent = t('welcomeTitle'); $('room-subtitle').textContent = t('welcomeSub'); $('status').textContent = t('disconnected'); $('messages').replaceChildren(); $('participants').replaceChildren(); $('member-list').replaceChildren(); $('participant-count').textContent='0'; return; }
  $('room-title').textContent = state.room.name; $('room-subtitle').textContent = `${state.agents.length} ${t('participants')} · ${state.room.lead ? t('leadBadge') : t('noneLead')}`;
  const currentRun = state.runs.at(-1); const running = currentRun?.status === 'running';
  const displayRun = state.runs.find(r => r.id === threadId) || currentRun; $('status').textContent = displayRun ? `${t('run_' + displayRun.status)} · ${displayRun.turn}/${displayRun.budget}` : t('idle'); $('status').classList.toggle('running', running);
- $('send').disabled = running; $('stop').disabled = !running; $('body').disabled = running; $('budget').disabled = running;
- const selector = $('thread-select'); selector.replaceChildren(); const latestOption = element('option','',t('latest')); latestOption.value=''; selector.append(latestOption);
- state.runs.forEach((run,index) => { const option = element('option','',`${t('history')} ${index+1} · ${t('run_' + run.status)}`); option.value=run.id; selector.append(option); }); selector.value = threadId;
+ $('send').disabled = running; $('send').hidden = running; $('stop').disabled = !running; $('stop').hidden = !running; $('body').disabled = running; $('budget').disabled = running;
+ const selector = $('thread-select');
+ const threadSignature=JSON.stringify([language,state.runs.map(run=>[run.id,run.status])]);
+ if(selector.dataset.signature!==threadSignature){selector.dataset.signature=threadSignature;selector.replaceChildren(); const latestOption = element('option','',t('latest')); latestOption.value=''; selector.append(latestOption);
+ state.runs.forEach((run,index) => { const option = element('option','',`${t('history')} ${index+1} · ${t('run_' + run.status)}`); option.value=run.id; selector.append(option); });} selector.value = threadId;
  const shownRun = threadId || currentRun?.id; const messages = state.messages.filter(m => m.run === shownRun);
  const wasNearBottom = $('chat').scrollHeight - $('chat').scrollTop - $('chat').clientHeight < 140;
  const signature = JSON.stringify([language,shownRun,messages]);
@@ -68,9 +89,12 @@ function renderState() {
   }
   if (wasNearBottom || !threadId) requestAnimationFrame(() => { $('chat').scrollTop = $('chat').scrollHeight; });
  }
- $('participants').replaceChildren(); $('participants').title=t('targetHint'); $('member-list').replaceChildren(); $('participant-count').textContent=state.agents.length;
+ const focusedAgent=document.activeElement?.dataset.agentId;
+ const participantSignature=JSON.stringify([language,state.agents,[...selected],running,state.room.lead]);
+ const updateParticipants=$('participants').dataset.signature!==participantSignature;
+ if(updateParticipants){$('participants').dataset.signature=participantSignature;$('participants').replaceChildren();} $('participants').title=t('targetHint'); $('member-list').replaceChildren(); $('participant-count').textContent=state.agents.length;
  for (const agent of state.agents) {
-  const chip=element('button','participant-chip'+(selected.has(agent.id)?' selected':''),agent.name); chip.type='button'; chip.setAttribute('aria-pressed',String(selected.has(agent.id))); chip.disabled=running; if(agent.id===state.room.lead) chip.append(element('span','',` · ${t('lead')}`)); chip.onclick=()=>{if(selected.has(agent.id))selected.delete(agent.id);else selected.add(agent.id);renderState();}; $('participants').append(chip);
+  const chip=element('button','participant-chip'+(selected.has(agent.id)?' selected':''),agent.name); chip.type='button'; chip.dataset.agentId=agent.id; chip.setAttribute('aria-pressed',String(selected.has(agent.id))); chip.disabled=running; if(agent.id===state.room.lead) chip.append(element('span','',` · ${t('lead')}`)); chip.onclick=()=>{if(selected.has(agent.id))selected.delete(agent.id);else selected.add(agent.id);renderState();}; if(updateParticipants){$('participants').append(chip);if(focusedAgent===agent.id)chip.focus();}
   const row=element('div','member'); row.append(element('div','avatar small-avatar','◈')); const info=element('div','member-info'); info.append(element('strong','',agent.name),element('span','',agent.kind==='demo'?t('ready'):t('waiting'))); row.append(info); if(agent.id===state.room.lead) row.append(element('span','lead-badge',t('lead'))); $('member-list').append(row);
  }
  if(!state.agents.length)$('member-list').append(element('p','muted',t('noBots')));
@@ -93,14 +117,16 @@ function renderManage() {
 function renderMCP(){const config={mcpServers:{roundtable:{command:'/absolute/path/to/.venv/bin/python',args:['/absolute/path/to/bot-roundtable/mcp_bridge.py'],env:{ROUNDTABLE_URL:'http://127.0.0.1:8765',ROUNDTABLE_ROOM:active?.id||'ROOM_ID',ROUNDTABLE_AGENT:'REGISTERED_BOT_ID',ROUNDTABLE_TOKEN:'ROOM_SCOPED_AGENT_TOKEN'}}}};$('mcp-config').textContent=JSON.stringify(config,null,2);}
 function showBotForm(leadRoom=null){requireAdmin();leadContext=leadRoom;$('bot-form').reset();$('bot-dialog-title').textContent=t(leadRoom?'createLead':'registerBot');openDialog('bot-dialog');}
 $('language').onchange=()=>{language=$('language').value;localStorage.setItem('roundtable-language',language);translate();};
-$('menu').onclick=()=>$('sidebar').classList.toggle('open');
+$('menu').onclick=()=>{document.querySelector('.app-shell').classList.remove('chat-open'); $('room-search').focus();};
+$('room-search').oninput=renderNavigation;
+$('options-open').onclick=()=>openDialog('options-dialog');
 document.querySelectorAll('.close').forEach(button=>button.onclick=()=>button.closest('dialog').close());
 $('secret-dialog').addEventListener('close',()=>{$('secrets').textContent='';});
 $('access').onclick=()=>openDialog('access-dialog');$('new-room').onclick=showCreate;$('hero-create').onclick=showCreate;
 $('access-form').onsubmit=event=>{event.preventDefault();action(async()=>{const candidate=$('admin').value;const listed=await api('/api/rooms',candidate);adminToken=candidate;$('admin').value='';rooms=listed;bots=await api('/api/bots',adminToken);closeDialog('access-dialog');renderNavigation();if(rooms.length)await selectRoom(rooms[0]);},$('access-dialog'));};
 $('room-connect').onclick=()=>action(async()=>{const id=$('room').value.trim();if(!/^[a-f0-9]{24}$/.test(id))throw new Error('Invalid room or agent credential');const token=$('token').value.trim();const data=await api(`/api/rooms/${id}`,token);adminToken='';roomTokens.set(id,token);rooms=[data.room];bots=[];$('token').value='';closeDialog('access-dialog');await selectRoom(data.room);},$('access-dialog'));
 $('create-form').onsubmit=event=>{event.preventDefault();action(async()=>{requireAdmin();const chosen=[...document.querySelectorAll('#create-bots input:checked')].map(n=>n.value);const room=await api('/api/rooms',adminToken,{name:$('name').value,bots:chosen});roomTokens.set(room.id,room.token);closeDialog('create-dialog');await reloadWorkspace();await selectRoom(room);showSecrets({room_id:room.id,room_token:room.token,agents:room.agent_tokens});},$('create-dialog'));};
-$('compose').onsubmit=event=>{event.preventDefault();action(async()=>{if(!selected.size)throw new Error('emptySelection');await api(roomPath('/runs'),roomAuth(),{body:$('body').value,targets:state.agents.filter(a=>selected.has(a.id)).map(a=>a.id),budget:Number($('budget').value),request_id:crypto.randomUUID()});$('body').value='';threadId='';await refresh();});};
+$('compose').onsubmit=event=>{event.preventDefault();action(async()=>{if(!$('budget').checkValidity()){openDialog('options-dialog');$('budget').focus();$('budget').reportValidity();return;}if(!selected.size)throw new Error('emptySelection');await api(roomPath('/runs'),roomAuth(),{body:$('body').value,targets:state.agents.filter(a=>selected.has(a.id)).map(a=>a.id),budget:Number($('budget').value),request_id:crypto.randomUUID()});$('body').value='';threadId='';await refresh();});};
 $('stop').onclick=()=>action(async()=>{await api(roomPath('/stop'),roomAuth(),{});await refresh();});
 $('thread-select').onchange=()=>{threadId=$('thread-select').value;renderState();};$('latest').onclick=()=>{threadId='';renderState();};
 $('directory').onclick=()=>action(async()=>{requireAdmin();await reloadWorkspace();renderDirectory();openDialog('directory-dialog');});
