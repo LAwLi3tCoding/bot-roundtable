@@ -64,7 +64,7 @@ async function refresh(force = false) {
 function renderState() {
  const connected = Boolean(active && state); $('welcome').hidden = connected; $('thread-bar').hidden = !connected; $('composer-wrap').classList.toggle('inactive', !connected);
  $('manage').disabled = !connected; $('options-open').disabled = !connected; $('stop').hidden = true; $('send').disabled = !connected; $('stop').disabled = !connected;
- if (!connected) { $('room-title').textContent = t('welcomeTitle'); $('room-subtitle').textContent = t('welcomeSub'); $('status').textContent = t('disconnected'); $('messages').replaceChildren(); $('participants').replaceChildren(); $('member-list').replaceChildren(); $('participant-count').textContent='0'; return; }
+ if (!connected) { $('room-title').textContent = t('welcomeTitle'); $('room-subtitle').textContent = t('welcomeSub'); $('status').textContent = t('disconnected'); $('messages').replaceChildren(); $('participants').replaceChildren(); $('member-list').replaceChildren(); $('participant-count').textContent='0'; window.HandoffUI?.render(); return; }
  $('room-title').textContent = state.room.name; $('room-subtitle').textContent = `${state.agents.length} ${t('participants')} · ${state.room.lead ? t('leadBadge') : t('noneLead')}`;
  const currentRun = state.runs.at(-1); const running = currentRun?.status === 'running';
  const displayRun = state.runs.find(r => r.id === threadId) || currentRun; $('status').textContent = displayRun ? `${t('run_' + displayRun.status)} · ${displayRun.turn}/${displayRun.budget}` : t('idle'); $('status').classList.toggle('running', running);
@@ -80,7 +80,7 @@ function renderState() {
   $('messages').dataset.signature=signature; $('messages').replaceChildren();
   if (!messages.length) $('messages').append(element('div','empty-thread',t('noMessages')));
   for (const message of messages) {
-   const agent = state.agents.find(a => a.id === message.sender); const human = message.sender === 'user' && message.source === 'human'; const article = element('article', 'message ' + (human ? 'human' : 'bot'));
+   const senderId=message.sender.startsWith('bot:')?message.sender.slice(4):message.sender; const agent = state.agents.find(a => a.id === senderId); const human = message.sender === 'user' && message.source === 'human'; const article = element('article', 'message ' + (human ? 'human' : 'bot'));
    const avatar = element('div','avatar' + (message.sender === state.room.lead ? ' lead-avatar' : ''), human ? '↗' : '◈');
    const content = element('div','message-content'); const meta = element('div','message-meta'); meta.append(element('strong','', human ? t('human') : agent?.name || message.sender), element('span','source',sourceLabel(message.source)));
    if (message.sender === state.room.lead) meta.append(element('span','lead-badge',t('lead')));
@@ -98,6 +98,7 @@ function renderState() {
   const row=element('div','member'); row.append(element('div','avatar small-avatar','◈')); const info=element('div','member-info'); info.append(element('strong','',agent.name),element('span','',agent.kind==='demo'?t('ready'):t('waiting'))); row.append(info); if(agent.id===state.room.lead) row.append(element('span','lead-badge',t('lead'))); $('member-list').append(row);
  }
  if(!state.agents.length)$('member-list').append(element('p','muted',t('noBots')));
+ window.HandoffUI?.render();
  $('lead-note').textContent=state.room.lead ? `${t('lead')}: ${state.agents.find(a=>a.id===state.room.lead)?.name||state.room.lead}` : '';
 }
 function renderCreate() {
@@ -114,7 +115,7 @@ function renderManage() {
  $('manage-members').replaceChildren();for(const agent of state.agents){const row=element('div','manage-member');const identity=element('div');identity.append(element('strong','',agent.name),element('small','muted',agent.id));const number=element('input');number.type='number';number.min='0';number.max='20';number.value=agent.allowance;number.setAttribute('aria-label',`${agent.name} ${t('allowance')}`);const grant=element('button','secondary compact',t('grant'));grant.type='button';grant.onclick=()=>action(async()=>{await api(roomPath('/grant'),roomAuth(),{id:agent.id,allowance:Number(number.value)});await refresh(true);renderManage();},$('manage-dialog'));const remove=element('button','danger compact',t('remove'));remove.type='button';remove.onclick=()=>action(async()=>{if(!confirm(t('deleteConfirm')))return;await api(roomPath('/remove'),roomAuth(),{id:agent.id});await refresh(true);renderManage();},$('manage-dialog'));row.append(identity,number,grant,remove);$('manage-members').append(row);}
  $('join-select').replaceChildren();for(const bot of bots.filter(b=>!state.agents.some(a=>a.id===b.id))){const option=element('option','',bot.name);option.value=bot.id;$('join-select').append(option);}$('join-form').querySelector('button').disabled=!$('join-select').options.length;
 }
-function renderMCP(){const config={mcpServers:{roundtable:{command:'/absolute/path/to/.venv/bin/python',args:['/absolute/path/to/bot-roundtable/mcp_bridge.py'],env:{ROUNDTABLE_URL:'http://127.0.0.1:8765',ROUNDTABLE_ROOM:active?.id||'ROOM_ID',ROUNDTABLE_AGENT:'REGISTERED_BOT_ID',ROUNDTABLE_TOKEN:'ROOM_SCOPED_AGENT_TOKEN'}}}};$('mcp-config').textContent=JSON.stringify(config,null,2);}
+function renderMCP(){void action(refreshConnections,$('mcp-dialog'));const config={mcpServers:{roundtable:{command:'/absolute/path/to/.venv/bin/python',args:['/absolute/path/to/bot-roundtable/mcp_bridge.py'],env:{ROUNDTABLE_URL:'http://127.0.0.1:8765',ROUNDTABLE_ROOM:active?.id||'ROOM_ID',ROUNDTABLE_AGENT:'REGISTERED_BOT_ID',ROUNDTABLE_TOKEN:'ROOM_SCOPED_AGENT_TOKEN'}}}};$('mcp-config').textContent=JSON.stringify(config,null,2);}
 function showBotForm(leadRoom=null){requireAdmin();leadContext=leadRoom;$('bot-form').reset();$('bot-dialog-title').textContent=t(leadRoom?'createLead':'registerBot');openDialog('bot-dialog');}
 $('language').onchange=()=>{language=$('language').value;localStorage.setItem('roundtable-language',language);translate();};
 $('menu').onclick=()=>{document.querySelector('.app-shell').classList.remove('chat-open'); $('room-search').focus();};
@@ -139,3 +140,12 @@ $('join-form').onsubmit=event=>{event.preventDefault();action(async()=>{const cr
 $('copy-secrets').onclick=()=>action(async()=>{await navigator.clipboard.writeText($('secrets').textContent);$('copy-secrets').textContent=t('copied');});
 $('mcp-open').onclick=()=>{renderMCP();openDialog('mcp-dialog');};
 translate();setInterval(()=>refresh().catch(error=>setError(error)),1200);
+
+async function refreshConnections(){
+ const results=$('connection-results');results.replaceChildren();
+ if(!active){results.textContent=t('needConnection');return;}
+ const room=active.id;const data=await api(roomPath('/connections'),roomAuth());
+ if(active?.id!==room)return;
+ for(const member of data.members){const row=element('p','small');row.append(element('strong','',member.name+' · '),element('span','',member.observed?`${t('connectionObserved')} ${new Date(member.observed*1000).toLocaleString()}`:t('connectionUnseen')));if(member.observed&&member.nonce)row.append(element('code','',` · nonce: ${member.nonce}`));results.append(row);}
+}
+$('connection-refresh').onclick=()=>action(refreshConnections,$('mcp-dialog'));

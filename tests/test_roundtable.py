@@ -283,7 +283,9 @@ class GrokTests(unittest.TestCase):
     @patch.dict("os.environ", {"HTTPS_PROXY": "http://proxy.invalid:8080"})
     @patch("grok_adapter.socket.getaddrinfo")
     def test_proxy_environment_fails_closed(self, dns):
-        with self.assertRaises(RuntimeError):
+        from outbound import OutboundConfigurationError
+
+        with self.assertRaisesRegex(OutboundConfigurationError, "explicit_outbound_proxy_required"):
             self.adapter.dispatch(self.job)
         dns.assert_not_called()
 

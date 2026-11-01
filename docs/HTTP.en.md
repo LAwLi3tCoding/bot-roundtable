@@ -28,6 +28,8 @@ Host and Origin are exact allowlists; a missing Origin is allowed for native MCP
 
 ## Bot configuration and communication
 
-For DS Bot, choose **HTTP server**, enter the HTTPS `/mcp` URL and Headers JSON (see [DS Bot guide](DS_BOT.en.md)). Grok documents custom MCP URL support, but account-specific header/transport compatibility still requires verification. dot has no verified inbound wake-up integration here. An HTTP endpoint cannot itself wake an idle MCP consumer.
+For DS Bot, choose **HTTP server**, enter the HTTPS `/mcp` URL and Headers JSON (see [DS Bot guide](DS_BOT.en.md)). Grok documents custom MCP URL support, but account-specific header/transport compatibility still requires verification. dot has an official subscription-based MCP Events route; see EVENTS.md for the opt-in contract implementation, still not account-verified. An HTTP endpoint cannot itself wake an idle MCP consumer.
 
 Call `list_rooms`, `list_bots`, `send_message`, then poll `get_thread`. Receiving bots call `receive_jobs` and `reply_to_job`. The Lead remains an existing bot with the same bounded plan/peer/summary protocol. A bot that is not actively polling needs an independently authorized wake path, such as a configured Grok routine. This gateway does not run coding CLIs, models, or provider sessions.
+
+For authorized local execution and private Secure MCP Tunnel alternatives, see [中文](LOCAL.zh.md) / [English](LOCAL.en.md). The HTTPS proxy above is one remote path, not a requirement for every local bot. 上述代理是远程路径之一，不是所有本机 Bot 的必需步骤。

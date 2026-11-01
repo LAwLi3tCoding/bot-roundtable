@@ -5,11 +5,13 @@ from __future__ import annotations
 import argparse
 import asyncio
 import hashlib
+import hmac
 import http.client
 import json
 import os
 import re
 from dataclasses import dataclass
+from starlette.types import ASGIApp
 from urllib.parse import urlsplit
 
 import uvicorn
@@ -128,7 +130,8 @@ class HTTPAuthOnly:
 class OriginGate:
     """Reject host/origin confusion before credentials or backend requests are processed."""
 
-    def __init__(self, app, hosts: list[str], origins: list[str]):
+    def __init__(self, app, hosts: list[str], origins: list[str], expected_bearer: str = ""):
+        self.expected_bearer = expected_bearer
         self.app, self.hosts, self.origins = app, set(hosts), set(origins)
 
     async def __call__(self, scope, receive, send):
@@ -137,6 +140,18 @@ class OriginGate:
             hosts = [v.decode("latin1") for k, v in headers if k.lower() == b"host"]
             origins = [v.decode("latin1") for k, v in headers if k.lower() == b"origin"]
             authorizations = [v for k, v in headers if k.lower() == b"authorization"]
+            if self.expected_bearer and (
+                len(authorizations) != 1
+                or not hmac.compare_digest(authorizations[0], self.expected_bearer.encode())
+            ):
+                await JSONResponse(
+                    {
+                        "error": "tunnel_authorization_mismatch",
+                        "hint": "Check connector forwarded Authorization override; keep authentication enabled",
+                    },
+                    status_code=403,
+                )(scope, receive, send)
+                return
             if (
                 len(hosts) != 1
                 or hosts[0] not in self.hosts
@@ -151,7 +166,16 @@ class OriginGate:
         await self.app(scope, receive, send)
 
 
-def build_http_app(base: str, grants_json: str, port: int = 8766, public_url: str = ""):
+def build_http_app(
+    base: str,
+    grants_json: str,
+    port: int = 8766,
+    public_url: str = "",
+    events_db: str = "",
+    event_hosts: list[str] | None = None,
+    event_transport=None,
+    expected_bearer: str = "",
+):
     grants = parse_grants(grants_json)
     verifier = ScopedVerifier(base, grants)
     hosts = [f"127.0.0.1:{port}", f"localhost:{port}"]
@@ -187,13 +211,21 @@ def build_http_app(base: str, grants_json: str, port: int = 8766, public_url: st
             ),
         },
     )
-    protocol_app = bridge.streamable_http_app()
+    protocol_app: ASGIApp = bridge.streamable_http_app()
+    if events_db:
+        from mcp_events import EventBroker, EventsHTTP
+        from event_delivery import CallbackTransport
+
+        broker = EventBroker(
+            events_db, verifier, event_transport or CallbackTransport(event_hosts or [])
+        )
+        protocol_app = EventsHTTP(protocol_app, broker)
     # SDK auth context is propagated into tool execution; each request obtains
     # its own identity. Stateless transport prevents cross-principal session reuse.
     secured = AuthenticationMiddleware(
         AuthContextMiddleware(HTTPAuthOnly(protocol_app)), backend=BearerAuthBackend(verifier)
     )
-    return OriginGate(secured, hosts, origins)
+    return OriginGate(secured, hosts, origins, expected_bearer)
 
 
 def main():
@@ -204,6 +236,15 @@ def main():
         default="",
         help="Exact external HTTPS /mcp URL to allow behind a trusted proxy; does not change the loopback bind",
     )
+    parser.add_argument(
+        "--events-db", default="", help="Opt-in private subscription/outbox SQLite path"
+    )
+    parser.add_argument(
+        "--event-host",
+        action="append",
+        default=[],
+        help="Exact operator-approved callback hostname; repeat as needed",
+    )
     args = parser.parse_args()
     try:
         app = build_http_app(
@@ -211,6 +252,9 @@ def main():
             os.environ["ROUNDTABLE_HTTP_GRANTS"],
             args.port,
             args.public_url,
+            args.events_db,
+            args.event_host,
+            expected_bearer=os.environ.get("ROUNDTABLE_TUNNEL_AUTH_HEADER", ""),
         )
     except (KeyError, ValueError):
         parser.error("Invalid or missing gateway configuration; no credentials are printed")

@@ -12,6 +12,7 @@ from typing import cast
 from urllib.parse import urlsplit
 
 from roundtable import Problem, Store
+from connections import capabilities
 
 STATIC = Path(__file__).parent / "static"
 
@@ -62,10 +63,17 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
                 if origin and origin not in {f"http://{h}" for h in allowed}:
                     raise Problem(403, "Origin rejected")
                 path = urlsplit(self.path).path
-                if method == "GET" and path in ("/", "/app.js", "/i18n.js", "/style.css"):
+                if method == "GET" and path in (
+                    "/",
+                    "/app.js",
+                    "/i18n.js",
+                    "/style.css",
+                    "/handoffs.js",
+                ):
                     file, mime = {
                         "/": ("index.html", "text/html; charset=utf-8"),
                         "/app.js": ("app.js", "text/javascript; charset=utf-8"),
+                        "/handoffs.js": ("handoffs.js", "text/javascript; charset=utf-8"),
                         "/i18n.js": ("i18n.js", "text/javascript; charset=utf-8"),
                         "/style.css": ("style.css", "text/css; charset=utf-8"),
                     }[path]
@@ -97,6 +105,25 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
                 logging.error("request_failed")
                 self.respond(500, {"error": "Internal server error"})
 
+        def task_dispatch(self, room, actor, tail, method, body):
+            if not tail:
+                if method == "GET":
+                    return (200, store.handoffs.listing(room, actor))
+                return (201, store.handoffs.create(room, actor, body))
+            if len(tail) != 1 or method != "POST":
+                raise Problem(404, "Not found")
+            operation = tail[0]
+            if operation == "query":
+                return (
+                    200,
+                    store.handoffs.snapshot(room, actor, body.get("task_id"), body.get("after", 0)),
+                )
+            if operation == "inbox":
+                return (200, store.handoffs.inbox(room, actor))
+            if operation in ("claim", "update", "context", "cancel", "retry"):
+                return (200, store.handoffs.operate(room, actor, operation, body))
+            raise Problem(404, "Not found")
+
         def dispatch(self, method, path, token, body):
             if path in ("/api/rooms", "/api/bots"):
                 if not hmac.compare_digest(token, admin):
@@ -127,8 +154,16 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
                 if len(parts) == 6 and parts[5] == "access" and method == "GET":
                     return (200, {"authorized": True, "room": room, "agent": agent})
                 if parts[5] == "peer":
+                    if len(parts) == 7 and parts[6] == "probe" and method == "POST":
+                        return (200, store.connections.probe(room, agent, body.get("nonce")))
+                    if len(parts) == 7 and parts[6] == "capabilities" and method == "GET":
+                        return (200, capabilities(getattr(store, "terminal_worker", None)))
+                    if len(parts) == 7 and parts[6] == "event-feed" and method == "POST":
+                        return (200, store.handoffs.event_feed(room, "bot:" + agent, body))
+                    if len(parts) >= 7 and parts[6] == "tasks":
+                        return self.task_dispatch(room, "bot:" + agent, parts[7:], method, body)
                     if len(parts) == 6 and method == "GET":
-                        return (200, store.state(room))
+                        return (200, store.state(room, "bot:" + agent))
                     if len(parts) == 7 and method == "POST" and parts[6] == "runs":
                         return (
                             200,
@@ -162,6 +197,16 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
             if not hmac.compare_digest(token, admin):
                 store.authorize(room, token)
             store.state(room)  # Verify existence even for an admin credential.
+            if len(parts) == 4 and parts[3] == "connections" and method == "GET":
+                return (
+                    200,
+                    {
+                        "members": store.connections.status(room),
+                        "capabilities": capabilities(getattr(store, "terminal_worker", None)),
+                    },
+                )
+            if len(parts) >= 4 and parts[3] == "tasks":
+                return self.task_dispatch(room, "user", parts[4:], method, body)
             if len(parts) == 3 and method == "GET":
                 return (200, store.state(room))
             if len(parts) == 4 and method == "POST":
@@ -195,6 +240,13 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
     return ThreadingHTTPServer((host, port), Handler)
 
 
+def run_ticks(store, stop, interval=0.5):
+    """Expire handoffs even without demo members or a polling client."""
+    while not stop.wait(interval):
+        store.handoffs.expire()
+        store.demo_tick()
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=8765)
@@ -207,13 +259,21 @@ def main():
     Path(args.db).parent.mkdir(parents=True, exist_ok=True)
     store = Store(args.db)
     server = make_server(store, admin, port=args.port)
+    from terminal_receipts import configured_worker
+
+    worker = None
+    try:
+        worker = configured_worker(args.db)
+        setattr(store, "terminal_worker", worker)
+        if worker:
+            worker.start()
+    except Exception:
+        server.server_close()
+        store.db.close()
+        parser.error("Terminal notification configuration or startup failed")
     stop = threading.Event()
 
-    def tick():
-        while not stop.wait(0.5):
-            store.demo_tick()
-
-    thread = threading.Thread(target=tick, daemon=True)
+    thread = threading.Thread(target=run_ticks, args=(store, stop), daemon=True)
     thread.start()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     logging.info("Listening at http://127.0.0.1:%s", args.port)
@@ -224,6 +284,8 @@ def main():
     finally:
         stop.set()
         thread.join()
+        if worker:
+            worker.stop()
         server.server_close()
         store.db.close()
 

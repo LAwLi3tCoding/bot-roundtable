@@ -19,8 +19,8 @@ This hub transports task messages and results. It never controls a Bot's coding 
 - `roundtable.py`: global identity registry; room memberships with independent token hashes; lead configuration; run/job/message persistence; nested SAVEPOINT transactions under one RLock. 全局目录只存身份信息，加入每个群生成独立凭据。
 - `server.py`: loopback HTTP authentication and routing. Parsing/response I/O occur outside the Store lock; authentication and operation occur together inside it. 避免撤销凭据与请求之间的竞态。
 - `mcp_bridge.py`: official FastMCP stdio tools backed by HTTP. Environment selects one room and optional agent identity; tool payload cannot replace either. No second Store process is opened. 工具参数无法自报身份或任意选择群。
-- `grok_adapter.py`: optional explicitly invoked routine webhook. Validated public IP pinning, TLS hostname verification, no redirects/retries, no proxy bypass. Not scheduled automatically.
-- `static/`: original three-column responsive chat UI; translation dictionaries; no CDN/framework. Language is the only localStorage key; credentials remain memory-only.
+- `grok_adapter.py`: optional explicitly invoked routine webhook. Direct mode validates and pins public IPs; explicit outbound proxy mode uses hostname CONNECT and trusts proxy DNS. Both retain TLS hostname verification, no redirects/retries, and no proxy bypass. Not scheduled automatically.
+- `static/`: original two-column desktop chat and handoff UI; translation dictionaries; no CDN/framework. Language is the only localStorage key; credentials remain memory-only.
 
 ## Trust and scope / 权限
 
@@ -34,7 +34,7 @@ Agent registration is not connectivity or authentication to the named provider. 
 
 注册仅是身份登记，不证明产品已连接。新增成员能够读取该群共享历史，这是群权限的一部分；单个任务只发送当前讨论上下文。
 
-## Scheduler / 调度
+## Discussion scheduler / 旧讨论调度
 
 - A run freezes its actor, participants, Lead, plan and total budget. No response text can change them.
 - Without Lead: repeat the selected participant order, budget 1–20.
@@ -52,6 +52,14 @@ job: pending → done | stopped | timeout | failed | interrupted
 
 上述调度由 hub 唯一控制，Lead 只在明确角色与预算内规划和总结。终态不自动重试；重启标记 interrupted，不重放可能已经发生的外部动作。
 
+## Independent native tasks / 原生独立任务
+
+`handoffs.py` adds persistent tasks, assignments, events and idempotency receipts. Server authentication derives origin/coordinator; Web and MCP call the same operations. Multiple workers receive distinct instructions, claim their own short leases, report progress/results, and fan in to one task. The active origin reads those results. Task mode allows a Lead to coordinate other members without weakening the old discussion guard.
+
+新任务按 room 和成员 epoch 隔离，预算/深度/deadline 有界；取消递归到子任务，重启保留任务状态而不自行执行。父子关联不是 DAG，父状态只汇总自身 assignments。列表仅提供有界摘要，完整结果与分页事件由 get_task 获取。详见 [协议与恢复](docs/HANDOFFS.zh.md) / [protocol and recovery](docs/HANDOFFS.en.md).
+
+Task callbacks do not enter the old discussion scheduler. The Grok routine adapter now supports explicitly invoked assignment wake hints as well as old jobs; it never claims a lease before wake. No account connections or public deployment were performed. A hosted dot plugin expects OAuth 2.1, which this static-Bearer MCP gateway does not implement.
+
 ## MCP semantics / MCP 语义
 
 `initialize` / `tools/list` / `tools/call` use the official MCP SDK and stdio / Streamable HTTP transports. `send_message` returns immediately with a run ID. `get_thread` polls results. `receive_jobs`/`reply_to_job` make the receiver side accessible through MCP too. A consumer must actively run these calls; the protocol does not guarantee wake-up after the consumer's turn ends.
@@ -63,3 +71,11 @@ One configured MCP process maps to one identity and room; extra groups use separ
 SQLite schema migrations add columns while retaining old rows. Old pending work becomes interrupted at startup. There is no downgrade migration; back up before upgrading. Single-process service only.
 
 Core tests exercise state/race/rollback properties. Official SDK clients negotiate protocol and exchange synthetic messages across distinct identities. Browser tests cover both locales and the real HTTP server. Real Grok/dot/DS Bot product connection tests are separate and have not occurred. No claims about provider interoperability are inferred from demo success.
+
+## Local connectivity and event boundary
+
+`local_client.py` is a narrow loopback protocol client, not a coding CLI controller. `connections.py` records credential-scoped probe observations and exposes capability declarations separately from actual native-account proof. Read-only doctor never infers native roundtrip/wake success from token possession.
+
+`mcp_events.py` extends the SDK JSON Streamable HTTP endpoint only when configured. Outer Host/Origin/auth middleware is unchanged. Draft events methods use authenticated identity; `handoffs.event_feed` filters the existing task event store. A separate private SQLite file stores callback subscriptions and durable delivery records, not a replacement task model. `event_delivery.py` signs exact bytes. Direct mode validates and pins public callback addresses; ambient-only proxy configuration fails closed. Explicit `ROUNDTABLE_OUTBOUND_PROXY` (or legacy `ROUNDTABLE_EVENT_PROXY`) uses hostname CONNECT and trusts proxy DNS while preserving HTTPS, exact hostname allowlists, original-host TLS verification, and no redirects. Callback network I/O runs outside the Hub Store and subscription database locks, with bounded delivery workers and total transport deadlines.
+
+真实 Grok 本机执行与 dot 私有 tunnel/Events 需要用户授权、配置和原生回环证明。MCP Events 是经用户订阅的独立唤醒路径，普通工具请求本身仍不保证唤醒。公开插件 OAuth 未实现；私有 tunnel 不自动等同 OAuth 或公开分发。
