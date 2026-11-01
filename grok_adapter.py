@@ -58,7 +58,7 @@ class GrokWebhook:
         self._post(json.dumps(payload_data).encode())
         return {"accepted": True, "completed": False, "job_id": job["id"]}
 
-    def dispatch_terminal(self, task_id: str, status: str) -> dict:
+    def dispatch_terminal(self, task_id: str, status: str, *, cancelled=None, state=None) -> dict:
         """Send only an operator-authorized terminal hint, never task contents."""
         import re
 
@@ -69,10 +69,10 @@ class GrokWebhook:
             "cancelled",
         ):
             raise ValueError("Terminal task receipt required")
-        self._post(json.dumps({"task_id": task_id, "status": status}).encode())
+        self._post(json.dumps({"task_id": task_id, "status": status}).encode(), cancelled, state)
         return {"accepted": True, "task_id": task_id, "status": status}
 
-    def _post(self, payload: bytes) -> None:
+    def _post(self, payload: bytes, cancelled=None, state=None) -> None:
         # Pin the validated address for the actual TLS connection. No redirect,
         # DNS rebinding, proxy auto-discovery, or URL from untrusted message data.
         if any(
@@ -94,17 +94,35 @@ class GrokWebhook:
             for address in map(ipaddress.ip_address, ips)
         ):
             raise ValueError("Endpoint resolves to a non-public address")
-        connection = PinnedHTTPSConnection(
-            self.host, timeout=10, context=ssl.create_default_context()
-        )
-        connection._create_connection = (
-            lambda _address, timeout, source_address: socket.create_connection(
-                (ips[0], 443), timeout, source_address
+        connection: PinnedHTTPSConnection
+        if cancelled is not None:
+            from event_delivery import DirectHTTPSConnection
+
+            if state is None or cancelled.is_set() or time.monotonic() >= state["deadline"]:
+                raise TimeoutError("Terminal delivery cancelled")
+            connection = DirectHTTPSConnection(
+                self.host,
+                ips[0],
+                state["deadline"] - time.monotonic(),
+                ssl.create_default_context(),
+                state,
+                cancelled,
             )
-        )
+            state["connection"] = connection
+        else:
+            connection = PinnedHTTPSConnection(
+                self.host, timeout=10, context=ssl.create_default_context()
+            )
+            connection._create_connection = (
+                lambda _address, timeout, source_address: socket.create_connection(
+                    (ips[0], 443), timeout, source_address
+                )
+            )
         if len(payload) > 100000:
             raise ValueError("Payload too large")
         try:
+            if cancelled is not None and cancelled.is_set():
+                raise TimeoutError("Terminal delivery cancelled")
             connection.request(
                 "POST",
                 self.path,

@@ -237,6 +237,13 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
     return ThreadingHTTPServer((host, port), Handler)
 
 
+def run_ticks(store, stop, interval=0.5):
+    """Expire handoffs even without demo members or a polling client."""
+    while not stop.wait(interval):
+        store.handoffs.expire()
+        store.demo_tick()
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=8765)
@@ -249,13 +256,20 @@ def main():
     Path(args.db).parent.mkdir(parents=True, exist_ok=True)
     store = Store(args.db)
     server = make_server(store, admin, port=args.port)
+    from terminal_receipts import configured_worker
+
+    worker = None
+    try:
+        worker = configured_worker(args.db)
+        if worker:
+            worker.start()
+    except Exception:
+        server.server_close()
+        store.db.close()
+        parser.error("Terminal notification configuration or startup failed")
     stop = threading.Event()
 
-    def tick():
-        while not stop.wait(0.5):
-            store.demo_tick()
-
-    thread = threading.Thread(target=tick, daemon=True)
+    thread = threading.Thread(target=run_ticks, args=(store, stop), daemon=True)
     thread.start()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     logging.info("Listening at http://127.0.0.1:%s", args.port)
@@ -266,6 +280,8 @@ def main():
     finally:
         stop.set()
         thread.join()
+        if worker:
+            worker.stop()
         server.server_close()
         store.db.close()
 

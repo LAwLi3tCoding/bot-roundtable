@@ -2,6 +2,9 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>Label</key><string>org.roundtable.mcp</string>
+<!-- Events remain disabled. After operator approval, append separate string arguments
+     after mcp: the events-db flag, a private absolute database path, the event-host flag,
+     an explicitly approved callback hostname. Loading does not authorize subscriptions. -->
 <key>ProgramArguments</key><array><string>/bin/sh</string><string>${ROUNDTABLE_HOME}/scripts/start-local.sh</string><string>mcp</string></array>
 <key>EnvironmentVariables</key><dict><key>ROUNDTABLE_HOME</key><string>${ROUNDTABLE_HOME}</string></dict>
 <key>RunAtLoad</key><false/>

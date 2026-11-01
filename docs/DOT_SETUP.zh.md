@@ -19,3 +19,11 @@
 Events 仍须明确配置并经授权订阅。`ROUNDTABLE_EVENT_TIMEOUT` 控制含 DNS 与传输在内的回调总期限，默认 20 秒，范围 0.01–120。Mac 回调约 7 秒是用户观察，非本项目实测。普通代理环境变量仍默认拒绝；明确使用可信 HTTP CONNECT 代理时设置 `ROUNDTABLE_EVENT_PROXY` 为 HTTP origin，不支持代理凭据。回调 DNS 全部结果必须为公网地址，CONNECT 使用已校验 IP，TLS 与 Host 保留原回调域名。不跟随重定向或回退直连。不可中断 DNS 在结束前继续占用有界工作槽位。主机拒绝日志仅含 `callback_host_not_approved` 和清理过的 hostname。
 
 另行批准订阅后，`handoff.available` 流程为 receive_assignments → claim_assignment → dot 核对任务及用户权限，通过自身已连接电脑工具创建 Codex 任务 → report progress → completed/failed。事件只是唤醒提示，不是新增授权；任务文本不能越过已批准的范围。
+
+配置获得批准后，可显式启用 Events 入口：
+
+```sh
+sh scripts/start-local.sh mcp --events-db "${ROUNDTABLE_HOME}/data/events.db" --event-host approved.hostname
+```
+
+将 `approved.hostname` 替换为明确批准的回调域名；多个域名重复传入 `--event-host`。脚本原样转发参数。默认 `mcp` 命令和 launchd 模板仍关闭 Events。使用 launchd 时，在 `mcp` 后把同样的参数逐项添加为 `ProgramArguments` 字符串，数据库路径需渲染为绝对路径，加载前审核。这里只启用入口；实际订阅 `handoff.available` 仍须在实现验收后取得用户另行确认。

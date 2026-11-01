@@ -1,6 +1,6 @@
 # 可选 Grok 终态回执
 
-这是操作人显式运行的命令，不是默认启用的服务钩子；它不创建 routine 或订阅。
+自动服务钩子默认关闭，也提供下方操作人显式运行的命令；它不创建 routine 或订阅。
 请自行配置 routine 并明确授权使用。通过可信秘密管理器继承
 `ROUNDTABLE_URL`、`ROUNDTABLE_ROOM`、`ROUNDTABLE_AGENT`、`ROUNDTABLE_TOKEN`
 以及 `GROK_ROUTINE_URL`、`GROK_ROUTINE_KEY`、`GROK_ALLOWED_HOST`。
@@ -13,7 +13,7 @@
 ```
 
 `--wait` 默认 0，上限 86400 秒。命令通过已有认证 loopback 客户端，约每秒查询
-指定任务；最后一次 HTTP 请求可能额外增加客户端网络超时时间。
+指定任务，使用客户端 wait 实现限制总等待时间。
 尚未终结就不预留、不发送。支持 `completed`、`failed`、`timeout`、`cancelled`；
 外发正文只有 `task_id` 和 `status`，不带指令、结果、令牌或 lease。
 复用 Grok 传输的 HTTPS 主机批准、公网 DNS 校验、固定 IP、TLS 验证及禁止代理、
@@ -28,3 +28,35 @@ SQLite 持久账本在网络发送之前，为每个群/任务原子预留**一�
 
 这不会启动 Codex、派发任务，也不构成 Grok 原生身份验证；mock 测试只验证协议和
 本机去重语义。
+
+## 自动服务钩子（显式启用）
+
+在启动新的 `server.py` 进程前，通过可信操作人配置继承以下设置。不要隐式重载或
+修改已有服务：
+
+```sh
+export ROUNDTABLE_TERMINAL_NOTIFICATIONS=1
+export ROUNDTABLE_TERMINAL_ROOM=YOUR_TEST_ROOM_ID
+export ROUNDTABLE_TERMINAL_ORIGIN=grok-origin
+export ROUNDTABLE_TERMINAL_LEDGER="${ROUNDTABLE_HOME}/data/terminal-receipts.db"
+# GROK_ROUTINE_URL / GROK_ROUTINE_KEY / GROK_ALLOWED_HOST 由秘密管理器提供
+"${ROUNDTABLE_HOME}/.venv/bin/python" "${ROUNDTABLE_HOME}/server.py"
+```
+
+指定 origin 必须是当前群成员。只选择属于该群、origin 为 `bot:<origin>` 且成员
+epoch 仍有效的任务。后台线程使用独立只读数据库连接观察已提交的终态事件。
+首次启用保存最新事件游标，跳过此前已终结的历史任务；已在运行及未来任务在进入
+终态后可以通知。游标持久保存，首次启用后的停机期间事件在重启后会被观察。
+必须保留同一账本；换账本会重置游标与发送预留。任务失败后重试不再产生第二条
+回执。成员与状态在选择时校验；选择后才撤销权限无法撤回已经开始的网络操作。
+
+服务在接受请求前启动线程，退出等待最多一秒。网络发送不持有 Store 锁或 SQLite
+事务。每次发送总等待上限 20 秒（包括 DNS），最多四个传输线程；卡住的 DNS 或
+socket 调用占住名额直到结束。超时或容量耗尽消耗预留、记为不确定且不重试。
+超时和线程停止会取消真实 Grok 传输并关闭其跟踪的 socket。DNS、TCP、TLS 后的
+取消检查阻止这些阶段解除阻塞后才发出的迟到 POST；已发送的请求无法撤回，远端
+是否接受仍不确定。这些限制保证本机服务可响应。下次进程启动前设启用标志为
+`0` 即关闭；未设置时不启动线程，也不解析 routine 配置。
+
+两种模式都读取 `ROUNDTABLE_TERMINAL_LEDGER`，默认使用工作目录下的
+`data/terminal-receipts.db`。自动和手动模式应指定同一账本的绝对路径。

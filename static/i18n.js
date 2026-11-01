@@ -20,7 +20,7 @@ for (const [message, zh] of Object.entries({
  'Task scope denied':'当前身份无权查看此任务。',
  'Only task origin or room owner may coordinate':'只有任务发起者或群所有者可以协调此任务。',
  'Idempotency key conflicts with original payload':'请求编号已用于不同内容，请重新发起操作。',
- 'Task budget must be 1–20 and timeout 30–3600 seconds':'任务预算须为 1–20，超时须为 30–3600 秒。',
+ 'Task budget must be 1–20 and timeout 30–86400 seconds':'任务预算须为 1–20，超时须为 30–86400 秒。',
  'Invalid parent task':'父任务无效。',
  'Choose 1–6 independent assignments':'请选择 1–6 个独立执行者。',
  'Each assignment needs worker and instruction':'每次交接都需要执行者和独立指令。',

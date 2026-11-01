@@ -59,14 +59,14 @@ class TerminalReceiptTests(unittest.TestCase):
             path = Path(directory) / "receipts.db"
             ledger = TerminalReceipts(path)
             adapter = Mock()
-            adapter.dispatch_terminal.side_effect = KeyboardInterrupt
             task = {"id": "b" * 24, "status": "timeout"}
-            with self.assertRaises(KeyboardInterrupt):
-                ledger.send("room", task, adapter)
+            with patch("terminal_receipts.bounded_dispatch", side_effect=KeyboardInterrupt):
+                with self.assertRaises(KeyboardInterrupt):
+                    ledger.send("room", task, adapter)
             ledger.close()
             restarted = TerminalReceipts(path)
             self.assertEqual(restarted.send("room", task, adapter)["reason"], "already_reserved")
-            adapter.dispatch_terminal.assert_called_once()
+            adapter.dispatch_terminal.assert_not_called()
             restarted.close()
 
     def test_concurrent_connections_reserve_only_once(self):

@@ -220,6 +220,67 @@ class HandoffTests(unittest.TestCase):
             )
         self.assertEqual(self.snapshot(task)["budget"]["used"], 3)
 
+    def test_legacy_lease_schema_upgrade_preserves_active_claim(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = str(Path(directory) / "legacy.db")
+            legacy = Store(path)
+            room = legacy.room("Legacy")["id"]
+            legacy.add_agent(room, "worker")
+            task = legacy.handoffs.create(
+                room,
+                "user",
+                dict(
+                    title="Migration",
+                    context="Synthetic",
+                    assignments=[dict(worker="worker", instruction="Read")],
+                    budget=1,
+                    request_id="create",
+                ),
+            )
+            assignment = legacy.handoffs.snapshot(room, "user", task["task_id"])["assignments"][0]
+            claim = legacy.handoffs.operate(
+                room,
+                "bot:worker",
+                "claim",
+                dict(
+                    task_id=task["task_id"],
+                    assignment_id=assignment["id"],
+                    expected_attempt=0,
+                    request_id="claim",
+                ),
+            )
+            legacy.db.execute("ALTER TABLE assignments DROP COLUMN lease_seconds")
+            legacy.db.commit()
+            legacy.db.close()
+            upgraded = Store(path)
+            try:
+                row = upgraded.db.execute(
+                    "SELECT lease_seconds,lease_until FROM assignments WHERE id=?",
+                    (assignment["id"],),
+                ).fetchone()
+                self.assertEqual(row["lease_seconds"], 60)
+                self.assertEqual(row["lease_until"], claim["lease_until"])
+                upgraded.handoffs.operate(
+                    room,
+                    "bot:worker",
+                    "update",
+                    dict(
+                        task_id=task["task_id"],
+                        assignment_id=assignment["id"],
+                        lease=claim["lease"],
+                        attempt=claim["attempt"],
+                        kind="completed",
+                        body="Synthetic",
+                        request_id="result",
+                    ),
+                )
+                self.assertEqual(
+                    upgraded.handoffs.snapshot(room, "user", task["task_id"])["task"]["status"],
+                    "completed",
+                )
+            finally:
+                upgraded.db.close()
+
     def test_configurable_lease_bounds_renewal_and_deadline(self):
         import time
 

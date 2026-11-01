@@ -8,6 +8,7 @@ import secrets
 import subprocess
 import sys
 import threading
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -130,3 +131,39 @@ class ScriptTests(unittest.TestCase):
             self.assertFalse(data["RunAtLoad"])
             self.assertFalse(data["KeepAlive"])
             self.assertIn("${ROUNDTABLE_HOME}", data["ProgramArguments"][1])
+
+
+class StartupArgumentTests(unittest.TestCase):
+    def test_mcp_forwards_optional_events_arguments_without_splitting(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            executable = home / ".venv/bin/python"
+            executable.parent.mkdir(parents=True)
+            executable.write_text("#!/bin/sh\nprintf '%s\\n' \"$@\"\n")
+            executable.chmod(0o700)
+            arguments = [
+                "--events-db",
+                str(home / "private data/events.db"),
+                "--event-host",
+                "approved.example",
+                "--event-host",
+                "other.example",
+            ]
+            result = subprocess.run(
+                ["/bin/sh", str(ROOT / "scripts/start-local.sh"), "mcp", *arguments],
+                env={"ROUNDTABLE_HOME": str(home), "ROUNDTABLE_MCP_PORT": "0"},
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=True,
+            )
+            self.assertEqual(result.stdout.splitlines(), ["mcp_http.py", "--port", "0", *arguments])
+            default = subprocess.run(
+                ["/bin/sh", str(ROOT / "scripts/start-local.sh"), "mcp"],
+                env={"ROUNDTABLE_HOME": str(home)},
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=True,
+            )
+            self.assertEqual(default.stdout.splitlines(), ["mcp_http.py", "--port", "8766"])
