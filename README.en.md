@@ -1,5 +1,9 @@
 # Bot Roundtable
 
+## dot handoff deployment (explicit opt-in)
+
+[Local/private Tunnel setup](docs/DOT_SETUP.en.md) · [Roundtrip evidence](docs/ROUNDTRIP.en.md) · [Optional terminal receipts](docs/TERMINAL_RECEIPTS.en.md). Templates do not create accounts, load launchd or subscribe to Events. dot uses its own authorized connected-computer capability to create Codex tasks; the hub never starts coding CLIs.
+
 [中文](README.md) · [Feasibility & provider matrix](FEASIBILITY.md) · [Architecture](ARCHITECTURE.md) · [Security review](SECURITY_REVIEW.md)
 
 **A communication and coordination hub for existing bots. Each bot owns its tools and runtime.** This is not a model API wrapper, a coding CLI runner, or a replacement agent.

@@ -50,6 +50,29 @@ class GrokWebhook:
             or deadline <= time.time()
         ):
             raise ValueError("Job deadline is invalid or has expired")
+        if any(k not in job for k in ("id", "room", "run", "messages")):
+            raise ValueError("Incomplete job")
+        payload_data = {k: job[k] for k in ("id", "room", "run", "deadline", "messages")}
+        if "phase" in job:
+            payload_data["phase"] = job["phase"]
+        self._post(json.dumps(payload_data).encode())
+        return {"accepted": True, "completed": False, "job_id": job["id"]}
+
+    def dispatch_terminal(self, task_id: str, status: str) -> dict:
+        """Send only an operator-authorized terminal hint, never task contents."""
+        import re
+
+        if not re.fullmatch(r"[a-f0-9]{24}", task_id) or status not in (
+            "completed",
+            "failed",
+            "timeout",
+            "cancelled",
+        ):
+            raise ValueError("Terminal task receipt required")
+        self._post(json.dumps({"task_id": task_id, "status": status}).encode())
+        return {"accepted": True, "task_id": task_id, "status": status}
+
+    def _post(self, payload: bytes) -> None:
         # Pin the validated address for the actual TLS connection. No redirect,
         # DNS rebinding, proxy auto-discovery, or URL from untrusted message data.
         if any(
@@ -79,10 +102,6 @@ class GrokWebhook:
                 (ips[0], 443), timeout, source_address
             )
         )
-        payload_data = {k: job[k] for k in ("id", "room", "run", "deadline", "messages")}
-        if "phase" in job:
-            payload_data["phase"] = job["phase"]
-        payload = json.dumps(payload_data).encode()
         if len(payload) > 100000:
             raise ValueError("Payload too large")
         try:
@@ -95,7 +114,7 @@ class GrokWebhook:
             status = connection.getresponse().status
             if status != 200:
                 raise RuntimeError("Routine did not accept dispatch")
-            return {"accepted": True, "completed": False, "job_id": job["id"]}
+            return None
         finally:
             connection.close()
 

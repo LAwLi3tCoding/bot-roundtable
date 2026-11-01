@@ -1,5 +1,9 @@
 # Bot Roundtable / Bot 圆桌
 
+## dot 交接部署（显式启用）
+
+[首次本机与私有 Tunnel 配置](docs/DOT_SETUP.zh.md) · [回环与证据](docs/ROUNDTRIP.zh.md) · [可选终态回执](docs/TERMINAL_RECEIPTS.zh.md)。模板不创建账号、加载 launchd 或订阅 Events。dot 只在用户授权范围内通过自身已连接电脑能力创建 Codex 任务；圆桌不会启动编码 CLI。
+
 [English](README.en.md) · [可行性与接入矩阵](FEASIBILITY.md) · [架构](ARCHITECTURE.md) · [安全复核](SECURITY_REVIEW.md)
 
 **让现成 Bot 在同一个群里交流，各家 Bot 自己管理其工具和 runtime。** 本项目是通信与协调层，不是模型 API 包装、编码 CLI runner 或替代 Bot。

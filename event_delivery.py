@@ -5,6 +5,9 @@ import hashlib
 import hmac
 import ipaddress
 import json
+import logging
+import math
+import re
 import os
 import socket
 import ssl
@@ -46,9 +49,88 @@ def signed_headers(secret, subscription, event_id, body, previous="", now=None):
     }
 
 
+class DirectHTTPSConnection(PinnedHTTPSConnection):
+    """Track TCP and TLS sockets and enforce one monotonic callback deadline."""
+
+    def __init__(self, host, target_ip, timeout, context, state, cancelled):
+        super().__init__(host, timeout=timeout, context=context)
+        self.address = (target_ip, 443)
+        self.tls_context = context
+        self.transport_state = state
+        self.cancelled = cancelled
+        self.deadline = state.get("deadline", time.monotonic() + timeout)
+        self.via_proxy = False
+
+    def checkpoint(self):
+        remaining = self.deadline - time.monotonic()
+        if self.cancelled.is_set() or remaining <= 0:
+            self.close()
+            raise TimeoutError("Callback deadline exceeded")
+        if self.sock is not None:
+            self.sock.settimeout(remaining)
+        return remaining
+
+    def connect(self):
+        self.sock = socket.create_connection(self.address, self.checkpoint())
+        self.transport_state["socket"] = self.sock
+        self.checkpoint()
+        if self.via_proxy:
+            self._tunnel()  # type: ignore[attr-defined]
+        self.checkpoint()
+        # Expose the SSL socket before the blocking handshake so cancellation
+        # can interrupt it. TLS authenticates the original host, never the IP.
+        self.sock = self.tls_context.wrap_socket(
+            self.sock, server_hostname=self.host, do_handshake_on_connect=False
+        )
+        self.transport_state["socket"] = self.sock
+        self.checkpoint()
+        self.sock.do_handshake()
+        self.checkpoint()
+
+    def send(self, data):
+        self.checkpoint()
+        if self.sock is None:
+            self.connect()
+        self.checkpoint()
+        super().send(data)
+
+
+class ConnectHTTPSConnection(DirectHTTPSConnection):
+    """CONNECT only to a validated numeric IP; preserve the original TLS host."""
+
+    def __init__(self, host, target_ip, proxy, timeout, context, state, cancelled):
+        super().__init__(host, target_ip, timeout, context, state, cancelled)
+        self.address = proxy
+        self.via_proxy = True
+        authority = f"[{target_ip}]:443" if ":" in target_ip else f"{target_ip}:443"
+        self.set_tunnel(target_ip, 443, headers={"Host": authority})
+
+
 class CallbackTransport:
-    def __init__(self, allowed_hosts, deadline_seconds=10):
-        self.deadline_seconds = min(max(deadline_seconds, 0.01), 10)
+    def __init__(self, allowed_hosts, deadline_seconds=None, proxy_url=None):
+        self.deadline_seconds = float(
+            os.environ.get("ROUNDTABLE_EVENT_TIMEOUT", "20")
+            if deadline_seconds is None
+            else deadline_seconds
+        )
+        if not math.isfinite(self.deadline_seconds) or not 0.01 <= self.deadline_seconds <= 120:
+            raise ValueError("Callback timeout must be 0.01–120 seconds")
+        self.proxy = None
+        proxy_url = proxy_url or os.environ.get("ROUNDTABLE_EVENT_PROXY", "")
+        if proxy_url:
+            proxy = urlsplit(proxy_url)
+            if (
+                proxy.scheme != "http"
+                or not proxy.hostname
+                or proxy.username
+                or proxy.password
+                or proxy.path not in ("", "/")
+                or proxy.query
+                or proxy.fragment
+                or any(ord(c) <= 32 for c in proxy_url)
+            ):
+                raise ValueError("Explicit HTTP CONNECT proxy required; credentials unsupported")
+            self.proxy = (proxy.hostname, proxy.port or 80)
         self.slots = threading.BoundedSemaphore(4)
         self.allowed_hosts = set(allowed_hosts)
         if not self.allowed_hosts or any(
@@ -68,7 +150,10 @@ class CallbackTransport:
             or p.port not in (None, 443)
             or p.fragment
         ):
-            raise ValueError("Callback host is not approved")
+            host = p.hostname or "<missing>"
+            safe_host = host if re.fullmatch(r"[a-zA-Z0-9.-]{1,253}", host) else "<invalid>"
+            logging.getLogger(__name__).warning("callback_host_not_approved host=%s", safe_host)
+            raise ValueError("callback_host_not_approved")
         return p
 
     def post(self, url, body, headers):
@@ -78,7 +163,7 @@ class CallbackTransport:
             raise TimeoutError("Callback capacity exhausted")
         done, cancelled = threading.Event(), threading.Event()
         result = []
-        state: dict[str, Any] = {}
+        state: dict[str, Any] = {"deadline": time.monotonic() + self.deadline_seconds}
 
         def work():
             try:
@@ -108,7 +193,7 @@ class CallbackTransport:
         p = self.validate(url)
         if len(body) > 262144:
             raise ValueError("Event too large")
-        if any(
+        if not self.proxy and any(
             os.environ.get(n)
             for n in (
                 "HTTP_PROXY",
@@ -128,18 +213,33 @@ class CallbackTransport:
             raise ValueError("Non-public callback address")
         if cancelled.is_set():
             raise TimeoutError("Callback deadline exceeded")
-        conn = PinnedHTTPSConnection(p.hostname, timeout=10, context=ssl.create_default_context())
-        conn._create_connection = (
-            lambda _address, timeout, source_address: socket.create_connection(
-                (ips[0], 443), timeout, source_address
+        remaining = state["deadline"] - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("Callback deadline exceeded")
+        conn: PinnedHTTPSConnection
+        if self.proxy:
+            conn = ConnectHTTPSConnection(
+                p.hostname,
+                ips[0],
+                self.proxy,
+                remaining,
+                ssl.create_default_context(),
+                state,
+                cancelled,
             )
-        )
+        else:
+            conn = DirectHTTPSConnection(
+                p.hostname, ips[0], remaining, ssl.create_default_context(), state, cancelled
+            )
         state["connection"] = conn
         try:
             if cancelled.is_set():
                 raise TimeoutError("Callback deadline exceeded")
             conn.request(
-                "POST", (p.path or "/") + ("?" + p.query if p.query else ""), body, headers
+                "POST",
+                (p.path or "/") + ("?" + p.query if p.query else ""),
+                body,
+                {**{k: v for k, v in headers.items() if k.lower() != "host"}, "Host": p.hostname},
             )
             state["socket"] = conn.sock
             response = conn.getresponse()

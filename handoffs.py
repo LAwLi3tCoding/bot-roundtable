@@ -32,6 +32,11 @@ class Handoffs:
         CREATE INDEX IF NOT EXISTS assignment_worker_idx ON assignments(worker,task);
         CREATE INDEX IF NOT EXISTS task_event_idx ON task_events(task,id);
         """)
+        columns = {row[1] for row in self.db.execute("PRAGMA table_info(assignments)")}
+        if "lease_seconds" not in columns:
+            self.db.execute(
+                "ALTER TABLE assignments ADD COLUMN lease_seconds INTEGER NOT NULL DEFAULT 60"
+            )
         self.db.execute(
             "INSERT OR IGNORE INTO event_namespace VALUES(1,?)", (secrets.token_hex(16),)
         )
@@ -158,9 +163,9 @@ class Handoffs:
             type(budget) is not int
             or not 1 <= budget <= 20
             or type(seconds) is not int
-            or not 30 <= seconds <= 3600
+            or not 30 <= seconds <= 86400
         ):
-            raise Problem(400, "Task budget must be 1–20 and timeout 30–3600 seconds")
+            raise Problem(400, "Task budget must be 1–20 and timeout 30–86400 seconds")
         if not isinstance(parent, str) or len(parent) > 40:
             raise Problem(400, "Invalid parent task")
         if not isinstance(specs, list) or not 1 <= len(specs) <= 6:
@@ -268,7 +273,7 @@ class Handoffs:
                 for spec in normalized:
                     aid = secrets.token_hex(12)
                     self.db.execute(
-                        "INSERT INTO assignments VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                        "INSERT INTO assignments(id,task,worker,epoch,instruction,status,attempt,lease_hash,lease_until,result,artifacts) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                         (
                             aid,
                             tid,
@@ -597,6 +602,9 @@ class Handoffs:
                     self.event(tid, aid, actor, "retry_requested", "")
                     return {"assignment_id": aid, "status": "queued"}
                 if operation == "claim":
+                    lease_seconds = data.get("lease_seconds", 60)
+                    if type(lease_seconds) is not int or not 30 <= lease_seconds <= 1800:
+                        raise Problem(400, "Lease must be 30–1800 seconds")
                     if (
                         current["status"] != "queued"
                         or type(data.get("expected_attempt")) is not int
@@ -630,10 +638,10 @@ class Handoffs:
                             )
                         self.db.execute("UPDATE tasks SET used=used+1 WHERE id=?", (task["root"],))
                     lease = secrets.token_urlsafe(32)
-                    until = min(now + 60, task["deadline"])
+                    until = min(now + lease_seconds, task["deadline"])
                     self.db.execute(
-                        "UPDATE assignments SET status='working',attempt=attempt+1,lease_hash=?,lease_until=? WHERE id=?",
-                        (digest(lease), until, aid),
+                        "UPDATE assignments SET status='working',attempt=attempt+1,lease_hash=?,lease_until=?,lease_seconds=? WHERE id=?",
+                        (digest(lease), until, lease_seconds, aid),
                     )
                     self.event(tid, aid, actor, "claimed", "")
                     return dict(
@@ -675,7 +683,11 @@ class Handoffs:
                     and kind == "progress"
                 ):
                     raise Problem(409, "Assignment progress limit reached")
-                until = min(now + 60, task["deadline"]) if kind == "progress" else 0
+                until = (
+                    min(now + current["lease_seconds"], task["deadline"])
+                    if kind == "progress"
+                    else 0
+                )
                 status = "working" if kind == "progress" else kind
                 self.db.execute(
                     "UPDATE assignments SET status=?,lease_until=?,result=?,artifacts=? WHERE id=?",

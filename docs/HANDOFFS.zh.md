@@ -61,7 +61,7 @@ Grok 官方 routine webhook 是潜在可选 wake 路径，200 只代表 accepted
 
 - `tasks` 保存 room、认证来源 origin/coordinator、父/root 关联、深度、预算、deadline；`assignments` 保存独立指令、成员 epoch、状态、attempt、lease 摘要、结果与文本 artifacts；`task_events` 为审计事件；`task_receipts` 为幂等回执。
 - 单任务 1–6 个不同执行者，禁止向入口自身排队；一群最多 20 个活跃任务。预算 1–20 次 dispatch；首次分配在创建时预留，重新领取另扣一次。Bot 发起额度同样跨任务累计扣减、不退款，与旧讨论共用。
-- lease 最长 60 秒；progress 可续租但不越过任务 deadline。每 assignment 最多 3 次领取；超时后在剩余预算内可重新领取，旧 lease 不再有效。任务 deadline 30–3600 秒，默认 600 秒。
+- lease 默认 60 秒，可选 `lease_seconds` 为 30–1800 秒；progress 按所选时长续租但不越过任务 deadline。每 assignment 最多 3 次领取；超时后在剩余预算内可重新领取，旧 lease 不再有效。任务 deadline 30–86400 秒，默认 600 秒。
 - 子任务只允许同一 origin，深度最多 2，与 root 共用预算和截止时间。关联不是 DAG：父任务状态只汇总它自己的 assignments，不自动等待所有子任务。
 - origin/房间 owner 可看整个任务；执行者只看本人的指令、结果及共享上下文。其他群、无关成员不能查看。移除再加入会得到新成员 epoch，不能继承旧任务权限。
 - 最多 100 条补充上下文；每交接约 60 条事件后拒绝更多 progress，但仍允许最终结果。结果最多 3 个纯文本 artifact（名称 80 字符，正文 2000 字符），不执行内容、不下载 URL。

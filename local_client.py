@@ -4,6 +4,8 @@ No vendor process control, shell execution, model API, redirects or public URL.
 Credentials come from environment references, never command-line arguments.
 """
 
+import math
+import hashlib
 import argparse
 import http.client
 import json
@@ -11,7 +13,15 @@ import os
 import re
 import secrets
 import sys
+import time
+import tempfile
+import threading
+import socket
+from pathlib import Path
 from urllib.parse import urlsplit
+
+
+_WAIT_SLOTS = threading.BoundedSemaphore(4)
 
 
 class LocalFailure(ValueError):
@@ -42,8 +52,9 @@ class LocalClient:
         self.host, self.port = parsed.hostname, parsed.port or 8765
         self.prefix = f"/api/rooms/{room}/agents/{agent}/peer"
         self.token = token
+        self.room, self.agent = room, agent
 
-    def call(self, operation, payload=None):
+    def call(self, operation, payload=None, timeout=10, _state=None):
         routes = {
             "probe": "/probe",
             "capabilities": "/capabilities",
@@ -68,14 +79,22 @@ class LocalClient:
         body = json.dumps(payload or {}, ensure_ascii=False).encode() if method == "POST" else None
         if body and len(body) > 32768:
             raise ValueError("Payload exceeds 32768 bytes")
-        conn = http.client.HTTPConnection(self.host, self.port, timeout=10)
+        conn = http.client.HTTPConnection(self.host, self.port, timeout=timeout)
+        if _state is not None:
+            _state["connection"] = conn
         try:
+            if _state is not None and _state["cancelled"].is_set():
+                raise LocalFailure("wait_timeout")
             conn.request(
                 method,
                 self.prefix + routes[operation],
                 body,
                 {"Authorization": "Bearer " + self.token, "Content-Type": "application/json"},
             )
+            if _state is not None and _state["cancelled"].is_set():
+                raise LocalFailure("wait_timeout")
+            if _state is not None:
+                _state["socket"] = conn.sock
             response = conn.getresponse()
             if response.status in (401, 403):
                 raise LocalFailure("authorization_rejected")
@@ -126,6 +145,195 @@ class LocalClient:
         finally:
             conn.close()
 
+    def _wait_query(self, task_id, timeout):
+        # A stuck DNS/connect/read retains its slot until it really ends. Repeated
+        # calls cannot accumulate unbounded threads; there is no direct fallback.
+        deadline = time.monotonic() + timeout
+        if not _WAIT_SLOTS.acquire(blocking=False):
+            raise LocalFailure("wait_capacity_exhausted")
+        done = threading.Event()
+        state: dict = {"cancelled": threading.Event()}
+        outcome = []
+
+        def request():
+            try:
+                outcome.append(
+                    self.call("task", {"task_id": task_id}, timeout=min(10, timeout), _state=state)
+                )
+            except Exception as exc:
+                outcome.append(exc)
+            finally:
+                _WAIT_SLOTS.release()
+                done.set()
+
+        threading.Thread(target=request, daemon=True).start()
+        if not done.wait(max(0, deadline - time.monotonic())):
+            state["cancelled"].set()
+            conn = state.get("connection")
+            sock = state.get("socket") or getattr(conn, "sock", None)
+            if sock is not None:
+                try:
+                    sock.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+            raise LocalFailure("wait_timeout")
+        result = outcome[0]
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    def wait(self, task_id, timeout=600, interval=1):
+        """Bounded polling; a local wait timeout does not cancel the server task."""
+        if (
+            not re.fullmatch(r"[a-f0-9]{24}", task_id)
+            or not math.isfinite(timeout)
+            or not 0 < timeout <= 86400
+        ):
+            raise ValueError("Invalid task ID or wait timeout")
+        deadline = time.monotonic() + timeout
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise LocalFailure("wait_timeout")
+            snapshot = self._wait_query(task_id, remaining)
+            if snapshot["task"]["status"] != "running":
+                return snapshot
+            time.sleep(min(interval, max(0, deadline - time.monotonic())))
+
+    def roundtrip(self, worker, evidence_path, timeout=600, test=False):
+        """An explicit one-assignment read-only test, not proof of vendor identity."""
+        if not re.fullmatch(r"[a-z][a-z0-9-]{1,39}", worker) or worker == self.agent:
+            raise ValueError("Invalid roundtrip worker")
+        if not math.isfinite(timeout) or not 0 < timeout <= 86400:
+            raise ValueError("Invalid roundtrip wait timeout")
+        nonce = secrets.token_hex(16)
+        created = self.call(
+            "create",
+            {
+                "title": "Read-only connectivity roundtrip",
+                "context": "Explicit operator connectivity test; no business task or tool authority.",
+                "assignments": [
+                    {
+                        "worker": worker,
+                        "instruction": "Read-only connectivity test. Return exactly: roundtrip:"
+                        + nonce
+                        + ". Do not run commands, change files, access accounts, or delegate tasks.",
+                    }
+                ],
+                "budget": 1,
+                "timeout_seconds": 600,
+                "request_id": "roundtrip-" + nonce,
+            },
+        )
+        evidence = {
+            "version": 1,
+            "source": "local-client",
+            "observed_at": time.time(),
+            "scope": {"room": self.room, "agent": self.agent, "worker": worker},
+            "task_id": created["task_id"],
+            "assignment_id": None,
+            "test": bool(test),
+            "status": "unknown",
+            "correlated": False,
+            "vendor_identity_verified": False,
+            "expected_result_digest": hashlib.sha256(("roundtrip:" + nonce).encode()).hexdigest(),
+            "summary": "Awaiting worker result",
+        }
+        save_evidence(evidence_path, evidence)
+        try:
+            snapshot = self.wait(created["task_id"], timeout)
+            assignment = snapshot["assignments"][0]
+            evidence.update(
+                assignment_id=assignment["id"],
+                status=snapshot["task"]["status"],
+                correlated=assignment["result"].strip() == "roundtrip:" + nonce,
+                summary=assignment["result"][:500],
+                observed_at=time.time(),
+            )
+        except LocalFailure as exc:
+            evidence.update(summary=exc.code, observed_at=time.time())
+            save_evidence(evidence_path, evidence)
+            raise
+        save_evidence(evidence_path, evidence)
+        return evidence
+
+    def evidence(self, path):
+        """Read scoped local evidence; operator observations are attestations only."""
+        try:
+            with Path(path).open() as stream:
+                raw = stream.read(16385)
+            if len(raw) > 16384:
+                raise ValueError("Evidence too large")
+            item = json.loads(raw)
+            scope = item["scope"]
+            if scope["room"] != self.room or scope["agent"] != self.agent:
+                raise ValueError("Evidence scope mismatch")
+            snapshot = self.call("task", {"task_id": item["task_id"]})
+            assignment = next(
+                a for a in snapshot["assignments"] if a["id"] == item["assignment_id"]
+            )
+            verified = (
+                item.get("correlated") is True
+                and item["status"] == "completed"
+                and snapshot["task"]["status"] == "completed"
+                and assignment["worker"] == scope["worker"]
+                and hashlib.sha256(assignment["result"].strip().encode()).hexdigest()
+                == item.get("expected_result_digest")
+            )
+            observations = item.get("operator_observations", {})
+            result = {
+                "protocol_roundtrip_verified": {
+                    "verified": verified,
+                    "source": item["source"],
+                    "observed_at": item["observed_at"],
+                    "scope": scope,
+                    "test": item.get("test", True),
+                    "task_id": item["task_id"],
+                }
+            }
+            for name in ("native_roundtrip", "wake"):
+                observation = observations.get(name, {})
+                confirmed = (
+                    verified
+                    and item.get("test") is False
+                    and observation.get("confirmed") is True
+                    and observation.get("source") == "operator"
+                    and observation.get("task_id") == item["task_id"]
+                    and observation.get("assignment_id") == item["assignment_id"]
+                    and type(observation.get("observed_at")) in (int, float)
+                    and math.isfinite(observation["observed_at"])
+                    and item["observed_at"] <= observation["observed_at"] <= time.time()
+                )
+                result[name + "_verified"] = {
+                    "verified": confirmed,
+                    "evidence": "local operator attestation; not vendor identity proof"
+                    if confirmed
+                    else "no scoped native operator observation",
+                    "vendor_identity_verified": False,
+                }
+            return result
+        except (OSError, ValueError, KeyError, TypeError, StopIteration):
+            return {
+                "protocol_roundtrip_verified": {
+                    "verified": False,
+                    "reason": "evidence_unavailable_or_invalid",
+                }
+            }
+
+
+def save_evidence(path, evidence):
+    """Atomic private evidence file, no credentials or leases."""
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    fd, temporary = tempfile.mkstemp(prefix=".roundtrip-", dir=target.parent)
+    try:
+        with os.fdopen(fd, "w") as stream:
+            json.dump(evidence, stream)
+        os.replace(temporary, target)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -133,6 +341,8 @@ def main():
         "operation",
         choices=[
             "probe",
+            "wait",
+            "roundtrip",
             "doctor",
             "capabilities",
             "tasks",
@@ -146,6 +356,13 @@ def main():
             "cancel",
         ],
     )
+    parser.add_argument("task_id", nargs="?")
+    parser.add_argument("--timeout", type=float, default=600)
+    parser.add_argument("--worker", default="dot")
+    parser.add_argument(
+        "--evidence", default=os.environ.get("ROUNDTABLE_EVIDENCE", "data/roundtrip.json")
+    )
+    parser.add_argument("--test", action="store_true", help="Mark synthetic worker evidence")
     args = parser.parse_args()
     phase = "configuration_missing"
     try:
@@ -162,13 +379,27 @@ def main():
             os.environ.get("ROUNDTABLE_TOKEN", ""),
         )
         phase = "request_invalid"
+        if args.operation == "wait":
+            print(json.dumps(client.wait(args.task_id or "", args.timeout), ensure_ascii=False))
+            return
+        if args.operation == "roundtrip":
+            print(
+                json.dumps(
+                    client.roundtrip(args.worker, args.evidence, args.timeout, args.test),
+                    ensure_ascii=False,
+                )
+            )
+            return
         data = None
         if args.operation not in ("probe", "doctor", "capabilities", "tasks", "inbox"):
             raw = sys.stdin.buffer.read(32769)
             if len(raw) > 32768:
                 raise ValueError("Payload too large")
             data = json.loads(raw)
-        print(json.dumps(client.call(args.operation, data), ensure_ascii=False))
+        result = client.call(args.operation, data)
+        if args.operation == "doctor":
+            result.update(client.evidence(args.evidence))
+        print(json.dumps(result, ensure_ascii=False))
     except Exception as exc:
         code = exc.code if isinstance(exc, LocalFailure) else phase
         # Network exceptions may include secrets/URLs; never echo their details.

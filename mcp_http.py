@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import hashlib
+import hmac
 import http.client
 import json
 import os
@@ -129,7 +130,8 @@ class HTTPAuthOnly:
 class OriginGate:
     """Reject host/origin confusion before credentials or backend requests are processed."""
 
-    def __init__(self, app, hosts: list[str], origins: list[str]):
+    def __init__(self, app, hosts: list[str], origins: list[str], expected_bearer: str = ""):
+        self.expected_bearer = expected_bearer
         self.app, self.hosts, self.origins = app, set(hosts), set(origins)
 
     async def __call__(self, scope, receive, send):
@@ -138,6 +140,18 @@ class OriginGate:
             hosts = [v.decode("latin1") for k, v in headers if k.lower() == b"host"]
             origins = [v.decode("latin1") for k, v in headers if k.lower() == b"origin"]
             authorizations = [v for k, v in headers if k.lower() == b"authorization"]
+            if self.expected_bearer and (
+                len(authorizations) != 1
+                or not hmac.compare_digest(authorizations[0], self.expected_bearer.encode())
+            ):
+                await JSONResponse(
+                    {
+                        "error": "tunnel_authorization_mismatch",
+                        "hint": "Check connector forwarded Authorization override; keep authentication enabled",
+                    },
+                    status_code=403,
+                )(scope, receive, send)
+                return
             if (
                 len(hosts) != 1
                 or hosts[0] not in self.hosts
@@ -160,6 +174,7 @@ def build_http_app(
     events_db: str = "",
     event_hosts: list[str] | None = None,
     event_transport=None,
+    expected_bearer: str = "",
 ):
     grants = parse_grants(grants_json)
     verifier = ScopedVerifier(base, grants)
@@ -210,7 +225,7 @@ def build_http_app(
     secured = AuthenticationMiddleware(
         AuthContextMiddleware(HTTPAuthOnly(protocol_app)), backend=BearerAuthBackend(verifier)
     )
-    return OriginGate(secured, hosts, origins)
+    return OriginGate(secured, hosts, origins, expected_bearer)
 
 
 def main():
@@ -239,6 +254,7 @@ def main():
             args.public_url,
             args.events_db,
             args.event_host,
+            expected_bearer=os.environ.get("ROUNDTABLE_TUNNEL_AUTH_HEADER", ""),
         )
     except (KeyError, ValueError):
         parser.error("Invalid or missing gateway configuration; no credentials are printed")

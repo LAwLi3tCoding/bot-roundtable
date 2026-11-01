@@ -220,6 +220,53 @@ class HandoffTests(unittest.TestCase):
             )
         self.assertEqual(self.snapshot(task)["budget"]["used"], 3)
 
+    def test_configurable_lease_bounds_renewal_and_deadline(self):
+        import time
+
+        task = self.create(timeout_seconds=86400)
+        a = self.snapshot(task)["assignments"][0]
+        data = dict(
+            task_id=task["task_id"],
+            assignment_id=a["id"],
+            expected_attempt=0,
+            request_id="custom-lease",
+            lease_seconds=1800,
+        )
+        for invalid in (29, 1801, True, "60"):
+            with self.assertRaises(Problem):
+                self.h.operate(
+                    self.rid, "bot:worker-one", "claim", dict(data, lease_seconds=invalid)
+                )
+        claim = self.h.operate(self.rid, "bot:worker-one", "claim", data)
+        self.assertGreater(claim["lease_until"], time.time() + 1790)
+        self.report(claim, kind="progress", nonce="renew-custom")
+        row = self.store.db.execute(
+            "SELECT lease_until FROM assignments WHERE id=?", (a["id"],)
+        ).fetchone()
+        self.assertGreater(row[0], time.time() + 1790)
+        self.store.db.execute("UPDATE assignments SET lease_until=0 WHERE id=?", (a["id"],))
+        self.store.db.commit()
+        second = self.h.operate(
+            self.rid,
+            "bot:worker-one",
+            "claim",
+            dict(data, expected_attempt=1, request_id="reclaim-custom"),
+        )
+        self.assertEqual(second["attempt"], 2)
+        with self.assertRaises(Problem):
+            self.report(claim, nonce="stale-custom")
+        short = self.create(request_id="short", timeout_seconds=30)
+        b = self.snapshot(short)["assignments"][0]
+        capped = self.h.operate(
+            self.rid,
+            "bot:worker-one",
+            "claim",
+            dict(data, task_id=short["task_id"], assignment_id=b["id"], request_id="capped"),
+        )
+        self.assertEqual(capped["lease_until"], self.snapshot(short)["task"]["deadline"])
+        with self.assertRaises(Problem):
+            self.create(request_id="too-long", timeout_seconds=86401)
+
     def test_lease_expiration_recovery_deadline_and_cancel(self):
         task = self.create()
         first = self.claim(task)

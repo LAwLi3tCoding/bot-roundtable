@@ -274,7 +274,7 @@ class EventsFixture(unittest.TestCase):
         self.assertEqual(self.receiver.records[-1][0]["name"], "task.updated")
 
     @patch.dict("os.environ", {}, clear=True)
-    @patch("event_delivery.PinnedHTTPSConnection")
+    @patch("event_delivery.DirectHTTPSConnection")
     def test_callback_ssrf_rebinding_and_redirect_are_blocked(self, connection):
         transport = CallbackTransport(["callback.example.com"])
         for ip in ("127.0.0.1", "169.254.169.254", "::1", "224.0.0.1", "240.0.0.1"):
@@ -379,7 +379,7 @@ class EventsFixture(unittest.TestCase):
 
         with (
             patch("event_delivery.socket.getaddrinfo", side_effect=dns),
-            patch("event_delivery.PinnedHTTPSConnection") as connection,
+            patch("event_delivery.DirectHTTPSConnection") as connection,
         ):
             try:
                 for _ in range(5):
@@ -395,7 +395,7 @@ class EventsFixture(unittest.TestCase):
             patch(
                 "event_delivery.socket.getaddrinfo", return_value=[(2, 1, 6, "", ("8.8.8.8", 443))]
             ),
-            patch("event_delivery.PinnedHTTPSConnection") as connection,
+            patch("event_delivery.DirectHTTPSConnection") as connection,
         ):
 
             def trickle(size):
