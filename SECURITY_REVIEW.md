@@ -14,7 +14,7 @@
 
 - `server.py`：管理员创建房间、room 路由和 agent 路由使用不同认证范围；所有 agent 路由先按 room+agent 验证。Host/Origin 约束、输入大小上限、固定静态文件映射与错误响应均检查。HTTP access log 禁用，异常日志不含 body、Authorization 或 URL。
 - `roundtable.py`：token 摘要对比；job 查询必须同时匹配 id+room+agent；sender/source 取自服务端身份；重复相同回复不增轮次，冲突回复拒绝；budget 仅为 1–20 整数；stop 与 reply 使用同一 RLock/事务。独立 reviewer 额外运行 100 次 stop/reply 竞争验证，均停止且没有 pending work；同房间错误 agent 凭据返回 403，冒用其他 agent 的 job 返回 404。
-- `grok_adapter.py`：URL 由 operator 指定，HTTPS/主机精确匹配/443/无 URL 凭据；解析地址全部检查，实际连接固定已校验 IP，TLS 仍以原 host 验证；不跟随 redirect、不自动重试；代理环境直接失败，不绕过代理。日志不输出 key，CLI 对异常使用通用错误文本。
+- `grok_adapter.py`：URL 由 operator 指定，保留 HTTPS、精确主机名白名单、443、无 URL 凭据、原域名 TLS 校验、禁止跳转及不自动重试。直连模式检查全部解析地址，并固定已校验的公网 IP。未配置显式出站代理且存在 `HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY` 等环境变量（含小写形式）时，失败关闭，拒绝发送。配置 `ROUNDTABLE_OUTBOUND_PROXY`（或兼容 `ROUNDTABLE_EVENT_PROXY`）时，以主机名 CONNECT，由代理解析 DNS；本机不再执行公网 IP 钉扎，也无法证明最终 IP 为公网，这是 trusted proxy DNS 信任边界。日志不输出 key，CLI 对异常使用通用错误文本。
 - `static/app.js` / `static/index.html`：文本使用 textContent，凭据只在页面内存；没有内容驱动的工具执行或动态 URL。浏览器实测 script 文本不执行。
 - `tests/test_roundtable.py` / `tests/test_grok_security.py`：认证隔离、关联回调、重复并发回复、停止、失败、重启不重放、预算、超时、SSRF 地址与固定 IP、重定向拒绝的回归测试。
 

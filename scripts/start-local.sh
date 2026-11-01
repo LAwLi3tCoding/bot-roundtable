@@ -1,5 +1,7 @@
 #!/bin/sh
 set -eu
+# Inherit operator-provided environment, including ROUNDTABLE_OUTBOUND_PROXY.
+# No credential files are loaded; see docs/DOT_SETUP.en.md for configuration.
 : "${ROUNDTABLE_HOME:?Set project directory}"
 cd "$ROUNDTABLE_HOME"
 component="${1:-}"
