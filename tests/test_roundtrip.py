@@ -9,6 +9,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from local_client import LocalClient, LocalFailure, save_evidence
 from roundtable import Store
@@ -76,7 +77,7 @@ class RoundtripTests(unittest.TestCase):
 
         thread = threading.Thread(target=worker)
         thread.start()
-        result = self.origin.roundtrip("dot", self.path, timeout=5, test=True)
+        result = self.origin.roundtrip("dot", self.path, timeout=30, test=True)
         thread.join(5)
         self.assertFalse(errors)
         self.assertEqual(result["status"], "completed")
@@ -107,8 +108,9 @@ class RoundtripTests(unittest.TestCase):
         self.assertFalse(self.origin.evidence(self.path)["protocol_roundtrip_verified"]["verified"])
 
     def test_wait_timeout_persists_unknown_without_cancelling_or_faking_success(self):
-        with self.assertRaisesRegex(LocalFailure, "wait_timeout"):
-            self.origin.roundtrip("dot", self.path, timeout=0.05, test=True)
+        with patch.object(self.origin, "wait", side_effect=LocalFailure("wait_timeout")):
+            with self.assertRaisesRegex(LocalFailure, "wait_timeout"):
+                self.origin.roundtrip("dot", self.path, timeout=30, test=True)
         result = json.loads(self.path.read_text())
         self.assertEqual(result["status"], "unknown")
         self.assertFalse(result["correlated"])
@@ -117,8 +119,30 @@ class RoundtripTests(unittest.TestCase):
         )
         self.assertFalse(self.origin.evidence(self.path)["protocol_roundtrip_verified"]["verified"])
 
+    def test_roundtrip_timeout_reaches_task_and_wait_unchanged(self):
+        for seconds in (30, 86400):
+            with patch.object(
+                self.origin, "wait", side_effect=LocalFailure("wait_timeout")
+            ) as wait:
+                with self.assertRaises(LocalFailure):
+                    self.origin.roundtrip("dot", self.path, timeout=seconds, test=True)
+                evidence = json.loads(self.path.read_text())
+                wait.assert_called_once_with(evidence["task_id"], seconds)
+            task = self.origin.call("task", {"task_id": evidence["task_id"]})["task"]
+            self.assertAlmostEqual(task["deadline"] - task["created"], seconds, places=3)
+
+    def test_doctor_reports_safe_outbound_and_worker_status(self):
+        with patch.dict(
+            "os.environ", {"HTTPS_PROXY": "http://synthetic-private-proxy:9999"}, clear=True
+        ):
+            report = self.origin.call("doctor")
+        self.assertEqual(report["outbound_local"]["reason"], "explicit_outbound_proxy_required")
+        self.assertEqual(report["outbound_backend"]["reason"], "explicit_outbound_proxy_required")
+        self.assertEqual(report["terminal_worker"]["state"], "disabled")
+        self.assertNotIn("synthetic-private-proxy", json.dumps(report))
+
     def test_invalid_wait_options_do_not_create_tasks(self):
-        for value in (0, -1, float("nan"), float("inf"), 86401):
+        for value in (0, -1, 29, 30.5, float("nan"), float("inf"), 86401):
             with self.assertRaises(ValueError):
                 self.origin.roundtrip("dot", self.path, timeout=value)
         with self.assertRaises(ValueError):
@@ -190,7 +214,7 @@ class RoundtripTests(unittest.TestCase):
                 )
                 self.assertIn("id", response.json()["result"])
                 roundtrip = asyncio.create_task(
-                    asyncio.to_thread(self.origin.roundtrip, "dot", self.path, 10, True)
+                    asyncio.to_thread(self.origin.roundtrip, "dot", self.path, 30, True)
                 )
                 for _ in range(500):
                     if any(r[0].get("name") == "handoff.available" for r in receiver.records):

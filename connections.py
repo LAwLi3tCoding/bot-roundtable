@@ -4,6 +4,7 @@ import re
 import time
 
 from roundtable import Problem
+from outbound import outbound_diagnostics
 
 
 class Connections:
@@ -47,8 +48,10 @@ class Connections:
         ]
 
 
-def capabilities():
+def capabilities(worker=None):
     return {
+        "outbound_backend": outbound_diagnostics(),
+        "terminal_worker": worker.status() if worker else {"state": "disabled"},
         "protocol": "roundtable-local-v1",
         "local_http": True,
         "mcp_stdio": True,

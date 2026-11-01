@@ -20,6 +20,8 @@ import socket
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from outbound import outbound_diagnostics
+
 
 _WAIT_SLOTS = threading.BoundedSemaphore(4)
 
@@ -133,6 +135,11 @@ class LocalClient:
                         "verified": False,
                         "reason": "requires actual provider subscription/routine and observed native response",
                     },
+                    "terminal_worker": result.get("terminal_worker", {"state": "unavailable"}),
+                    "outbound_backend": result.get(
+                        "outbound_backend", {"configured": False, "reason": "unavailable"}
+                    ),
+                    "outbound_local": outbound_diagnostics(),
                     "secrets_included": False,
                 }
             return result
@@ -204,8 +211,8 @@ class LocalClient:
         """An explicit one-assignment read-only test, not proof of vendor identity."""
         if not re.fullmatch(r"[a-z][a-z0-9-]{1,39}", worker) or worker == self.agent:
             raise ValueError("Invalid roundtrip worker")
-        if not math.isfinite(timeout) or not 0 < timeout <= 86400:
-            raise ValueError("Invalid roundtrip wait timeout")
+        if not math.isfinite(timeout) or not 30 <= timeout <= 86400 or int(timeout) != timeout:
+            raise ValueError("Roundtrip timeout must be an integer from 30 to 86400 seconds")
         nonce = secrets.token_hex(16)
         created = self.call(
             "create",
@@ -221,7 +228,7 @@ class LocalClient:
                     }
                 ],
                 "budget": 1,
-                "timeout_seconds": 600,
+                "timeout_seconds": int(timeout),
                 "request_id": "roundtrip-" + nonce,
             },
         )

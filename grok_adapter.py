@@ -14,6 +14,7 @@ import time
 import math
 from urllib.parse import urlsplit
 from collections.abc import Callable
+from outbound import canonical_host, proxy_config, OutboundNotSentError, OutboundConfig
 
 
 class PinnedHTTPSConnection(http.client.HTTPSConnection):
@@ -22,11 +23,15 @@ class PinnedHTTPSConnection(http.client.HTTPSConnection):
 
 class GrokWebhook:
     def __init__(self, endpoint: str, key: str, allowed_host: str):
+        if not isinstance(endpoint, str) or any(ord(c) <= 32 for c in endpoint):
+            raise ValueError("Invalid routine endpoint")
         parsed = urlsplit(endpoint)
+        host = canonical_host(parsed.hostname)
+        allowed = canonical_host(allowed_host)
         if (
             parsed.scheme != "https"
             or not parsed.hostname
-            or parsed.hostname != allowed_host
+            or host != allowed
             or parsed.username
             or parsed.password
             or parsed.port not in (None, 443)
@@ -35,11 +40,15 @@ class GrokWebhook:
             raise ValueError("Use an operator-approved HTTPS endpoint on port 443")
         if not key or "\r" in key or "\n" in key:
             raise ValueError("Invalid bearer key")
-        self.host = parsed.hostname
+        self.host = host
         self.path = parsed.path or "/"
         if parsed.query:
             self.path += "?" + parsed.query
         self.key = key
+
+    def preflight(self):
+        """Validate operator proxy configuration before reserving a delivery."""
+        return OutboundConfig(proxy_config())
 
     def dispatch(self, job: dict) -> dict:
         deadline = job.get("deadline")
@@ -58,7 +67,9 @@ class GrokWebhook:
         self._post(json.dumps(payload_data).encode())
         return {"accepted": True, "completed": False, "job_id": job["id"]}
 
-    def dispatch_terminal(self, task_id: str, status: str, *, cancelled=None, state=None) -> dict:
+    def dispatch_terminal(
+        self, task_id: str, status: str, *, cancelled=None, state=None, transport=None
+    ) -> dict:
         """Send only an operator-authorized terminal hint, never task contents."""
         import re
 
@@ -69,45 +80,56 @@ class GrokWebhook:
             "cancelled",
         ):
             raise ValueError("Terminal task receipt required")
-        self._post(json.dumps({"task_id": task_id, "status": status}).encode(), cancelled, state)
+        self._post(
+            json.dumps({"task_id": task_id, "status": status}).encode(), cancelled, state, transport
+        )
         return {"accepted": True, "task_id": task_id, "status": status}
 
-    def _post(self, payload: bytes, cancelled=None, state=None) -> None:
-        # Pin the validated address for the actual TLS connection. No redirect,
-        # DNS rebinding, proxy auto-discovery, or URL from untrusted message data.
-        if any(
-            os.environ.get(name)
-            for name in (
-                "HTTPS_PROXY",
-                "HTTP_PROXY",
-                "ALL_PROXY",
-                "https_proxy",
-                "http_proxy",
-                "all_proxy",
-            )
-        ):
-            raise RuntimeError("Proxy-only environments are not supported; no direct fallback")
-        addresses = socket.getaddrinfo(self.host, 443, type=socket.SOCK_STREAM)
-        ips = [str(entry[4][0]) for entry in addresses]
-        if not ips or any(
-            not address.is_global or address.is_multicast or address.is_reserved
-            for address in map(ipaddress.ip_address, ips)
-        ):
-            raise ValueError("Endpoint resolves to a non-public address")
+    def _post(self, payload: bytes, cancelled=None, state=None, transport=None) -> None:
+        config = transport if transport is not None else self.preflight()
+        proxy = config.proxy
+        ips = []
+        if not proxy:
+            try:
+                addresses = socket.getaddrinfo(self.host, 443, type=socket.SOCK_STREAM)
+                ips = [str(entry[4][0]) for entry in addresses]
+                if not ips or any(
+                    not address.is_global or address.is_multicast or address.is_reserved
+                    for address in map(ipaddress.ip_address, ips)
+                ):
+                    raise ValueError()
+            except (OSError, ValueError):
+                raise OutboundNotSentError("outbound_resolution_not_sent") from None
         connection: PinnedHTTPSConnection
-        if cancelled is not None:
-            from event_delivery import DirectHTTPSConnection
+        if cancelled is not None or proxy:
+            import threading
+            from event_delivery import DirectHTTPSConnection, ConnectHTTPSConnection
+
+            if cancelled is None:
+                cancelled = threading.Event()
+                state = {"deadline": time.monotonic() + 20}
 
             if state is None or cancelled.is_set() or time.monotonic() >= state["deadline"]:
                 raise TimeoutError("Terminal delivery cancelled")
-            connection = DirectHTTPSConnection(
-                self.host,
-                ips[0],
-                state["deadline"] - time.monotonic(),
-                ssl.create_default_context(),
-                state,
-                cancelled,
-            )
+            if proxy:
+                connection = ConnectHTTPSConnection(
+                    self.host,
+                    self.host,
+                    proxy,
+                    state["deadline"] - time.monotonic(),
+                    ssl.create_default_context(),
+                    state,
+                    cancelled,
+                )
+            else:
+                connection = DirectHTTPSConnection(
+                    self.host,
+                    ips[0],
+                    state["deadline"] - time.monotonic(),
+                    ssl.create_default_context(),
+                    state,
+                    cancelled,
+                )
             state["connection"] = connection
         else:
             connection = PinnedHTTPSConnection(
@@ -123,6 +145,11 @@ class GrokWebhook:
         try:
             if cancelled is not None and cancelled.is_set():
                 raise TimeoutError("Terminal delivery cancelled")
+            if cancelled is not None:
+                try:
+                    connection.connect()
+                except Exception:
+                    raise OutboundNotSentError("outbound_connection_not_sent") from None
             connection.request(
                 "POST",
                 self.path,

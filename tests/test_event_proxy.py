@@ -39,50 +39,42 @@ class EventProxyTests(unittest.TestCase):
             self.assertNotIn(secret, "".join(logs.output))
 
     @patch.dict("os.environ", {}, clear=True)
-    def test_connect_numeric_target_tls_original_host_ipv4_ipv6(self):
-        for ip, authority in [
-            ("8.8.8.8", "8.8.8.8:443"),
-            ("2606:4700:4700::1111", "[2606:4700:4700::1111]:443"),
-        ]:
-            raw = MagicMock(spec=socket.socket)
-            raw.makefile.return_value = io.BytesIO(b"HTTP/1.1 200 Connection established\r\n\r\n")
-            context = MagicMock(spec=ssl.SSLContext)
-            state = {}
-            conn = ConnectHTTPSConnection(
-                "callback.example", ip, ("127.0.0.1", 8080), 20, context, state, threading.Event()
-            )
-            with patch("event_delivery.socket.create_connection", return_value=raw) as create:
-                conn.connect()
-            self.assertEqual(create.call_args.args[0], ("127.0.0.1", 8080))
-            self.assertLessEqual(create.call_args.args[1], 20)
-            request = raw.sendall.call_args[0][0]
-            self.assertIn(("CONNECT " + authority + " HTTP/1.1").encode(), request)
-            self.assertIn(("Host: " + authority).encode(), request)
-            context.wrap_socket.assert_called_once_with(
-                raw, server_hostname="callback.example", do_handshake_on_connect=False
-            )
+    def test_connect_approved_hostname_and_tls_original_host(self):
+        raw = MagicMock(spec=socket.socket)
+        raw.makefile.return_value = io.BytesIO(b"HTTP/1.1 200 Connection established\r\n\r\n")
+        context = MagicMock(spec=ssl.SSLContext)
+        conn = ConnectHTTPSConnection(
+            "callback.example",
+            "callback.example",
+            ("127.0.0.1", 8080),
+            20,
+            context,
+            {},
+            threading.Event(),
+        )
+        with patch("event_delivery.socket.create_connection", return_value=raw):
+            conn.connect()
+        self.assertIn(b"CONNECT callback.example:443 HTTP/1.1", raw.sendall.call_args.args[0])
+        context.wrap_socket.assert_called_once_with(
+            raw, server_hostname="callback.example", do_handshake_on_connect=False
+        )
 
     @patch.dict("os.environ", {}, clear=True)
-    def test_private_dns_rejected_before_proxy_and_original_host_preserved(self):
+    def test_proxy_skips_target_dns_and_preserves_host_without_redirect(self):
         transport = CallbackTransport(["callback.example"], proxy_url="http://127.0.0.1:8080")
-        with patch("event_delivery.ConnectHTTPSConnection") as connection:
-            with patch(
-                "event_delivery.socket.getaddrinfo",
-                return_value=[(2, 1, 6, "", ("127.0.0.1", 443))],
-            ):
-                with self.assertRaises(ValueError):
-                    transport.post("https://callback.example/path", b"", {})
-                connection.assert_not_called()
+        with (
+            patch("event_delivery.ConnectHTTPSConnection") as connection,
+            patch("event_delivery.socket.getaddrinfo") as dns,
+        ):
             connection.return_value.getresponse.return_value.status = 302
             connection.return_value.getresponse.return_value.read.return_value = b""
-            with patch(
-                "event_delivery.socket.getaddrinfo", return_value=[(2, 1, 6, "", ("8.8.8.8", 443))]
-            ):
-                self.assertEqual(transport.post("https://callback.example/path", b"", {})[0], 302)
-            self.assertEqual(connection.call_args.args[1], "8.8.8.8")
-            request = connection.return_value.request
-            self.assertEqual(request.call_count, 1)
-            self.assertEqual(request.call_args.args[3]["Host"], "callback.example")
+            self.assertEqual(transport.post("https://callback.example/path", b"", {})[0], 302)
+            dns.assert_not_called()
+            self.assertEqual(connection.call_args.args[1], "callback.example")
+            self.assertEqual(connection.return_value.request.call_count, 1)
+            self.assertEqual(
+                connection.return_value.request.call_args.args[3]["Host"], "callback.example"
+            )
 
     @patch.dict("os.environ", {}, clear=True)
     def test_connect_rejection_does_not_fallback_or_start_tls(self):
@@ -161,7 +153,7 @@ class EventProxyTests(unittest.TestCase):
                     raw.sendall.assert_not_called()
                 else:
                     self.assertTrue(
-                        raw.sendall.call_args.args[0].startswith(b"CONNECT 8.8.8.8:443 ")
+                        raw.sendall.call_args.args[0].startswith(b"CONNECT callback.example:443 ")
                     )
                 context.wrap_socket.assert_called_once_with(
                     raw, server_hostname="callback.example", do_handshake_on_connect=False

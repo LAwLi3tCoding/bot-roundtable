@@ -105,7 +105,7 @@ The initial targets are Grok Bot, dot, and the confirmed **Fei2411/DS-Bot** (for
 
 `grok_adapter.py --dispatch` accepts one mailbox job JSON on stdin. The operator explicitly sets `GROK_ROUTINE_URL`, `GROK_ROUTINE_KEY`, and `GROK_ALLOWED_HOST`. It performs one Bearer POST to an operator-approved routine endpoint. HTTP 200 means accepted, not completed. There is no invented result-query API, nor mixing with a different automations HMAC protocol.
 
-No automatic dispatch, retry, routine creation or credential setup occurs. The owner’s routine/trusted bridge must supply the reply through this project’s protocol. Expired jobs are rejected before dispatch; for unexpired saved copies, the operator must still check whether the room was stopped. Proxy-only environments fail closed. The local server has no public callback gateway and cannot be reached directly by an external Bot.
+No automatic dispatch, retry, routine creation or credential setup occurs. The owner’s routine/trusted bridge must supply the reply through this project’s protocol. Expired jobs are rejected before dispatch; for unexpired saved copies, the operator must still check whether the room was stopped. Ambient proxy variables alone fail closed; explicitly select trusted proxy DNS with `ROUNDTABLE_OUTBOUND_PROXY` as described in [proxy setup](docs/DOT_SETUP.en.md). The local server has no public callback gateway and cannot be reached directly by an external Bot.
 
 ## HTTP interface (v1-compatible)
 

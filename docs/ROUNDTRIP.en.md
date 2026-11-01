@@ -12,7 +12,7 @@ commands or chat. No secret files are parsed by these commands.
 
 Replace `TASK_ID` and `dot` with the authorized task and registered member ID.
 `roundtrip` is an explicit write: it creates one read-only nonce-return assignment,
-with dispatch budget 1 and task deadline 600 seconds. The origin needs one unit of
+with dispatch budget 1 and task deadline from `--timeout` (default 600, integer 30–86400 seconds). The origin needs one unit of
 initiation allowance. It does not subscribe or wake a vendor itself. The worker
 must already be authorized to receive this test. It must return the exact nonce
 without executing commands, reading files, or creating Codex work.

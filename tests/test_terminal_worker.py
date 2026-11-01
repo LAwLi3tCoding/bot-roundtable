@@ -72,6 +72,39 @@ class TerminalWorkerTests(unittest.TestCase):
         time.sleep(0.1)
         self.assertFalse(worker.failed)
 
+    def test_configuration_backoff_keeps_cursor_then_recovers_without_replay(self):
+        from grok_adapter import GrokWebhook
+        from outbound import OutboundConfigurationError
+        import sqlite3
+
+        self.adapter = GrokWebhook(
+            "https://approved.example/routine", "synthetic", "approved.example"
+        )
+        permitted = threading.Event()
+
+        def preflight():
+            if not permitted.is_set():
+                raise OutboundConfigurationError("explicit_proxy_required")
+
+        with (
+            patch.object(self.adapter, "preflight", side_effect=preflight),
+            patch.object(self.adapter, "dispatch_terminal") as dispatch,
+        ):
+            worker = self.start()
+            tid = self.task()
+            self.finish(tid)
+            self.until(lambda: worker.status()["state"] == "backoff")
+            with sqlite3.connect(self.path / "ledger.db") as ledger:
+                self.assertEqual(
+                    ledger.execute("SELECT COUNT(*) FROM terminal_delivery").fetchone()[0], 0
+                )
+            permitted.set()
+            self.until(lambda: dispatch.call_count == 1)
+            worker.stop()
+            again = self.start()
+            self.drained(again)
+            self.assertEqual(dispatch.call_count, 1)
+
     def test_automatic_terminal_no_backlog_scope_and_restart_dedup(self):
         old = self.task()
         self.finish(old)

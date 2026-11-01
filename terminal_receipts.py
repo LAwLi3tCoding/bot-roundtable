@@ -18,6 +18,7 @@ import socket
 
 from grok_adapter import GrokWebhook
 from local_client import LocalClient
+from outbound import OutboundConfigurationError, OutboundNotSentError
 
 TERMINAL = {"completed", "failed", "timeout", "cancelled"}
 
@@ -25,7 +26,7 @@ TERMINAL = {"completed", "failed", "timeout", "cancelled"}
 _DELIVERY_SLOTS = threading.BoundedSemaphore(4)
 
 
-def bounded_dispatch(adapter, tid, status, timeout=20, stop=None):
+def bounded_dispatch(adapter, tid, status, timeout=20, stop=None, transport=None):
     """Bound total wait, including DNS, without accumulating hung threads."""
     if stop is not None and stop.is_set():
         raise TimeoutError("terminal_delivery_cancelled")
@@ -33,15 +34,19 @@ def bounded_dispatch(adapter, tid, status, timeout=20, stop=None):
         raise TimeoutError("terminal_delivery_capacity_exhausted")
     done, cancelled = threading.Event(), threading.Event()
     state = {"deadline": time.monotonic() + timeout}
-    accepted = []
+    accepted: list = []
 
     def run():
         try:
             if isinstance(adapter, GrokWebhook):
-                adapter.dispatch_terminal(tid, status, cancelled=cancelled, state=state)
+                adapter.dispatch_terminal(
+                    tid, status, cancelled=cancelled, state=state, transport=transport
+                )
             else:
                 adapter.dispatch_terminal(tid, status)
             accepted.append(True)
+        except (OutboundConfigurationError, OutboundNotSentError) as exc:
+            accepted.append(exc)
         except Exception:
             pass
         finally:
@@ -60,14 +65,40 @@ def bounded_dispatch(adapter, tid, status, timeout=20, stop=None):
                 except OSError:
                     pass
             raise TimeoutError("terminal_delivery_uncertain")
+    if accepted and isinstance(accepted[0], Exception):
+        raise accepted[0]
     if not accepted:
         raise TimeoutError("terminal_delivery_uncertain")
+
+
+def private_ledger(path):
+    """Create private storage without changing process-global umask or existing modes."""
+    if str(path) == ":memory:":
+        return
+    target = Path(path)
+    missing = []
+    parent = target.parent
+    while not parent.exists():
+        missing.append(parent)
+        parent = parent.parent
+    for directory in reversed(missing):
+        try:
+            directory.mkdir(mode=0o700)
+        except FileExistsError:
+            pass
+    try:
+        fd = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except FileExistsError:
+        return
+    else:
+        os.close(fd)
 
 
 class TerminalReceipts:
     def __init__(self, path, delivery_timeout=20, stop=None):
         self.stop = stop
         self.delivery_timeout = delivery_timeout
+        private_ledger(path)
         self.db = sqlite3.connect(path, timeout=10)
         self.db.execute("PRAGMA synchronous=FULL")
         self.db.execute(
@@ -87,6 +118,22 @@ class TerminalReceipts:
             raise ValueError("Invalid task ID")
         if status not in TERMINAL:
             return {"attempted": False, "reason": "task_not_terminal"}
+        if self.db.execute(
+            "SELECT 1 FROM terminal_delivery WHERE scope=? AND task_id=?", (scope, tid)
+        ).fetchone():
+            return {"attempted": False, "reason": "already_reserved"}
+        transport = None
+        if isinstance(adapter, GrokWebhook):
+            try:
+                transport = adapter.preflight()
+            except OutboundConfigurationError as exc:
+                return {
+                    "attempted": False,
+                    "outcome": "definitely_not_sent",
+                    "reason": exc.code
+                    if isinstance(exc, OutboundConfigurationError)
+                    else "outbound_definitely_not_sent",
+                }
         # Atomic uniqueness serializes competing processes without holding a lock
         # during network I/O. Unknown is deliberately persisted before dispatch.
         with self.db:
@@ -97,7 +144,22 @@ class TerminalReceipts:
         if not inserted:
             return {"attempted": False, "reason": "already_reserved"}
         try:
-            bounded_dispatch(adapter, tid, status, self.delivery_timeout, self.stop)
+            bounded_dispatch(
+                adapter, tid, status, self.delivery_timeout, self.stop, transport=transport
+            )
+        except (OutboundConfigurationError, OutboundNotSentError) as exc:
+            with self.db:
+                self.db.execute(
+                    "UPDATE terminal_delivery SET outcome='definitely_not_sent' WHERE scope=? AND task_id=?",
+                    (scope, tid),
+                )
+            return {
+                "attempted": True,
+                "outcome": "definitely_not_sent",
+                "reason": exc.code
+                if isinstance(exc, OutboundConfigurationError)
+                else "outbound_definitely_not_sent",
+            }
         except Exception:
             # Error details could contain the callback URL or credentials.
             return {"attempted": True, "outcome": "uncertain", "task_id": tid}
@@ -122,11 +184,12 @@ class TerminalWorker:
         self.interval = interval
         self.stop_event, self.ready = threading.Event(), threading.Event()
         self.failed = False
+        self.health = {"state": "starting", "reason": "", "retry_seconds": 0}
         self.thread = threading.Thread(target=self._run, daemon=True)
 
     def start(self):
         self.thread.start()
-        if not self.ready.wait(5) or self.failed:
+        if not self.ready.wait(5):
             self.stop_event.set()
             raise RuntimeError("terminal_worker_start_failed")
 
@@ -134,7 +197,31 @@ class TerminalWorker:
         self.stop_event.set()
         self.thread.join(timeout=1)
 
+    def status(self):
+        return dict(self.health)
+
     def _run(self):
+        delay = 0.1
+        while not self.stop_event.is_set():
+            try:
+                self._session()
+                break
+            except Exception as exc:
+                self.failed = True
+                reason = (
+                    exc.code
+                    if isinstance(exc, OutboundConfigurationError)
+                    else "terminal_worker_fault"
+                )
+                self.health = {"state": "backoff", "reason": reason, "retry_seconds": delay}
+                self.ready.set()
+                logging.warning("terminal_worker_backoff")
+                if self.stop_event.wait(delay):
+                    break
+                delay = min(delay * 2, 30)
+        self.health = {"state": "stopped", "reason": "", "retry_seconds": 0}
+
+    def _session(self):
         source = None
         ledger = None
         try:
@@ -158,6 +245,8 @@ class TerminalWorker:
             cursor = ledger.db.execute(
                 "SELECT position FROM terminal_cursor WHERE scope=?", (key,)
             ).fetchone()[0]
+            self.failed = False
+            self.health = {"state": "running", "reason": "", "retry_seconds": 0}
             self.ready.set()
             while not self.stop_event.is_set():
                 rows = source.execute(
@@ -187,6 +276,11 @@ class TerminalWorker:
                         and current_task["status"] in TERMINAL
                     ):
                         result = ledger.send(self.room, dict(current_task), self.adapter)
+                        if (
+                            result.get("outcome") == "definitely_not_sent"
+                            and not result["attempted"]
+                        ):
+                            raise OutboundConfigurationError(result["reason"])
                         if result.get("outcome") == "uncertain":
                             logging.warning("terminal_delivery_uncertain")
                     cursor = row["event_id"]
@@ -196,11 +290,7 @@ class TerminalWorker:
                         )
                 if len(rows) < 100:
                     self.stop_event.wait(self.interval)
-        except Exception:
-            self.failed = True
-            logging.error("terminal_worker_failed")
         finally:
-            self.ready.set()
             if ledger:
                 ledger.close()
             if source:
@@ -217,7 +307,7 @@ def configured_worker(source):
         os.environ["GROK_ALLOWED_HOST"],
     )
     ledger = os.environ.get("ROUNDTABLE_TERMINAL_LEDGER", "data/terminal-receipts.db")
-    Path(ledger).parent.mkdir(parents=True, exist_ok=True)
+    private_ledger(ledger)
     return TerminalWorker(
         source,
         ledger,
@@ -262,13 +352,11 @@ def main():
             os.environ["GROK_ROUTINE_KEY"],
             os.environ["GROK_ALLOWED_HOST"],
         )
-        os.umask(0o077)
-        Path(args.ledger).parent.mkdir(parents=True, exist_ok=True)
         ledger = TerminalReceipts(args.ledger)
         scope = os.environ["ROUNDTABLE_ROOM"]
         result = ledger.send(scope, task, adapter)
         print(json.dumps(result))
-        return 1 if result.get("outcome") == "uncertain" else 0
+        return 1 if result.get("outcome") in ("uncertain", "definitely_not_sent") else 0
     except Exception:
         print(json.dumps({"ok": False, "reason": "terminal_receipt_failed_or_uncertain"}))
         return 1

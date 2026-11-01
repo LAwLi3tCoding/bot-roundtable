@@ -17,6 +17,7 @@ from urllib.parse import urlsplit
 from typing import Any
 
 from grok_adapter import PinnedHTTPSConnection
+from outbound import canonical_host, proxy_config, OutboundConfigurationError
 
 
 def signing_key(secret):
@@ -96,7 +97,7 @@ class DirectHTTPSConnection(PinnedHTTPSConnection):
 
 
 class ConnectHTTPSConnection(DirectHTTPSConnection):
-    """CONNECT only to a validated numeric IP; preserve the original TLS host."""
+    """Explicit trusted proxy resolves the approved hostname; TLS checks that name."""
 
     def __init__(self, host, target_ip, proxy, timeout, context, state, cancelled):
         super().__init__(host, target_ip, timeout, context, state, cancelled)
@@ -115,36 +116,23 @@ class CallbackTransport:
         )
         if not math.isfinite(self.deadline_seconds) or not 0.01 <= self.deadline_seconds <= 120:
             raise ValueError("Callback timeout must be 0.01–120 seconds")
-        self.proxy = None
-        proxy_url = proxy_url or os.environ.get("ROUNDTABLE_EVENT_PROXY", "")
-        if proxy_url:
-            proxy = urlsplit(proxy_url)
-            if (
-                proxy.scheme != "http"
-                or not proxy.hostname
-                or proxy.username
-                or proxy.password
-                or proxy.path not in ("", "/")
-                or proxy.query
-                or proxy.fragment
-                or any(ord(c) <= 32 for c in proxy_url)
-            ):
-                raise ValueError("Explicit HTTP CONNECT proxy required; credentials unsupported")
-            self.proxy = (proxy.hostname, proxy.port or 80)
+        self.proxy = proxy_config(proxy_url)
         self.slots = threading.BoundedSemaphore(4)
-        self.allowed_hosts = set(allowed_hosts)
-        if not self.allowed_hosts or any(
-            "*" in h or "/" in h or ":" in h for h in self.allowed_hosts
-        ):
+        self.allowed_hosts = {canonical_host(host) for host in allowed_hosts}
+        if not self.allowed_hosts:
             raise ValueError("Explicit callback host allowlist required")
 
     def validate(self, url):
         if not isinstance(url, str) or len(url) > 2048 or any(ord(c) < 32 for c in url):
             raise ValueError("Invalid callback URL")
         p = urlsplit(url)
+        try:
+            host = canonical_host(p.hostname)
+        except OutboundConfigurationError:
+            host = ""
         if (
             p.scheme != "https"
-            or p.hostname not in self.allowed_hosts
+            or host not in self.allowed_hosts
             or p.username
             or p.password
             or p.port not in (None, 443)
@@ -154,7 +142,7 @@ class CallbackTransport:
             safe_host = host if re.fullmatch(r"[a-zA-Z0-9.-]{1,253}", host) else "<invalid>"
             logging.getLogger(__name__).warning("callback_host_not_approved host=%s", safe_host)
             raise ValueError("callback_host_not_approved")
-        return p
+        return p._replace(netloc=host)
 
     def post(self, url, body, headers):
         # The deadline covers DNS, TLS, headers and a trickling body, not just idle reads.
@@ -193,24 +181,16 @@ class CallbackTransport:
         p = self.validate(url)
         if len(body) > 262144:
             raise ValueError("Event too large")
-        if not self.proxy and any(
-            os.environ.get(n)
-            for n in (
-                "HTTP_PROXY",
-                "HTTPS_PROXY",
-                "ALL_PROXY",
-                "http_proxy",
-                "https_proxy",
-                "all_proxy",
-            )
-        ):
-            raise RuntimeError("Proxy transport unsupported; no direct fallback")
-        ips = [str(r[4][0]) for r in socket.getaddrinfo(p.hostname, 443, type=socket.SOCK_STREAM)]
-        if not ips or any(
-            not ip.is_global or ip.is_multicast or ip.is_reserved
-            for ip in map(ipaddress.ip_address, ips)
-        ):
-            raise ValueError("Non-public callback address")
+        ips = []
+        if not self.proxy:
+            ips = [
+                str(r[4][0]) for r in socket.getaddrinfo(p.hostname, 443, type=socket.SOCK_STREAM)
+            ]
+            if not ips or any(
+                not ip.is_global or ip.is_multicast or ip.is_reserved
+                for ip in map(ipaddress.ip_address, ips)
+            ):
+                raise ValueError("Non-public callback address")
         if cancelled.is_set():
             raise TimeoutError("Callback deadline exceeded")
         remaining = state["deadline"] - time.monotonic()
@@ -220,7 +200,7 @@ class CallbackTransport:
         if self.proxy:
             conn = ConnectHTTPSConnection(
                 p.hostname,
-                ips[0],
+                p.hostname,
                 self.proxy,
                 remaining,
                 ssl.create_default_context(),

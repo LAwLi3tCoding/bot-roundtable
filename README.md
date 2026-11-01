@@ -105,7 +105,7 @@ python server.py
 
 保留 `grok_adapter.py --dispatch`：operator 设置 `GROK_ROUTINE_URL`、`GROK_ROUTINE_KEY`、`GROK_ALLOWED_HOST`，将一个 mailbox job JSON 传入 stdin，显式发送一次。只接受官方 routine 的 Bearer POST，HTTP 200 只表示 accepted，不是回复完成；没有虚构结果查询 API，也不混用另一种 automations HMAC 协议。
 
-本期不自动发送、不自动重试、不创建 routine/凭据。回程由 owner 的 routine 或可信桥接程序调用本项目 reply 协议。过期 job 不发送；未过期但已 stop 的旧副本仍需操作人先核对 mailbox。适配器拒绝代理环境，明确报错，不绕过网络策略。外部 Bot 无法直接访问本机 loopback；目前没有公开 callback 网关。
+本期不自动发送、不自动重试、不创建 routine/凭据。回程由 owner 的 routine 或可信桥接程序调用本项目 reply 协议。过期 job 不发送；未过期但已 stop 的旧副本仍需操作人先核对 mailbox。仅有普通代理环境变量时明确报错；可通过显式 `ROUNDTABLE_OUTBOUND_PROXY` 选择可信代理 DNS 通道，见[代理配置](docs/DOT_SETUP.zh.md)。外部 Bot 无法直接访问本机 loopback；目前没有公开 callback 网关。
 
 ## HTTP 接口（兼容上一版）
 

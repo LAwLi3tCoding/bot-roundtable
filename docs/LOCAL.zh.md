@@ -65,7 +65,7 @@ mcp:
 
 详见 [Events 契约与配置](EVENTS.md)。用户必须先明确让 dot 监听本成员 `handoff.available`，或入口监听自己的某个 `task.updated`。订阅由真实客户端提供 callback URL/signing secret，不能凭空生成一个网址假装 dot 入口。先确认事件发现、challenge 回显、2xx 接收，再确认原生 dot 真正开始响应；2xx 不等于任务完成。停止监听后验证 unsubscribe 不再投递。
 
-Grok 的 `grok_adapter.py --dispatch --assignment` 可显式发送一份刚读取的 queued assignment（补充 room 字段）；继承原有 HTTPS/主机批准/公网 IP 校验。payload 中 run 是 task_id，id 是 assignment_id，phase 为 assignment。routine 必须重新读取本机 inbox、确认有效后领取并回报，不能把 webhook 正文当新增权限。没有自动 routine 创建、后台轮询厂商或自动重试外发。
+Grok 的 `grok_adapter.py --dispatch --assignment` 可显式发送一份刚读取的 queued assignment（补充 room 字段）；保留 HTTPS/精确主机批准；直连执行公网 IP 校验，显式代理模式使用可信代理 DNS，详见 [配置指南](DOT_SETUP.zh.md)。payload 中 run 是 task_id，id 是 assignment_id，phase 为 assignment。routine 必须重新读取本机 inbox、确认有效后领取并回报，不能把 webhook 正文当新增权限。没有自动 routine 创建、后台轮询厂商或自动重试外发。
 
 ## 当前阻塞与完成标准
 

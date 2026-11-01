@@ -68,3 +68,5 @@ Current gates: this executor is not the user's computer and has no Grok/dot auth
 The latest probe nonce is persisted for the current membership and displayed in Web connection evidence. Compare it exactly with the native bot response; it is not a credential and does not survive membership replacement. Doctor returns safe stage codes: `configuration_missing` / `configuration_invalid`, `backend_unreachable`, `authorization_rejected`, and `protocol_mismatch`.
 
 Keep claim leases in local machine-to-machine flows: use stdin/stdout pipes or private temporary files in an owner-only directory (Unix `umask 077`; equivalent current-user ACL on Windows), then remove temporary files. Never paste claim output into chat, shared logs or screenshots. Return only non-secret task IDs, progress and results to the native conversation.
+
+Explicit outbound proxy DNS and direct-mode public IP validation are distinct trust boundaries; see [proxy setup](DOT_SETUP.en.md). No Clash or system-network changes are required.

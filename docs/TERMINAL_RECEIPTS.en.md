@@ -21,8 +21,7 @@ If the task is still nonterminal, nothing is reserved or sent. Supported states
 are `completed`, `failed`, `timeout`, and `cancelled`. The payload contains only
 `task_id` and `status`, never instructions, results, tokens, or lease values.
 The existing Grok transport validates an allowlisted HTTPS host, rejects private
-DNS results, pins the public IP, verifies TLS and rejects proxy environments and
-redirects. HTTP 200 means routine acceptance only.
+DNS results and pins the public IP in direct mode. Explicit proxy mode instead trusts proxy DNS and uses hostname CONNECT. TLS verification and redirect rejection apply in both modes. HTTP 200 means routine acceptance only.
 
 The durable SQLite ledger reserves **one attempt per room/task before network
 I/O**, across command invocations and concurrent processes sharing that ledger.
@@ -30,7 +29,7 @@ Repeated terminal reads or later status changes do not resend. An exception is
 reported as `uncertain`, with no automatic retry. A crash after reservation but
 before sending can lose the receipt; a crash after remote acceptance can leave
 the local outcome uncertain. This provides at-most-one attempt, **not exactly-once
-delivery**. Even a preflight network failure consumes the reservation. Retain the
+delivery**. Once reserved, a definite network failure remains recorded and is not automatically retried, just like an uncertain transmission. Retain the
 same ledger across restarts; deleting it or selecting another ledger can cause
 duplicate sends. Do not change ledgers to retry an uncertain outcome. Check the
 native routine history yourself before deciding what to do.
@@ -78,3 +77,5 @@ flag absent, no worker starts and no routine configuration is parsed.
 Both modes honor `ROUNDTABLE_TERMINAL_LEDGER` and default to
 `data/terminal-receipts.db` relative to the working directory. Use the same
 absolute ledger path for automatic and manual delivery.
+
+Configuration preflight runs before a receipt reservation: missing explicit proxy in a proxy environment or invalid proxy configuration is `definitely_not_sent`, does not consume an attempt, and leaves the worker cursor pending. Uncertain network sends retain their reservation and are never replayed. Transient worker failures recover with stop-aware exponential backoff from 0.1 to 30 seconds; authenticated doctor capabilities expose `terminal_worker` state/reason/retry_seconds and `outbound_backend` mode without URLs or secrets. Ledger creation uses exclusive mode-0600 files and mode-0700 new directories, without changing process-global umask or existing permissions/data.

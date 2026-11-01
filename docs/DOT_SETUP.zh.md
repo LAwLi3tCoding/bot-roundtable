@@ -16,7 +16,7 @@
 
 `claim_assignment(..., lease_seconds=60)` 接受 30–1800 的整数；租约和进度续期均不超过任务截止时间，进度按所选租约时长续期。任务 `timeout_seconds` 范围为 30–86400。过期后可在次数与预算范围内重新领取，旧租约不能继续报告。外部 Codex 操作不会自动撤销或重放。
 
-Events 仍须明确配置并经授权订阅。`ROUNDTABLE_EVENT_TIMEOUT` 控制含 DNS 与传输在内的回调总期限，默认 20 秒，范围 0.01–120。Mac 回调约 7 秒是用户观察，非本项目实测。普通代理环境变量仍默认拒绝；明确使用可信 HTTP CONNECT 代理时设置 `ROUNDTABLE_EVENT_PROXY` 为 HTTP origin，不支持代理凭据。回调 DNS 全部结果必须为公网地址，CONNECT 使用已校验 IP，TLS 与 Host 保留原回调域名。不跟随重定向或回退直连。不可中断 DNS 在结束前继续占用有界工作槽位。主机拒绝日志仅含 `callback_host_not_approved` 和清理过的 hostname。
+Events 仍须明确配置并经授权订阅。`ROUNDTABLE_EVENT_TIMEOUT` 控制含 DNS 与传输在内的回调总期限，默认 20 秒，范围 0.01–120。Mac 回调约 7 秒是用户观察，非本项目实测。普通代理环境变量仍默认拒绝；明确使用可信 HTTP CONNECT 代理时设置 `ROUNDTABLE_EVENT_PROXY` 为 HTTP origin，不支持代理凭据。直连时回调 DNS 全部结果必须为公网地址并固定所选 IP；显式代理时 CONNECT 使用规范化域名，由可信代理解析，TLS 与 Host 保留该域名。不跟随重定向或回退直连。不可中断 DNS 在结束前继续占用有界工作槽位。主机拒绝日志仅含 `callback_host_not_approved` 和清理过的 hostname。
 
 另行批准订阅后，`handoff.available` 流程为 receive_assignments → claim_assignment → dot 核对任务及用户权限，通过自身已连接电脑工具创建 Codex 任务 → report progress → completed/failed。事件只是唤醒提示，不是新增授权；任务文本不能越过已批准的范围。
 
@@ -27,3 +27,11 @@ sh scripts/start-local.sh mcp --events-db "${ROUNDTABLE_HOME}/data/events.db" --
 ```
 
 将 `approved.hostname` 替换为明确批准的回调域名；多个域名重复传入 `--event-host`。脚本原样转发参数。默认 `mcp` 命令和 launchd 模板仍关闭 Events。使用 launchd 时，在 `mcp` 后把同样的参数逐项添加为 `ProgramArguments` 字符串，数据库路径需渲染为绝对路径，加载前审核。这里只启用入口；实际订阅 `handoff.available` 仍须在实现验收后取得用户另行确认。
+
+## 本机必须走代理（如 Clash fake-ip）
+
+在 MCP Events gateway 和 server/routine 进程环境中都设置 `ROUNDTABLE_OUTBOUND_PROXY` 为 `http://127.0.0.1:<PORT>`，将 `<PORT>` 替换为已有本机 HTTP CONNECT 代理端口。项目不读取或修改 Clash、系统 DNS 或全局网络配置。兼容的 `ROUNDTABLE_EVENT_PROXY` 同样适用于两条通道；两者同时设置时，非空的统一变量优先，不回退直连。
+
+显式代理是用户选择的可信 DNS/路由边界：CONNECT 传规范化目标域名，不传本机解析出的 fake IP，因此此模式不会因本机 fake-IP 结果而拒绝。本机无法证明代理最终访问的 IP 为公网。精确域名白名单、HTTPS、原主机证书校验及拒绝 IP 字面量/本地域名仍保留。直连模式仍执行本机 DNS、公网 IP 校验和固定。
+
+只有普通 `HTTPS_PROXY`/`HTTP_PROXY`/`ALL_PROXY` 而未设置显式配置时，返回 `explicit_outbound_proxy_required`。`doctor` 返回安全的 `outbound_local`、`outbound_backend`、`terminal_worker` 字段；gateway 环境可能不同，须单独设置。这些只是配置观测，不代表真实厂商可达。配置错误不会消耗终态回执预留，修复后可继续；已经预留且不确定的尝试绝不自动重放。

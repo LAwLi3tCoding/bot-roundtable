@@ -157,7 +157,7 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
                     if len(parts) == 7 and parts[6] == "probe" and method == "POST":
                         return (200, store.connections.probe(room, agent, body.get("nonce")))
                     if len(parts) == 7 and parts[6] == "capabilities" and method == "GET":
-                        return (200, capabilities())
+                        return (200, capabilities(getattr(store, "terminal_worker", None)))
                     if len(parts) == 7 and parts[6] == "event-feed" and method == "POST":
                         return (200, store.handoffs.event_feed(room, "bot:" + agent, body))
                     if len(parts) >= 7 and parts[6] == "tasks":
@@ -200,7 +200,10 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
             if len(parts) == 4 and parts[3] == "connections" and method == "GET":
                 return (
                     200,
-                    {"members": store.connections.status(room), "capabilities": capabilities()},
+                    {
+                        "members": store.connections.status(room),
+                        "capabilities": capabilities(getattr(store, "terminal_worker", None)),
+                    },
                 )
             if len(parts) >= 4 and parts[3] == "tasks":
                 return self.task_dispatch(room, "user", parts[4:], method, body)
@@ -261,6 +264,7 @@ def main():
     worker = None
     try:
         worker = configured_worker(args.db)
+        setattr(store, "terminal_worker", worker)
         if worker:
             worker.start()
     except Exception:
