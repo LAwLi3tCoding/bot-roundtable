@@ -17,6 +17,7 @@ import time
 import tempfile
 import threading
 import socket
+import select
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -366,6 +367,7 @@ def main():
     parser.add_argument("task_id", nargs="?")
     parser.add_argument("--timeout", type=float, default=600)
     parser.add_argument("--worker", default="dot")
+    parser.add_argument("--body", help="Context body with a positional task ID")
     parser.add_argument(
         "--evidence", default=os.environ.get("ROUNDTABLE_EVIDENCE", "data/roundtrip.json")
     )
@@ -386,6 +388,10 @@ def main():
             os.environ.get("ROUNDTABLE_TOKEN", ""),
         )
         phase = "request_invalid"
+        if args.task_id and args.operation not in ("wait", "task", "context"):
+            raise ValueError("Unexpected task ID")
+        if args.body is not None and (args.operation != "context" or not args.task_id):
+            raise ValueError("Body requires context task ID")
         if args.operation == "wait":
             print(json.dumps(client.wait(args.task_id or "", args.timeout), ensure_ascii=False))
             return
@@ -399,10 +405,35 @@ def main():
             return
         data = None
         if args.operation not in ("probe", "doctor", "capabilities", "tasks", "inbox"):
-            raw = sys.stdin.buffer.read(32769)
-            if len(raw) > 32768:
-                raise ValueError("Payload too large")
-            data = json.loads(raw)
+            if args.task_id:
+                if not re.fullmatch(r"[a-f0-9]{24}", args.task_id):
+                    raise ValueError("Invalid task ID")
+                # Positional mode never waits for stdin; reject already supplied JSON.
+                if not sys.stdin.isatty() and select.select([sys.stdin], [], [], 0)[0]:
+                    if os.read(sys.stdin.fileno(), 1):
+                        raise ValueError("Task ID conflicts with stdin payload")
+                data = {"task_id": args.task_id}
+                if args.operation == "context":
+                    if args.body is None:
+                        raise ValueError("Context body required")
+                    data["body"] = args.body
+                    data["request_id"] = "context-" + secrets.token_hex(16)
+            else:
+                if sys.stdin.isatty():
+                    raise ValueError("JSON stdin required")
+                raw = bytearray()
+                deadline = time.monotonic() + 2
+                while True:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0 or not select.select([sys.stdin], [], [], remaining)[0]:
+                        raise ValueError("JSON stdin timeout")
+                    chunk = os.read(sys.stdin.fileno(), 32769 - len(raw))
+                    if not chunk:
+                        break
+                    raw.extend(chunk)
+                    if len(raw) > 32768:
+                        raise ValueError("Payload too large")
+                data = json.loads(raw)
         result = client.call(args.operation, data)
         if args.operation == "doctor":
             result.update(client.evidence(args.evidence))

@@ -8,6 +8,24 @@
 
 **中文** · [English](README.en.md) · [接入指南](docs/DOT_SETUP.zh.md) · [架构](ARCHITECTURE.md)
 
+## 自动本地配置与手动账号步骤
+
+按实际安装完成适用的账号步骤；脚本不代建厂商权限或订阅。
+
+1. [Platform Tunnel 与 runtime key](docs/SETUP_AUTOMATION.zh.md#platform-tunnel-runtime-key)：核对组织/workspace，仅选 Restricted Tunnels Read+Use，创建 key 时自行选择有效期，界面支持时可选 Never。
+2. [安装官方 Tunnel client](docs/SETUP_AUTOMATION.zh.md#tunnel-client-install)：从[官方发行页](https://github.com/openai/tunnel-client/releases)取得兼容版本，先核对已有安装。
+3. [ChatGPT connector](docs/SETUP_AUTOMATION.zh.md#chatgpt-connector)：选择目标 Tunnel、No authentication，并刷新已有连接的工具/Events metadata。
+4. [精确批准 callback host](docs/SETUP_AUTOMATION.zh.md#callback-approval)：使用 `approve-host`；`connectors.api.openai.com` 只是一次实测值，必须核实本次平台实际 hostname，不能盲批。
+5. [Dot `handoff.available` automation](docs/SETUP_AUTOMATION.zh.md#dot-automation)：由平台发起/续订；丢失后先查已有状态，再视情况关开或重建，并核实实际 subscribe/续订记录。
+6. [可选 Grok webhook routine](docs/SETUP_AUTOMATION.zh.md#grok-routine)：明确批准后用 `scripts/set-grok-routine.sh` 隐藏输入，参考[官方用量/价格](https://x.ai/bot)。
+7. [Grok 本机执行许可](docs/SETUP_AUTOMATION.zh.md#grok-local-permission)：另行授予必要电脑/工具范围，任务文本不产生权限。
+8. [显式出站代理](docs/SETUP_AUTOMATION.zh.md#outbound-proxy)：有需要时配置已有可信代理，包括 Clash fake-ip 网络，不改全局网络。
+9. [Mac 防睡眠](docs/SETUP_AUTOMATION.zh.md#sleep-prevention)：`up` 运行期使用临时 caffeinate，可用 `--no-caffeinate` 关闭；可选持久、仅 AC 的 pmset 设置须另行审阅风险与恢复方案，脚本不执行。
+
+之后按[自动配置指南](docs/SETUP_AUTOMATION.zh.md)执行 `setup-local.py` → `up.sh` → owner `doctor` → 明确批准的只读 `roundtrip`。下述手工快速开始是另一条路线，不要让两套管理器接管同一实例。[提示词](docs/PROMPTS.zh.md)保留权限边界。
+
+安装维护者经 Grok 报告：在一次真实安装中已观察到 Grok 终态 routine 回执及到期前自动续订。本次文档更新没有独立复现这些结果，每个部署仍需核验。见[证据与限制](VERIFICATION.md#maintainer-reported-acceptance)。
+
 ## 为什么使用圆桌
 
 圆桌是现成 Bot 之间的通信与协调层。入口 Bot 把任务交给群内其他成员，接收者在自己的运行环境中完成已授权的工作，再把进度和结果写回同一任务。双语 Web 界面展示讨论、任务和独立交接线程；SQLite 在本机保存状态。
@@ -87,6 +105,20 @@ sh scripts/start-local.sh mcp
 ```
 
 ## 安装与配置
+
+这不是一键账号接入。仅试用本地圆桌不需要云端账号；要让云端 Dot 自动接收任务，还需完成以下一次性配置。项目不会替你创建账号、密钥或订阅。
+
+| 阶段 | 操作者需要完成 | 验收 |
+|---|---|---|
+| 本机 | 安装依赖，创建专用群及独立成员凭据，启动 server/MCP | 本机 doctor/probe；仍只证明传输 |
+| 私有 Tunnel | 官方客户端、组织与 ChatGPT workspace 绑定、仅 Tunnels Read/Use 的 Restricted key、安全保存 | Tunnel 控制面与本机目标均可达 |
+| ChatGPT 插件 | Tunnel + No authentication，本地环境注入 scoped Bearer，连接并刷新工具 | 真实会话的 `list_rooms` / `list_bots` |
+| Events | 精确批准真实 callback hostname，启用网关、刷新发现、明确订阅 | 订阅确实存在且有效；不能只看创建按钮或工具列表 |
+| 只读回环 | 订阅成功后再创建一次 nonce 任务，观察事件唤醒、领取、回报 | 同一 task/assignment 的 completed 与原样 nonce |
+
+**首次 Events 发现：** 以空 callback 白名单启动，可发现事件，但在网络请求前拒绝全部订阅 challenge。从真实平台请求的安全 hostname 日志取得域名，另行核实来源后精确批准，仅重启受管理的网关。不使用占位域名、通配符或关闭校验。见[自动配置](docs/SETUP_AUTOMATION.zh.md)。
+
+受控实测已验证真实 webhook 触发 Dot、领取并原样回报只读 nonce。该 nonce 测试本身不证明 Codex 执行、Grok routine 回执或所有 Bot 的自动执行；routine 的新增维护者报告见上文证据说明。常驻运行、凭据续期及订阅续期仍由操作者管理。
 
 完整步骤见 [Dot 接入指南](docs/DOT_SETUP.zh.md)，其中包含环境变量清单和一次性验收清单。
 

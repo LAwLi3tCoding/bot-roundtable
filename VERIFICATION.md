@@ -1,5 +1,28 @@
 # Verification / 验证记录
 
+<a id="maintainer-reported-acceptance"></a>
+
+## Maintainer-reported acceptance / 维护者报告的验收
+
+2026-11-02: the installation maintainer reports, relayed through Grok, observing Grok terminal routine receipts and automatic subscription renewal before expiry in one real installation. The reviewed repository verification/setup documents contain no independently correlated receipt/task record or before/after renewal timestamp evidence for this new report. Record it as maintainer-reported acceptance, not a newly reproduced test or a universal platform guarantee. Each deployment must verify its own routine result, actual subscription/renewal records and refresh time. This documentation update sent no callback/routine, inspected no secret runtime logs and did not verify Codex execution.
+
+2026-11-02：安装维护者经 Grok 报告，在一次真实安装中已观察到 Grok 终态 routine 回执及到期前自动续订。本轮审阅的仓库验收/接入文档没有可独立关联的回执/任务记录或续订前后时间证据，因此记录为维护者报告，不写成新一轮亲测或平台普遍保证。每个部署仍需核验自己的 routine 结果、实际订阅/续订记录与刷新时间。本次文档更新未发送 callback/routine、未检查含秘密运行日志，也未验证 Codex 执行。
+
+## Managed setup and subscription availability / 本地自动配置与订阅可用性
+
+2026-11-02: **165 unit/MCP/security tests passed** locally on Python 3.12 (30 new contracts). Ruff lint and format checks passed for 40 files; mypy passed for 16 source files; Python compilation and all three JavaScript syntax checks passed. Both Chromium product/handoff regressions passed against synthetic loopback services. The Mac handoff test used the already-installed Playwright Chromium through CHROMIUM_PATH because its legacy default is a Linux path. No browser installation or personal browser session was used.
+
+New coverage includes idempotent 0600 initialization, incomplete-state refusal, symlinks/permissions, explicit proxy child environments, hidden key/routine input, plist path escaping, occupied ports/foreign and stale PIDs, real server/MCP subprocess lifecycle, failed PID publication, descendant cleanup, missing stop outcomes, lifecycle-lock availability during waits, scoped subscription counts, and a synthetic Tunnel executable exercising FIFO log filtering/readyz/stop. Events tests cover strict authorization responses, unavailable-backend retention/backoff/recovery, no replay after acknowledged delivery, deny-all discovery without DNS/challenge, and sanitized lifecycle logs. CLI tests exercise positional task/context IDs, JSON compatibility/conflicts and bounded open stdin.
+
+Independent code review found and closed initialization publication ordering, startup rollback, raw/split-log leakage, PGID reuse, uncertain cleanup reporting and long-wait locking issues. Synthetic tests prove these local contracts, not vendor identity or automatic wake. This development run did not create account rights, use real keys, subscribe, invoke routines, restart existing services or load launchd. No remote CI is claimed for local-only commits.
+
+2026-11-02：本机 Python 3.12 全量 **165 项通过**（新增30项）；Ruff/format检查40文件、mypy检查16源文件、编译及三项JS语法检查通过，两套真实浏览器回归使用合成本机服务通过。覆盖幂等/0600/中断/符号链接、子进程代理、隐藏秘密输入、plist路径、端口/PID归属、真实子进程启动停止/后代清理、停止结果缺失、等待不占锁、订阅范围、模拟Tunnel FIFO/readyz及Events三态/空白名单/日志和CLI输入边界。独立审查发现的安全生命周期问题已修复。没有真实账号权限、真实key、订阅/routine、现有服务重启或launchd操作；合成通过不等于厂商原生验收，本地提交不声称远端CI通过。
+
+
+The macOS sleep-prevention increment was checked against the installed `man caffeinate`: idle assertion `-i`, AC-only system assertion `-s`, and PID lifetime `-w`. Five added tests execute a fake binary only, covering default managed startup, opt-out, actual fake-child status/server binding, release on server exit, unsupported/missing binary, startup failure and foreign-PID refusal. Independent incremental review passed. No real caffeinate or power-setting command was executed; hardware assertion state was not accepted as verified. The two macOS-specific fake-process tests are skipped on other platforms; skip behavior is separately covered.
+
+防睡眠增量核对了本机 `man caffeinate` 的 -i/-s/-w 语义，新增5项测试仅执行假程序，覆盖默认/关闭、实际假子进程状态与server绑定、server退出释放、不支持/缺程序、启动失败和拒杀外来PID。独立增量审查通过。未执行真实 caffeinate 或电源修改命令，不声称硬件断言验收；非Mac跳过两项Mac假进程生命周期测试，另有平台跳过行为测试。
+
 ## Local connectivity + event contracts — current feature branch
 
 2026-10-31: local Python 3.12 checks cover **80 unit/MCP/security tests**, Ruff lint/format, mypy on ten production modules, compilation and JavaScript syntax. Both actual Chromium scripts passed, including the bilingual connection evidence panel and unchanged native handoff flows. CI additionally runs Python 3.13; consult the published commit's Actions result.
