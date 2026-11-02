@@ -11,7 +11,7 @@ from server import make_server
 
 class UpgradeSecurityTests(unittest.TestCase):
     def setUp(self):
-        self.store = Store()
+        self.store = Store(demo=True)
 
     def tearDown(self):
         self.store.db.close()

@@ -12,7 +12,7 @@ from server import make_server
 
 
 def main():
-    store = Store()
+    store = Store(demo=True)
     token = secrets.token_urlsafe(32)
     server = make_server(store, token, port=0)
     thread = threading.Thread(target=server.serve_forever)

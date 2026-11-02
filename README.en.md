@@ -106,7 +106,7 @@ sh scripts/start-local.sh server
 
 For first-time setup without an existing secret-manager credential, use [managed setup and `ui`](docs/ONBOARDING_RUNTIME.en.md#initialize-and-open-the-ui) instead. Standalone auto-generation persists a token but does not display it; managed `ui` does not attach to a standalone process.
 
-Open `http://127.0.0.1:<SERVER_PORT>`, choose **Connect**, and enter the administrator credential in the local page. Create a room with both demo members to try a discussion or **Delegate task**. Demos validate the local flow only. If a service already exists, verify port and database ownership before starting anything; do not run a second instance.
+Open `http://127.0.0.1:<SERVER_PORT>`, choose **Connect**, and enter the administrator credential in the local page. Demo members are off by default: to try the local flow, start with `sh scripts/start-local.sh server --demo` (or `ROUNDTABLE_DEMO=1`), then create a room with both demo members to try a discussion or **Delegate task**. Demos validate the local flow only; managed setup/up never enables them. Demo bots left in the directory by older versions are hidden unless a room or history references them; after stopping the service, remove them with `.venv/bin/python server.py --db <DATABASE_PATH> --prune-demo` (deletes only unreferenced demo registrations, never rooms or history). If a service already exists, verify port and database ownership before starting anything; do not run a second instance.
 
 To connect real bots, register identities in the UI and join them to a dedicated room, retaining separate member credentials. In another terminal with a securely injected member credential, start stdio MCP:
 

@@ -106,7 +106,7 @@ sh scripts/start-local.sh server
 
 首次安装且没有已有秘密管理器凭据时，请改用[托管 setup 与 ui](docs/ONBOARDING_RUNTIME.zh.md#初始化并打开网页)。独立 server 自动生成后会持久保存令牌，但不显示；托管 `ui` 不接管独立启动的进程。
 
-打开 `http://127.0.0.1:<SERVER_PORT>`，点击「连接」，在本机页面输入管理员凭据。创建带两个 demo 成员的群，即可试用讨论或「委派任务」。demo 只验证本机流程。已有服务时先确认端口和数据库归属，不要启动第二个实例。
+打开 `http://127.0.0.1:<SERVER_PORT>`，点击「连接」，在本机页面输入管理员凭据。demo 成员默认关闭：只想试用本机流程时，用 `sh scripts/start-local.sh server --demo`（或设 `ROUNDTABLE_DEMO=1`）启动，再创建带两个 demo 成员的群试用讨论或「委派任务」。demo 只验证本机流程；托管 setup/up 从不启用 demo。旧版本留在目录里的 demo bot，未被任何群或历史引用时默认隐藏，可在停服后用 `.venv/bin/python server.py --db <数据库路径> --prune-demo` 清理（只删无引用的 demo 登记，不动群和历史）。已有服务时先确认端口和数据库归属，不要启动第二个实例。
 
 要接入真实 Bot，在界面注册身份并加入专用群，为每个成员保存独立凭据。在另一个已安全注入成员凭据的终端中启动 stdio MCP：
 
