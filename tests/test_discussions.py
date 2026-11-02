@@ -56,6 +56,53 @@ class DiscussionsTest(unittest.TestCase):
         with self.assertRaises(Problem):
             self.post("bot:alpha", request_id="third", reply_to=root["id"], budget=20)
 
+    def allowance(self, bot):
+        return self.store.db.execute(
+            "SELECT allowance FROM agents WHERE room=? AND id=?", (self.room, bot)
+        ).fetchone()[0]
+
+    def test_bot_root_mention_wakes_target_and_spends_allowance(self):
+        root = self.post("bot:alpha", mentions=["bravo"])
+        self.assertEqual(root["depth"], 0)
+        inbox = self.discussions.inbox(self.room, "bot:bravo", {})["messages"]
+        self.assertEqual([m["id"] for m in inbox], [root["id"]])
+        self.assertEqual(self.allowance("alpha"), 19)
+        self.post("bot:alpha", request_id="plain")
+        self.assertEqual(len(self.discussions.inbox(self.room, "bot:bravo", {})["messages"]), 1)
+        self.assertEqual(self.allowance("alpha"), 19)
+
+    def test_bot_root_mention_rejected_without_allowance(self):
+        self.store.grant(self.room, "alpha", 0)
+        with self.assertRaises(Problem) as error:
+            self.post("bot:alpha", mentions=["bravo"])
+        self.assertEqual(error.exception.status, 403)
+        self.assertEqual(self.discussions.inbox(self.room, "bot:bravo", {})["messages"], [])
+        self.assertEqual(self.discussions.listing(self.room), [])
+
+    def test_bot_ping_pong_stops_within_budget(self):
+        message = self.post("bot:alpha", mentions=["bravo"], budget=3)
+        speakers = ["bravo", "alpha"]
+        sent = 1
+        for turn in range(10):
+            bot = speakers[turn % 2]
+            other = speakers[(turn + 1) % 2]
+            try:
+                message = self.post(
+                    "bot:" + bot,
+                    request_id="turn-" + str(turn),
+                    reply_to=message["id"],
+                    mentions=[other],
+                )
+            except Problem as error:
+                self.assertEqual(error.status, 409)
+                break
+            sent += 1
+        else:
+            self.fail("bot ping-pong never stopped")
+        self.assertLessEqual(sent, 3)
+        wakes = self.store.db.execute("SELECT COUNT(*) FROM discussion_mentions").fetchone()[0]
+        self.assertLess(wakes, sent)
+
     def test_connection_activity_is_epoch_scoped(self):
         root = self.post()
         self.post("bot:alpha", reply_to=root["id"])
