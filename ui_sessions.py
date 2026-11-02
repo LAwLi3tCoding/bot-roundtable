@@ -1,4 +1,4 @@
-"""Bounded single-use login codes and non-renewable, restricted UI sessions."""
+"""Bounded single-use login codes and renewable, restricted UI sessions."""
 
 from collections import deque
 import hashlib
@@ -78,6 +78,15 @@ class UISessions:
         with self.lock:
             self._cleanup()
             return self.digest(token) in self.sessions
+
+    def renew(self, token):
+        with self.lock:
+            now = self._cleanup()
+            key = self.digest(token)
+            if key not in self.sessions:
+                raise Problem(403, "UI session expired")
+            self.sessions[key] = now + self.session_seconds
+            return {"expires_in": self.session_seconds, "temporary": True}
 
     def revoke(self, token):
         with self.lock:

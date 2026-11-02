@@ -38,3 +38,4 @@ jobs:
       - run: PYTHONPATH=. python tests/browser_handoffs.py
       - run: PYTHONPATH=. python tests/browser_onboarding.py
       - run: PYTHONPATH=. python tests/browser_ui_login.py
+      - run: PYTHONPATH=. python tests/browser_mentions.py

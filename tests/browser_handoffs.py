@@ -167,6 +167,12 @@ def main():
             refresh()
             page.locator(f'[data-task-id="{tid}"]').click()
             expect(page.locator("#task-header")).to_contain_text(tid)
+            page.locator("#discussion-view").click()
+            expect(
+                page.locator(".message-content").get_by_role("button", name="Open task").first
+            ).to_be_visible()
+            page.locator(".message-content").get_by_role("button", name="Open task").first.click()
+            expect(page.locator("#task-header")).to_contain_text(tid)
             inbox = [clients.call(a, "receive_assignments")[0] for a in ids[1:]]
             assert inbox[0]["instruction"] != inbox[1]["instruction"]
             claims = [

@@ -82,10 +82,13 @@ class Handoffs:
             raise Problem(403, "Only task origin or room owner may coordinate")
 
     def event(self, tid, aid, actor, kind, body):
-        self.db.execute(
+        inserted = self.db.execute(
             "INSERT INTO task_events(task,assignment,actor,kind,body,created) VALUES(?,?,?,?,?,?)",
             (tid, aid, actor, kind, body, time.time()),
         )
+        discussions = getattr(self.store, "discussions", None)
+        if discussions is not None:
+            discussions.system_notice(tid, aid, actor, kind, body, inserted.lastrowid)
 
     def receipt(self, room, actor, operation, nonce, payload, apply):
         text(nonce, 100)
@@ -390,6 +393,34 @@ class Handoffs:
         from datetime import datetime, timezone
 
         name, arguments, after = data.get("name"), data.get("arguments"), data.get("after")
+        if name == "message.mentioned":
+            if arguments != {} or (after is not None and (type(after) is not int or after < 0)):
+                raise Problem(400, "Invalid mention event subscription")
+            with self.store.lock:
+                self.member(room, actor)
+                if actor == "user":
+                    raise Problem(403, "Worker identity required")
+                if after is None:
+                    latest = self.db.execute(
+                        "SELECT COALESCE(MAX(id),0) FROM discussion_messages"
+                    ).fetchone()[0]
+                    return {"cursor": latest, "events": []}
+                page = self.store.discussions.inbox(room, actor, {"after": after})
+                return {
+                    "cursor": page["next_cursor"],
+                    "events": [
+                        {
+                            "eventId": f"mention_{self.event_namespace}_{message['id']}",
+                            "name": name,
+                            "timestamp": datetime.fromtimestamp(
+                                message["created"], timezone.utc
+                            ).isoformat(),
+                            "data": {"message_id": message["id"]},
+                        }
+                        for message in page["messages"]
+                    ],
+                }
+
         if name not in ("handoff.available", "task.updated") or not isinstance(arguments, dict):
             raise Problem(400, "Invalid event subscription")
         if set(arguments) != ({"task_id"} if name == "task.updated" else set()):

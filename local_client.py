@@ -72,6 +72,8 @@ class LocalClient:
             "context": "/tasks/context",
             "retry": "/tasks/retry",
             "cancel": "/tasks/cancel",
+            "mentions": "/mentions",
+            "message": "/messages",
         }
         if operation not in routes:
             raise ValueError("Unsupported local operation")
@@ -385,6 +387,8 @@ def main():
             "context",
             "retry",
             "cancel",
+            "mentions",
+            "message",
         ],
     )
     parser.add_argument("task_id", nargs="?")

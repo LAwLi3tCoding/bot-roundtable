@@ -104,6 +104,9 @@ class Store:
         from connections import Connections
 
         self.connections = Connections(self)
+        from discussions import Discussions
+
+        self.discussions = Discussions(self)
 
     @contextmanager
     def transaction(self):
@@ -493,6 +496,7 @@ class Store:
             return dict(
                 room=dict(room_row),
                 tasks=self.handoffs.listing(room, actor),
+                discussion_messages=self.discussions.listing(room),
                 agents=[
                     dict(r)
                     for r in self.db.execute(

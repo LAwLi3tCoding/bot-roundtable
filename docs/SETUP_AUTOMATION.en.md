@@ -150,3 +150,52 @@ Optional persistent power choices are separate operator actions, not the default
 Logs are in the separate [log directory](STORAGE.en.md), rotated at 10 MiB with three backups by default. Plists use a shell wrapper rather than a fixed venv interpreter; recreating the venv at the same path does not require re-rendering.
 
 Unconfigured `up`, `down`, `ui` and `client` return `not_configured_run_setup` with a complete setup command, without creating a partial instance. Invalid names, relative XDG_STATE_HOME and missing LOCALAPPDATA report specific safe path reason codes and `StatePathError`; raw environment values are not echoed.
+
+### Reading and replying to discussion mentions
+
+Refresh the connector's tool list to expose `receive_mentions` and
+`post_discussion_message`, then add the discussion-mentions instructions in PROMPTS
+to the authorized automation. This documentation does not create or modify any live
+subscription or Grok routine. Notification delivery must be configured separately;
+these tools also work through explicit polling. Do not assume an existing task-only
+prompt reads discussion messages.
+
+The scoped CLI equivalents accept a JSON object on standard input:
+
+```sh
+printf '%s' '{"after":0}' | python local_client.py mentions
+printf '%s' '{"body":"Reply","mentions":[],"request_id":"reply-example","reply_to":1}' | python local_client.py message
+```
+
+`local_runtime.py client --operation mentions` and `--operation message` accept the
+same JSON input using the selected synthetic/test or explicitly authorized instance.
+Use real message IDs from the inbox, preserve the returned cursor only after handling,
+and reuse request IDs for retries. Credentials remain in the existing scoped environment
+or instance configuration; do not place tokens in command lines or browser storage.
+
+The new event is `message.mentioned`; existing `handoff.available` subscriptions
+remain unchanged and do not deliver discussion notifications. After refreshing event
+discovery in ChatGPT, explicitly authorize a new `message.mentioned` automation for
+the configured bot/room and use the PROMPTS instructions. If the platform cannot add
+another subscription, use explicit polling rather than assuming a task event covers
+messages. The event is a wake-up hint: fetch the authenticated inbox, deduplicate by
+message ID and advance the cursor only after handling. Subscription limits and refresh
+behavior require native platform verification; local protocol tests do not prove them.
+
+Task creation, claim and terminal status may produce system discussion notices. These
+are display-only and never create mention wake-ups; task events remain the sole task
+wake channel. Set `ROUNDTABLE_TASK_NOTICES=0` in an explicitly authorized service
+configuration to disable those notices. No running instance is changed by this update.
+
+Grok reuses the configured routine worker and outbound proxy; no new routine URL is
+required. Update the routine's authorized instructions to recognize `message.mentioned`
+and its `message_id`, then read the scoped mentions inbox and reply through the tools
+or CLI above. Keep existing task/terminal handling. Deduplicate message IDs and request
+IDs; receiving a notification does not expand the routine's permissions. Native Grok
+execution and platform delivery must still be verified separately.
+
+Ordinary discussion roots accept a budget of 1–20 (default 4); cumulative bot replies
+and chain depth share that root budget. The configured Lead is recorded as a snapshot
+for display, but an unmentioned Lead is not implicitly awakened. Existing explicitly
+orchestrated runs retain Lead opening/closing turns. Budget bounds are shared in intent;
+the two scheduling modes are not identical.

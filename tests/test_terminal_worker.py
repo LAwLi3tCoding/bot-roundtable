@@ -41,6 +41,60 @@ class TerminalWorkerTests(unittest.TestCase):
         self.workers.append(worker)
         return worker
 
+    def test_legacy_schema_continues_terminal_delivery(self):
+        del self.store.discussions
+        self.store.db.execute("DROP TABLE discussion_mentions")
+        self.store.db.execute("DROP TABLE discussion_messages")
+        self.store.db.commit()
+        worker = self.start()
+        tid = self.task()
+        self.finish(tid)
+        self.until(lambda: self.adapter.dispatch_terminal.call_count == 1)
+        self.assertFalse(worker.failed)
+
+    def test_mentions_recheck_membership_after_blocked_delivery(self):
+        entered, release = threading.Event(), threading.Event()
+
+        def deliver(*args, **kwargs):
+            entered.set()
+            release.wait(2)
+
+        self.adapter.dispatch_mention.side_effect = deliver
+        self.start()
+        with self.store.transaction():
+            for index in range(2):
+                self.store.discussions.post(
+                    self.room,
+                    "user",
+                    {
+                        "body": "Synthetic mention",
+                        "mentions": ["origin"],
+                        "request_id": "revoke-test-" + str(index),
+                    },
+                )
+        self.assertTrue(entered.wait(2))
+        with self.store.transaction():
+            self.store.db.execute(
+                "UPDATE agents SET token='revoked' WHERE room=? AND id='origin'", (self.room,)
+            )
+        release.set()
+        time.sleep(0.1)
+        self.assertEqual(self.adapter.dispatch_mention.call_count, 1)
+
+    def test_mention_delivery_and_restart_deduplication(self):
+        worker = self.start()
+        message = self.store.discussions.post(
+            self.room,
+            "user",
+            {"body": "Synthetic mention", "mentions": ["origin"], "request_id": "mention-test"},
+        )
+        self.until(lambda: self.adapter.dispatch_mention.call_count == 1)
+        self.assertEqual(self.adapter.dispatch_mention.call_args.args, (message["id"],))
+        worker.stop()
+        self.start()
+        time.sleep(0.05)
+        self.assertEqual(self.adapter.dispatch_mention.call_count, 1)
+
     def task(self, origin="origin"):
         self.sequence += 1
         return self.store.handoffs.create(

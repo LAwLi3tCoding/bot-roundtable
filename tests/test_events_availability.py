@@ -82,7 +82,10 @@ class AvailabilityTests(unittest.TestCase):
 
     def test_deny_all_discovery_no_dns_challenge_or_persistence(self):
         self.broker.transport = CallbackTransport([])
-        self.assertEqual(len(self.broker.rpc("events/list", {})["events"]), 2)
+        self.assertEqual(
+            {event["name"] for event in self.broker.rpc("events/list", {})["events"]},
+            {"handoff.available", "task.updated", "message.mentioned"},
+        )
         with (
             patch("socket.getaddrinfo", side_effect=AssertionError("no DNS")),
             patch("socket.create_connection", side_effect=AssertionError("no socket")),

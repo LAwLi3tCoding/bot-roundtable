@@ -84,7 +84,8 @@ def main():
             page.locator("#body").fill(
                 "Plan a safe collaboration. <script>window.pwned=true</script>"
             )
-            page.locator("#send").click()
+            page.locator("#options-open").click()
+            page.locator("#start-discussion").click()
             expect(page.locator("#status")).to_contain_text("Completed", timeout=10000)
             expect(page.locator("article.message")).to_have_count(5)
             assert page.evaluate("window.pwned") is None
@@ -99,7 +100,7 @@ def main():
             expect(page.locator("#manage")).to_have_text("管理")
             expect(page.locator("#status")).to_contain_text("已完成")
             expect(page.locator("#body")).to_have_attribute(
-                "placeholder", "这次想让大家一起讨论什么？"
+                "placeholder", "发给所有人，或 @ 指定 Bot"
             )
             # Message body is not translated when switching the UI language.
             expect(page.locator("#messages")).to_contain_text("Plan a safe collaboration.")
@@ -116,7 +117,8 @@ def main():
             expect(page.locator("#lead-select")).to_have_value("research-lead")
             page.locator("#manage-dialog .close").click()
             page.locator("#body").fill("Waiting for owner-connected Lead")
-            page.locator("#send").click()
+            page.locator("#options-open").click()
+            page.locator("#start-discussion").click()
             expect(page.locator("#status")).to_contain_text("进行中")
             page.locator("#stop").click()
             expect(page.locator("#status")).to_contain_text("已停止")
@@ -229,7 +231,8 @@ def main():
                 page.locator("#options-open").click()
                 page.locator("#budget").fill(invalid)
                 page.keyboard.press("Escape")
-                page.locator("#send").click()
+                page.locator("#options-open").click()
+                page.locator("#start-discussion").click()
                 expect(page.locator("#options-dialog")).to_be_visible()
                 expect(page.locator("#budget")).to_be_focused()
                 assert not page.locator("#budget").evaluate("n => n.checkValidity()")
@@ -250,8 +253,11 @@ def main():
             # Default access survives refresh in session storage, while only language is persistent.
             page.reload()
             expect(page.locator("#manage")).to_have_text("管理")
-            expect(page.locator("#access")).to_have_text("Owner 连接")
-            assert page.evaluate("Object.keys(localStorage)") == ["roundtable-language"]
+            expect(page.locator("#access")).to_have_text("连接")
+            assert set(page.evaluate("Object.keys(localStorage)")) <= {
+                "roundtable-language",
+                "roundtable-last-room",
+            }
             assert not errors, errors
             browser.close()
         print(

@@ -149,6 +149,56 @@ class LoginHTTP(unittest.TestCase):
             )
         self.assertEqual(self.call("/api/ui-login/exchange", body={"code": issued})[0], 200)
 
+    def test_cookie_lifecycle_and_csrf(self):
+        code = self.call("/api/ui-login/issue", self.admin)[1]["code"]
+        status, body, headers = self.call(
+            "/api/ui-login/exchange", body={"code": code, "cookie": True}
+        )
+        self.assertEqual(status, 200)
+        self.assertNotIn("session_token", body)
+        cookie = headers["Set-Cookie"]
+        for flag in ("HttpOnly", "SameSite=Strict", "Path=/", "Max-Age=3600"):
+            self.assertIn(flag, cookie)
+        auth = {"Cookie": cookie.split(";")[0]}
+        self.assertEqual(self.call("/api/rooms", headers=auth, method="GET")[0], 200)
+        self.assertEqual(self.call("/api/bots", headers=auth, body={"id": "evil"})[0], 403)
+        for invalid in (
+            {"Origin": None},
+            {"Origin": "null"},
+            {"Origin": "https://foreign.invalid"},
+            {"Origin": self.origin + "0"},
+            {"Host": "foreign.invalid"},
+            {"Host": "127.0.0.1:1"},
+            {"Forwarded": "for=127.0.0.1"},
+            {"X-Forwarded-For": "127.0.0.1"},
+            {"X-Forwarded-Host": "localhost"},
+            {"X-Forwarded-Proto": "http"},
+        ):
+            self.assertEqual(self.call("/api/ui-login/renew", headers=auth | invalid)[0], 403)
+        self.assertEqual(self.call("/api/ui-login/renew", headers=auth)[0], 200)
+        status, _, headers = self.call("/api/ui-login/revoke", headers=auth)
+        self.assertEqual(status, 200)
+        self.assertIn("Max-Age=0", headers["Set-Cookie"])
+        self.assertEqual(self.call("/api/rooms", headers=auth, method="GET")[0], 403)
+        self.assertEqual(self.call("/api/ui-login/renew", headers=auth)[0], 403)
+
+    def test_cookie_expiry_and_forwarded_read(self):
+        sessions = self.server.ui_sessions
+        now = [100.0]
+        sessions.clock = lambda: now[0]
+        code = self.call("/api/ui-login/issue", self.admin)[1]["code"]
+        cookie = self.call("/api/ui-login/exchange", body={"code": code, "cookie": True})[2][
+            "Set-Cookie"
+        ].split(";")[0]
+        auth = {"Cookie": cookie}
+        self.assertEqual(
+            self.call("/api/rooms", headers=auth | {"Forwarded": "for=127.0.0.1"}, method="GET")[0],
+            403,
+        )
+        now[0] = 3700
+        self.assertEqual(self.call("/api/rooms", headers=auth, method="GET")[0], 403)
+        self.assertEqual(self.call("/api/ui-login/renew", headers=auth)[0], 403)
+
     def test_http_expiry_and_large_request(self):
         codes = getattr(self.server, "ui_sessions")
         now = [100.0]

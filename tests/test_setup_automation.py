@@ -232,6 +232,20 @@ class SetupTests(unittest.TestCase):
             runtime.start(self.state, config, "server")
         self.assertTrue(all(c.poll() is not None for c in children))
 
+    def test_start_failure_logs_are_fixed_categories(self):
+        self.assertEqual(
+            runtime.safe_log("ModuleNotFoundError: secret-value"),
+            "component_error_dependency_missing\n",
+        )
+        self.assertEqual(
+            runtime.safe_log("PermissionError: private-path"), "component_error_permission_denied\n"
+        )
+        self.assertEqual(
+            runtime.safe_log("OSError: [Errno 98] private-value"),
+            "component_error_address_in_use\n",
+        )
+        self.assertEqual(runtime.safe_log("ValueError: secret-value"), "")
+
     def test_safe_logs_discard_secrets_even_split_chunks(self):
         for value in (
             "Bearer synthetic-secret",
