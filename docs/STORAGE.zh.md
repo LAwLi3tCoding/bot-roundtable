@@ -40,14 +40,28 @@ sh scripts/up.sh --name demo --without-tunnel
 
 Setup 未指定 `--server-port`/`--mcp-port` 时选择两个不同的可用 loopback 端口，保存到 `instance.json`、成员 URL 和 profile；status/doctor 显示实际 loopback URL。这是探测，不是一直保留端口：启动前被其他进程抢占时，启动明确拒绝，不接管或杀掉该进程。请复核配置或明确初始化另一独立实例。独立手工启动仍默认 8765/8766 以兼容旧用法，自动选端口仅用于托管 setup。
 
+## 升级已有安装
+
+始终用**当前运行版本**的管理器停机，再更新代码、再用新版本启动：
+
+```sh
+sh scripts/down.sh            # 用旧版本停止本实例
+git pull --ff-only
+.venv/bin/python -m pip install -r requirements.lock   # 仅依赖变化时需要
+sh scripts/up.sh              # 需要代理时追加原来的 --proxy 参数
+.venv/bin/python scripts/local_runtime.py doctor
+```
+
+如果旧安装的状态仍在 checkout 内的 `data/local`，在 `pull` 之后、`up` 之前按下节手工转移；否则新版本会使用平台默认目录，看不到旧状态。验收前保留旧目录。
+
 ## 手工转移已停止的实例
 
 项目不提供自动迁移或导入命令。旧布局由操作者审核并做一次性转移，没有脚本解释或重写旧凭据。旧 `data/` 未完成私有备份校验前，不要运行 `git clean -xfd`。
 
 1. 用原管理器停止源实例，并防止 launchd/登录任务重启它；确认 server、MCP、Tunnel 及后代进程均停止。不要复制正在写入的 SQLite 数据库。
-2. 完整托管 `down` 验证停止及归属后，对私有 `*.db` 执行 `PRAGMA wal_checkpoint(TRUNCATE)`，包括任务、Events 和回执库。它需要 `lsof`，拒绝仍打开的数据库；缺失时需另行安装。单组件停止不执行 checkpoint。旧管理器或独立 server 则由操作者用 SQLite 维护工具对已停止源的每个库 checkpoint、关闭连接并确认没有 `-wal`；遇 busy 或不确定应停下调查，绝不能删除 WAL 来强行成功。
-3. 复制到新的空私有目标，保留 POSIX 0700 目录/0600 文件或经审核的 Windows 当前用户 ACL。拒绝符号链接、特殊文件或不安全归属。管理员、群/成员凭据、数据库、原回执 ledger 和已批准配置一起保留；不得把 PID/started/child/stop/health/FIFO 瞬态文件复制成新进程归属。按需单独保留私有日志，项目不执行日志搬迁。
-4. 在有意修改配置前，逐个校验普通文件大小和 SHA-256。清单保持私有，不打印凭据内容。审核旧 schema、绝对路径、日志目录、代码位置及 profile 引用；不同 JSON/env 旧布局没有自动转换。Keyring 引用绑定路径，需要另行审核系统凭据处理，不能盲目复制元数据。
+2. 完整托管 `down` 验证停止及归属后，对私有 `*.db` 执行 `PRAGMA wal_checkpoint(TRUNCATE)`，包括任务、Events 和回执库。它需要 `lsof`，拒绝仍打开的数据库；缺失时需另行安装。单组件停止不执行 checkpoint。旧管理器或独立 server 则由操作者用 SQLite 维护工具对已停止源的每个库 checkpoint、关闭连接并确认没有 `-wal`；遇 busy 或不确定应停下调查，绝不能删除 WAL 来强行成功。macOS 自带的 `sqlite3` 默认启用持久 WAL，checkpoint 后可能留下 **0 字节**的 `-wal` 和 `-shm`：大小为 0 且 `PRAGMA integrity_check` 为 `ok` 即属正常；非 0 字节说明尚未写回，需继续排查。
+3. 复制到新的空私有目标，保留 POSIX 0700 目录/0600 文件或经审核的 Windows 当前用户 ACL。拒绝符号链接、特殊文件或不安全归属。管理员、群/成员凭据、数据库、原回执 ledger 和已批准配置一起保留；不得把 PID/started/child/stop/health/FIFO 瞬态文件复制成新进程归属。按需单独保留私有日志，项目不执行日志搬迁。旧托管布局通常只需复制：`admin.env`/`admin.json`、`room.env`（若有）、各成员 `.env`、`runtime-key.env`、`routine.json`、`instance.json`、`tunnel.yaml`、`roundtrip.json` 和三个 `*.db`。
+4. 在有意修改配置前，逐个校验普通文件大小和 SHA-256。清单保持私有，不打印凭据内容。审核旧 schema、绝对路径、日志目录、代码位置及 profile 引用；旧 `instance.json` 没有 `log_dir` 字段时，日志写在 `<STATE_DIRECTORY>/logs/`，而不是平台默认日志目录；不同 JSON/env 旧布局没有自动转换。Keyring 引用绑定路径，需要另行审核系统凭据处理，不能盲目复制元数据。
 5. 保留 callback 审批、代理和回执历史，不扩大权限。回执历史缺失或不确定时，在核对前保持终态通知关闭，不能清空 ledger 重发旧任务。禁止新旧副本同时运行。`rebind` 仅用于兼容托管配置的代码目录搬家，不转换旧布局。
 6. 明确验证新配置与限定范围访问，验收前保留旧目录及备份，之后单独决定清理。项目不会替你删除原目录或执行这次转移。
 

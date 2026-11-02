@@ -8,6 +8,7 @@ For persistent administrator credentials, room.env, safe UI access, create/tasks
 
 <a id="tunnel-client-install"></a>
 
+- On Linux, install `lsof` (for example `sudo apt install lsof`): full managed `down` uses it to confirm databases are closed before checkpointing. macOS ships it.
 - Create a virtual environment and install `requirements.lock` as in README. Review source before running it. Install the compatible official [Tunnel client](https://github.com/openai/tunnel-client/releases) yourself; flags/schema below target **0.0.19**. Check the installed version before replacing anything.
 
 <a id="platform-tunnel-runtime-key"></a>
@@ -117,7 +118,7 @@ For an inherited member environment, `local_client.py task <TASK_ID>` and `conte
 
 <a id="grok-routine"></a>
 
-After explicitly approving a real routine, run `sh scripts/set-grok-routine.sh` and enter its HTTPS URL/key using hidden prompts. The exact allowed hostname is derived and validated. The private opt-in file enables the terminal worker on the **next server start**; this command does not restart anything. Merely copying a sample env never enables delivery. Keep the terminal ledger across restarts: one reserved attempt per task, no automatic uncertain retry. See [receipt semantics](TERMINAL_RECEIPTS.en.md).
+After explicitly approving a real routine, run `sh scripts/set-grok-routine.sh` and enter its HTTPS URL/key using hidden prompts. The exact allowed hostname is derived and validated. The private opt-in file enables the terminal worker on the **next server start**; this command does not restart anything. Merely copying a sample env never enables delivery. Keep the terminal ledger across restarts: one reserved attempt per task, no automatic uncertain retry. See [receipt semantics](TERMINAL_RECEIPTS.en.md). With a prepared private `routine.pending.json`, you can instead approve it explicitly while the instance is stopped with `.venv/bin/python scripts/local_runtime.py approve-routine`; see [pending routine approval](ONBOARDING_RUNTIME.en.md#manual-state-transfer-and-pending-routine-approval). An unapproved routine never sends terminal receipts.
 
 ```sh
 sh scripts/down.sh              # this instance's Tunnel → MCP → caffeinate → server

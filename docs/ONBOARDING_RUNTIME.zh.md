@@ -17,6 +17,8 @@ Setup 持久保存管理员、群 owner（`room.env`）及独立成员凭据，�
 
 需要主动复制长期令牌时使用 `.venv/bin/python scripts/local_runtime.py ui --copy-token`：macOS 使用 `pbcopy`，Linux 优先 `wl-copy`、其次 `xclip`，Windows 使用 `clip.exe`。令牌通过 stdin 传递，不打印；没有工具时仅提示私有凭据记录位置，请使用可信本地凭据管理器。Windows 尚不支持托管自动登录与进程管理。剪贴板管理器或同步可能保留令牌，用完请清除。Setup 不操作剪贴板。
 
+**哪种方式能记住：** 直接打开本机地址只会显示「连接」。`ui` 换得的短期会话不能勾选「记住本机」（复选框被禁用），关闭标签页、一小时到期或服务重启后需再次运行 `ui`。要跨浏览器重启自动连接，请用 `ui --copy-token` 复制长期管理员令牌，在「连接」中粘贴并勾选「记住本机」，再清空剪贴板。
+
 随后修改生成 profile 中非秘密的 Tunnel ID，运行 `sh scripts/save-runtime-key.sh`、`sh scripts/up.sh` 和 `.venv/bin/python scripts/local_runtime.py doctor`。隐藏输入 runtime key 需要终端。完整 `up` 会在启动组件前明确检查 `runtime_key_missing`、`tunnel_client_not_found`、`tunnel_id_placeholder`；`--without-tunnel` 有意跳过 Tunnel 检查。未知失败仅显示类别和异常类型，不输出异常原文。语法有效不代表 key 的实际权限或有效期正确。
 
 ## 持久管理员凭据
@@ -41,7 +43,7 @@ Setup 持久保存管理员、群 owner（`room.env`）及独立成员凭据，�
 
 存储按来源（包括端口）隔离，但不是秘密保险箱：同源脚本、扩展、浏览器配置备份或使用同一配置的其他人可能读取。浏览器会话恢复或复制标签页也可能保留 session storage，用完请点忘记。请使用私有可信浏览器配置，共用设备不要勾选记住。
 
-群里已有任务但没有讨论消息时，首次默认打开**任务与交接**。手动选择讨论后，轮询不会强制切回。生命周期详情保留在已有任务视图，不额外生成可能包含 lease 或 token 的系统群消息。
+Grok 与 Dot 通过任务交接协作，讨论区为空是正常现象。群里已有任务但没有讨论消息时，首次默认打开**任务与交接**；只要有任何讨论消息，就先打开**讨论**，需手动切换。手动选择讨论后，轮询不会强制切回。生命周期详情保留在已有任务视图，不额外生成可能包含 lease 或 token 的系统群消息。
 
 ## Grok 无需 source 凭据即可派任务
 

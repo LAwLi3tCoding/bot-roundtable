@@ -15,7 +15,7 @@ Managed setup is the default route: it creates a private instance, separate Grok
 **Prerequisites**
 
 - Git, and Python **3.12 or 3.13**. On macOS, if neither is installed, run `brew install python@3.12` (Homebrew), then use `python3.12` below; with 3.13 use `python3.13` instead.
-- macOS and Linux are supported; Windows process management is not implemented yet.
+- macOS and Linux are supported; Windows process management is not implemented yet. On Linux, install `lsof` first (for example `sudo apt install lsof`); managed `down` uses it to confirm databases are closed. macOS ships it.
 - **Checkout location:** on macOS, do not clone into a privacy-protected folder such as `~/Documents`, `~/Desktop`, or `~/Downloads`. The Tunnel client runs from the checkout and reads its profile there, which can trigger or later revoke macOS file-access permission and silently stop the Tunnel. Prefer a plain directory such as `~/code/bot-roundtable`.
 
 ```sh
@@ -30,6 +30,21 @@ sh scripts/up.sh --without-tunnel # add --proxy 'http://127.0.0.1:<PORT>' when a
 ```
 
 Continue with the Tunnel profile, hidden runtime key, and full `up.sh` in [managed setup](docs/SETUP_AUTOMATION.en.md), then the account steps below.
+
+### First time opening the page
+
+Once the server is running:
+
+```sh
+.venv/bin/python scripts/local_runtime.py ui
+```
+
+- It opens a one-time login link in your default browser; the code is valid for 60 seconds and works once. Opening `http://127.0.0.1:<SERVER_PORT>` directly only shows **Connect**; it does not join a room by itself.
+- A `ui` login is a one-hour temporary session for the current tab only, and **Remember on this device** is disabled for it. After expiry, closing the tab or a server restart, run `ui` again.
+- To reconnect automatically in future: run `.venv/bin/python scripts/local_runtime.py ui --copy-token` (the token goes to the clipboard and is never printed), paste the administrator credential under **Connect**, tick **Remember on this device**, then clear the clipboard. Do not tick it on shared devices.
+- An empty discussion is normal: Grok and Dot cooperate through task handoffs, not chat. Follow progress under **Tasks & handoffs**. If the room already has discussion messages, the page opens **Discussion** first; switch to **Tasks & handoffs** manually.
+
+See [onboarding and credential recovery](docs/ONBOARDING_RUNTIME.en.md). To upgrade an existing install or transfer an old `data/local`, see [upgrade and manual transfer](docs/STORAGE.en.md#upgrade-an-existing-install).
 
 ### Manual account steps
 
