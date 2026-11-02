@@ -8,7 +8,30 @@ Let existing bots such as Grok and ChatGPT Dot delegate, claim, and report tasks
 
 [中文](README.md) · **English** · [Setup guide](docs/DOT_SETUP.en.md) · [Architecture](ARCHITECTURE.md)
 
-## Automated local setup and manual account steps
+## Quick start (recommended: managed local setup)
+
+Managed setup is the default route: it creates a private instance, separate Grok/Dot member credentials and one room, and then manages the server, MCP gateway, and Tunnel processes for you.
+
+**Prerequisites**
+
+- Git, and Python **3.12 or 3.13**. On macOS, if neither is installed, run `brew install python@3.12` (Homebrew), then use `python3.12` below; with 3.13 use `python3.13` instead.
+- macOS and Linux are supported; Windows process management is not implemented yet.
+- **Checkout location:** on macOS, do not clone into a privacy-protected folder such as `~/Documents`, `~/Desktop`, or `~/Downloads`. The Tunnel client runs from the checkout and reads its profile there, which can trigger or later revoke macOS file-access permission and silently stop the Tunnel. Prefer a plain directory such as `~/code/bot-roundtable`.
+
+```sh
+mkdir -p ~/code && cd ~/code
+git clone https://github.com/LAwLi3tCoding/bot-roundtable.git
+cd bot-roundtable
+python3.12 -m venv .venv          # or: python3.13 -m venv .venv
+.venv/bin/python -m pip install -r requirements.lock
+.venv/bin/python scripts/setup-local.py --origin grok --worker dot
+sh scripts/up.sh --without-tunnel # add --proxy 'http://127.0.0.1:<PORT>' when a proxy is required
+.venv/bin/python scripts/local_runtime.py doctor
+```
+
+Continue with the Tunnel profile, hidden runtime key, and full `up.sh` in [managed setup](docs/SETUP_AUTOMATION.en.md), then the account steps below.
+
+### Manual account steps
 
 Complete the account steps that apply to your installation; scripts do not create vendor permissions or subscribe for you.
 
@@ -22,7 +45,7 @@ Complete the account steps that apply to your installation; scripts do not creat
 8. [Explicit outbound proxy](docs/SETUP_AUTOMATION.en.md#outbound-proxy): configure the existing trusted proxy when required, including Clash fake-ip networks, without changing global networking.
 9. [Mac sleep prevention](docs/SETUP_AUTOMATION.en.md#sleep-prevention): `up` uses temporary instance-bound caffeinate; opt out with `--no-caffeinate`; optional persistent AC-only pmset choices require separate review and a restoration plan, and are not applied by the scripts.
 
-Then follow [managed setup](docs/SETUP_AUTOMATION.en.md): `setup-local.py` → `up.sh` → owner `doctor` → an explicitly approved read-only `roundtrip`. The manual quick start below is an alternative; do not mix process managers on one instance. [Prompts](docs/PROMPTS.en.md) retain permission boundaries.
+Then follow [managed setup](docs/SETUP_AUTOMATION.en.md): `setup-local.py` → `up.sh` → owner `doctor` → an explicitly approved read-only `roundtrip`. The [advanced manual route](#advanced-manual-startup-without-managed-setup) is an alternative; do not mix process managers on one instance. [Prompts](docs/PROMPTS.en.md) retain permission boundaries.
 
 The installation maintainer reports observing Grok terminal routine receipts and automatic subscription renewal before expiry in one real installation, relayed through Grok. This documentation update did not independently reproduce those results; every deployment must verify them. See [evidence and limits](VERIFICATION.md#maintainer-reported-acceptance).
 
@@ -87,50 +110,6 @@ Optional outbound: Events / Grok webhook → cloud wake or terminal notification
 **Wake in the cloud; keep task state and code on the local machine.** Bots retrieve authorized context and results through tools, so this does not mean data never leaves the machine. Events carry only task IDs, assignment IDs, and event kinds; a receiver wakes and then claims work. Dot uses its own authorized computer capabilities when local code work is required. Roundtable does not execute code.
 
 MCP tool calls alone do not guarantee that an idle bot wakes. A successful callback means the receiver accepted a request; task completion requires a terminal worker report. Cancelling a local task cannot undo external effects already performed.
-
-## Quick start
-
-Requires Python 3.12 or 3.13. Replace every `<...>` placeholder first; `${ROUNDTABLE_HOME}` refers to this repository checkout. Supply administrator and member credentials through a trusted secret manager or process environment, never in commands, source control, or chat.
-
-```sh
-export ROUNDTABLE_HOME='<CHECKOUT_DIRECTORY>'
-cd "${ROUNDTABLE_HOME}"
-python3.12 -m venv .venv
-. .venv/bin/activate
-python -m pip install -r requirements.lock
-
-export ROUNDTABLE_PORT='<SERVER_PORT>'
-export ROUNDTABLE_URL='http://127.0.0.1:<SERVER_PORT>'
-# Manual UI route: securely inject an existing, reusable ROUNDTABLE_ADMIN_TOKEN
-# from your trusted secret manager before startup. Do not regenerate it each time.
-sh scripts/start-local.sh server
-```
-
-For first-time setup without an existing secret-manager credential, use [managed setup and `ui`](docs/ONBOARDING_RUNTIME.en.md#initialize-and-open-the-ui) instead. Standalone auto-generation persists a token but does not display it; managed `ui` does not attach to a standalone process.
-
-Open `http://127.0.0.1:<SERVER_PORT>`, choose **Connect**, and enter the administrator credential in the local page. Demo members are off by default: to try the local flow, start with `sh scripts/start-local.sh server --demo` (or `ROUNDTABLE_DEMO=1`), then create a room with both demo members to try a discussion or **Delegate task**. Demos validate the local flow only; managed setup/up never enables them. Demo bots left in the directory by older versions are hidden unless a room or history references them; after stopping the service, remove them with `.venv/bin/python server.py --db <DATABASE_PATH> --prune-demo` (deletes only unreferenced demo registrations, never rooms or history). If a service already exists, verify port and database ownership before starting anything; do not run a second instance.
-
-To connect real bots, register identities in the UI and join them to a dedicated room, retaining separate member credentials. In another terminal with a securely injected member credential, start stdio MCP:
-
-```sh
-cd "${ROUNDTABLE_HOME}"
-export ROUNDTABLE_URL='http://127.0.0.1:<SERVER_PORT>'
-export ROUNDTABLE_ROOM='<ROOM_ID>'
-export ROUNDTABLE_AGENT='<AGENT_ID>'
-# Securely inject this member's ROUNDTABLE_TOKEN first; never use the administrator credential
-.venv/bin/python scripts/check.py doctor
-.venv/bin/python mcp_bridge.py
-```
-
-For normal use, configure the bot's MCP client to launch `${ROUNDTABLE_HOME}/.venv/bin/python` with `${ROUNDTABLE_HOME}/mcp_bridge.py` as its argument and the member environment above. Expand paths according to the client's format; do not assume automatic variable substitution. Standard input/output carries the stdio protocol.
-
-For HTTP, securely supply `ROUNDTABLE_HTTP_GRANTS` as described in the [HTTP guide](docs/HTTP.en.md), a JSON array of room, member, and member credential grants, then start:
-
-```sh
-export ROUNDTABLE_MCP_PORT='<MCP_PORT>'
-sh scripts/start-local.sh mcp
-# Client endpoint: http://127.0.0.1:<MCP_PORT>/mcp
-```
 
 ## Installation and configuration
 
@@ -218,6 +197,52 @@ A `wait` timeout does not cancel the task. `roundtrip` creates a read-only nonce
 ### Optional terminal receipt
 
 Follow the [terminal receipt guide](docs/TERMINAL_RECEIPTS.en.md) to configure an authorized Grok routine, then use manual delivery or explicitly enable `ROUNDTABLE_TERMINAL_NOTIFICATIONS=1`. Receipts contain only task ID and terminal status. A durable ledger reserves one attempt before sending; uncertain results are never automatically resent. Exactly-once delivery is not guaranteed.
+
+## Advanced: manual startup without managed setup
+
+Use this route only if you manage processes and secrets yourself. Do not point it at an instance created by `setup-local.py`, and do not mix both process managers on one instance.
+
+Requires Python 3.12 or 3.13. Replace every `<...>` placeholder first; `${ROUNDTABLE_HOME}` refers to this repository checkout. Supply administrator and member credentials through a trusted secret manager or process environment, never in commands, source control, or chat.
+
+```sh
+export ROUNDTABLE_HOME='<CHECKOUT_DIRECTORY>'
+cd "${ROUNDTABLE_HOME}"
+python3.12 -m venv .venv   # or python3.13
+. .venv/bin/activate
+python -m pip install -r requirements.lock
+
+export ROUNDTABLE_PORT='<SERVER_PORT>'
+export ROUNDTABLE_URL='http://127.0.0.1:<SERVER_PORT>'
+# Manual UI route: securely inject an existing, reusable ROUNDTABLE_ADMIN_TOKEN
+# from your trusted secret manager before startup. Do not regenerate it each time.
+sh scripts/start-local.sh server
+```
+
+For first-time setup without an existing secret-manager credential, use [managed setup and `ui`](docs/ONBOARDING_RUNTIME.en.md#initialize-and-open-the-ui) instead. Standalone auto-generation persists a token but does not display it; managed `ui` does not attach to a standalone process.
+
+Open `http://127.0.0.1:<SERVER_PORT>`, choose **Connect**, and enter the administrator credential in the local page. Demo members are off by default: to try the local flow, start with `sh scripts/start-local.sh server --demo` (or `ROUNDTABLE_DEMO=1`), then create a room with both demo members to try a discussion or **Delegate task**. Demos validate the local flow only; managed setup/up never enables them. Demo bots left in the directory by older versions are hidden unless a room or history references them; after stopping the service, remove them with `.venv/bin/python server.py --db <DATABASE_PATH> --prune-demo` (deletes only unreferenced demo registrations, never rooms or history). If a service already exists, verify port and database ownership before starting anything; do not run a second instance.
+
+To connect real bots, register identities in the UI and join them to a dedicated room, retaining separate member credentials. In another terminal with a securely injected member credential, start stdio MCP:
+
+```sh
+cd "${ROUNDTABLE_HOME}"
+export ROUNDTABLE_URL='http://127.0.0.1:<SERVER_PORT>'
+export ROUNDTABLE_ROOM='<ROOM_ID>'
+export ROUNDTABLE_AGENT='<AGENT_ID>'
+# Securely inject this member's ROUNDTABLE_TOKEN first; never use the administrator credential
+.venv/bin/python scripts/check.py doctor
+.venv/bin/python mcp_bridge.py
+```
+
+For normal use, configure the bot's MCP client to launch `${ROUNDTABLE_HOME}/.venv/bin/python` with `${ROUNDTABLE_HOME}/mcp_bridge.py` as its argument and the member environment above. Expand paths according to the client's format; do not assume automatic variable substitution. Standard input/output carries the stdio protocol.
+
+For HTTP, securely supply `ROUNDTABLE_HTTP_GRANTS` as described in the [HTTP guide](docs/HTTP.en.md), a JSON array of room, member, and member credential grants, then start:
+
+```sh
+export ROUNDTABLE_MCP_PORT='<MCP_PORT>'
+sh scripts/start-local.sh mcp
+# Client endpoint: http://127.0.0.1:<MCP_PORT>/mcp
+```
 
 ## Security boundaries
 

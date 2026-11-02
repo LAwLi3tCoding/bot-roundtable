@@ -8,7 +8,30 @@
 
 **中文** · [English](README.en.md) · [接入指南](docs/DOT_SETUP.zh.md) · [架构](ARCHITECTURE.md)
 
-## 自动本地配置与手动账号步骤
+## 快速开始（推荐：一键本地配置）
+
+默认路线是一键本地配置：自动创建私有实例、独立的 Grok/Dot 成员凭据和一个群，并替你管理 server、MCP 网关和 Tunnel 进程。
+
+**前置条件**
+
+- Git，以及 Python **3.12 或 3.13**。macOS 上若都没有，先运行 `brew install python@3.12`（Homebrew），下文用 `python3.12`；使用 3.13 时改为 `python3.13`。
+- 支持 macOS 和 Linux；尚未实现 Windows 进程管理。
+- **项目放置位置：** macOS 上不要 clone 到 `~/Documents`、`~/Desktop`、`~/Downloads` 等受隐私保护的目录。Tunnel client 在项目目录中运行并读取其中的 profile，可能触发、之后又收回 macOS 文件访问授权，导致 Tunnel 悄悄中断。推荐放在普通目录，例如 `~/code/bot-roundtable`。
+
+```sh
+mkdir -p ~/code && cd ~/code
+git clone https://github.com/LAwLi3tCoding/bot-roundtable.git
+cd bot-roundtable
+python3.12 -m venv .venv          # 或：python3.13 -m venv .venv
+.venv/bin/python -m pip install -r requirements.lock
+.venv/bin/python scripts/setup-local.py --origin grok --worker dot
+sh scripts/up.sh --without-tunnel # 需要代理时追加 --proxy 'http://127.0.0.1:<PORT>'
+.venv/bin/python scripts/local_runtime.py doctor
+```
+
+随后按[自动配置指南](docs/SETUP_AUTOMATION.zh.md)完成 Tunnel profile、隐藏保存 runtime key 和完整 `up.sh`，再完成下列账号步骤。
+
+### 手动账号步骤
 
 按实际安装完成适用的账号步骤；脚本不代建厂商权限或订阅。
 
@@ -22,7 +45,7 @@
 8. [显式出站代理](docs/SETUP_AUTOMATION.zh.md#outbound-proxy)：有需要时配置已有可信代理，包括 Clash fake-ip 网络，不改全局网络。
 9. [Mac 防睡眠](docs/SETUP_AUTOMATION.zh.md#sleep-prevention)：`up` 运行期使用临时 caffeinate，可用 `--no-caffeinate` 关闭；可选持久、仅 AC 的 pmset 设置须另行审阅风险与恢复方案，脚本不执行。
 
-之后按[自动配置指南](docs/SETUP_AUTOMATION.zh.md)执行 `setup-local.py` → `up.sh` → owner `doctor` → 明确批准的只读 `roundtrip`。下述手工快速开始是另一条路线，不要让两套管理器接管同一实例。[提示词](docs/PROMPTS.zh.md)保留权限边界。
+之后按[自动配置指南](docs/SETUP_AUTOMATION.zh.md)执行 `setup-local.py` → `up.sh` → owner `doctor` → 明确批准的只读 `roundtrip`。[高级手工路线](#高级不使用一键配置的手工启动)是另一条路线，不要让两套管理器接管同一实例。[提示词](docs/PROMPTS.zh.md)保留权限边界。
 
 安装维护者经 Grok 报告：在一次真实安装中已观察到 Grok 终态 routine 回执及到期前自动续订。本次文档更新没有独立复现这些结果，每个部署仍需核验。见[证据与限制](VERIFICATION.md#maintainer-reported-acceptance)。
 
@@ -87,50 +110,6 @@ Grok / ChatGPT Dot（各自拥有工具和运行环境）
 **叫醒在云端、任务与代码在本机。** 圆桌持久保存本机任务，Bot 通过工具读取授权上下文和结果；这不意味着数据永不离开本机。Events 只发送任务 ID、交接 ID 和事件类别，接收者被唤醒后再领取工作。Dot 如需操作本机代码，使用它自身已获授权的电脑能力；圆桌不执行代码。
 
 MCP 工具调用本身不保证唤醒空闲 Bot。回调返回成功只说明对方接收请求；任务完成须以领取者的终态报告为准。取消本机任务也无法撤回已经发生的外部操作。
-
-## 快速开始
-
-需要 Python 3.12 或 3.13。下面的 `<...>` 都是占位符，请先替换；`${ROUNDTABLE_HOME}` 指向本仓库 checkout。管理员和成员凭据通过可信秘密管理器或进程环境注入，不要写进命令、仓库或聊天。
-
-```sh
-export ROUNDTABLE_HOME='<CHECKOUT_DIRECTORY>'
-cd "${ROUNDTABLE_HOME}"
-python3.12 -m venv .venv
-. .venv/bin/activate
-python -m pip install -r requirements.lock
-
-export ROUNDTABLE_PORT='<SERVER_PORT>'
-export ROUNDTABLE_URL='http://127.0.0.1:<SERVER_PORT>'
-# 手工 UI 路线：启动前从可信秘密管理器安全注入已有、可复用的 ROUNDTABLE_ADMIN_TOKEN
-# 不要每次启动重新生成。
-sh scripts/start-local.sh server
-```
-
-首次安装且没有已有秘密管理器凭据时，请改用[托管 setup 与 ui](docs/ONBOARDING_RUNTIME.zh.md#初始化并打开网页)。独立 server 自动生成后会持久保存令牌，但不显示；托管 `ui` 不接管独立启动的进程。
-
-打开 `http://127.0.0.1:<SERVER_PORT>`，点击「连接」，在本机页面输入管理员凭据。demo 成员默认关闭：只想试用本机流程时，用 `sh scripts/start-local.sh server --demo`（或设 `ROUNDTABLE_DEMO=1`）启动，再创建带两个 demo 成员的群试用讨论或「委派任务」。demo 只验证本机流程；托管 setup/up 从不启用 demo。旧版本留在目录里的 demo bot，未被任何群或历史引用时默认隐藏，可在停服后用 `.venv/bin/python server.py --db <数据库路径> --prune-demo` 清理（只删无引用的 demo 登记，不动群和历史）。已有服务时先确认端口和数据库归属，不要启动第二个实例。
-
-要接入真实 Bot，在界面注册身份并加入专用群，为每个成员保存独立凭据。在另一个已安全注入成员凭据的终端中启动 stdio MCP：
-
-```sh
-cd "${ROUNDTABLE_HOME}"
-export ROUNDTABLE_URL='http://127.0.0.1:<SERVER_PORT>'
-export ROUNDTABLE_ROOM='<ROOM_ID>'
-export ROUNDTABLE_AGENT='<AGENT_ID>'
-# 预先安全注入该成员的 ROUNDTABLE_TOKEN；不要使用管理员凭据
-.venv/bin/python scripts/check.py doctor
-.venv/bin/python mcp_bridge.py
-```
-
-实际使用时，让 Bot 的 MCP 客户端启动 `${ROUNDTABLE_HOME}/.venv/bin/python`，参数为 `${ROUNDTABLE_HOME}/mcp_bridge.py`，并传入上述成员环境。路径变量需按客户端格式展开，不能假定客户端自动替换。stdio 的标准输入输出用于协议通信。
-
-需要 HTTP 时，按 [HTTP 配置](docs/HTTP.zh.md) 安全提供 `ROUNDTABLE_HTTP_GRANTS`（群、成员、成员凭据的 JSON 数组），再启动：
-
-```sh
-export ROUNDTABLE_MCP_PORT='<MCP_PORT>'
-sh scripts/start-local.sh mcp
-# 客户端地址：http://127.0.0.1:<MCP_PORT>/mcp
-```
 
 ## 安装与配置
 
@@ -218,6 +197,52 @@ Events 默认关闭。批准实际 callback hostname 后，按 [Events 协议](d
 ### 可选终态回执
 
 按 [终态回执指南](docs/TERMINAL_RECEIPTS.zh.md) 配置已授权的 Grok routine，可手动发送或显式启用 `ROUNDTABLE_TERMINAL_NOTIFICATIONS=1`。回执仅含任务 ID 和终态。持久账本在发送前预留一次尝试；结果不确定时不自动重发，不保证 exactly-once delivery。
+
+## 高级：不使用一键配置的手工启动
+
+仅在你自行管理进程和秘密时使用。不要指向 `setup-local.py` 创建的实例，也不要让两套管理器接管同一实例。
+
+需要 Python 3.12 或 3.13。下面的 `<...>` 都是占位符，请先替换；`${ROUNDTABLE_HOME}` 指向本仓库 checkout。管理员和成员凭据通过可信秘密管理器或进程环境注入，不要写进命令、仓库或聊天。
+
+```sh
+export ROUNDTABLE_HOME='<CHECKOUT_DIRECTORY>'
+cd "${ROUNDTABLE_HOME}"
+python3.12 -m venv .venv   # 或 python3.13
+. .venv/bin/activate
+python -m pip install -r requirements.lock
+
+export ROUNDTABLE_PORT='<SERVER_PORT>'
+export ROUNDTABLE_URL='http://127.0.0.1:<SERVER_PORT>'
+# 手工 UI 路线：启动前从可信秘密管理器安全注入已有、可复用的 ROUNDTABLE_ADMIN_TOKEN
+# 不要每次启动重新生成。
+sh scripts/start-local.sh server
+```
+
+首次安装且没有已有秘密管理器凭据时，请改用[托管 setup 与 ui](docs/ONBOARDING_RUNTIME.zh.md#初始化并打开网页)。独立 server 自动生成后会持久保存令牌，但不显示；托管 `ui` 不接管独立启动的进程。
+
+打开 `http://127.0.0.1:<SERVER_PORT>`，点击「连接」，在本机页面输入管理员凭据。demo 成员默认关闭：只想试用本机流程时，用 `sh scripts/start-local.sh server --demo`（或设 `ROUNDTABLE_DEMO=1`）启动，再创建带两个 demo 成员的群试用讨论或「委派任务」。demo 只验证本机流程；托管 setup/up 从不启用 demo。旧版本留在目录里的 demo bot，未被任何群或历史引用时默认隐藏，可在停服后用 `.venv/bin/python server.py --db <数据库路径> --prune-demo` 清理（只删无引用的 demo 登记，不动群和历史）。已有服务时先确认端口和数据库归属，不要启动第二个实例。
+
+要接入真实 Bot，在界面注册身份并加入专用群，为每个成员保存独立凭据。在另一个已安全注入成员凭据的终端中启动 stdio MCP：
+
+```sh
+cd "${ROUNDTABLE_HOME}"
+export ROUNDTABLE_URL='http://127.0.0.1:<SERVER_PORT>'
+export ROUNDTABLE_ROOM='<ROOM_ID>'
+export ROUNDTABLE_AGENT='<AGENT_ID>'
+# 预先安全注入该成员的 ROUNDTABLE_TOKEN；不要使用管理员凭据
+.venv/bin/python scripts/check.py doctor
+.venv/bin/python mcp_bridge.py
+```
+
+实际使用时，让 Bot 的 MCP 客户端启动 `${ROUNDTABLE_HOME}/.venv/bin/python`，参数为 `${ROUNDTABLE_HOME}/mcp_bridge.py`，并传入上述成员环境。路径变量需按客户端格式展开，不能假定客户端自动替换。stdio 的标准输入输出用于协议通信。
+
+需要 HTTP 时，按 [HTTP 配置](docs/HTTP.zh.md) 安全提供 `ROUNDTABLE_HTTP_GRANTS`（群、成员、成员凭据的 JSON 数组），再启动：
+
+```sh
+export ROUNDTABLE_MCP_PORT='<MCP_PORT>'
+sh scripts/start-local.sh mcp
+# 客户端地址：http://127.0.0.1:<MCP_PORT>/mcp
+```
 
 ## 安全边界
 

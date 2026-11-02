@@ -1,6 +1,6 @@
 # Managed local setup
 
-These scripts automate local identities, private files and process lifecycle. They do **not** create vendor accounts, install Tunnel, subscribe to Events, grant a bot computer permissions, or load launchd. Linux/macOS with Python 3.12/3.13 are supported; Windows process management is not implemented. Use a dedicated checkout. Do not point these scripts at an existing manually managed database without an explicitly reviewed manual state transfer.
+These scripts automate local identities, private files and process lifecycle. They do **not** create vendor accounts, install Tunnel, subscribe to Events, grant a bot computer permissions, or load launchd. Linux/macOS with Python 3.12/3.13 are supported; Windows process management is not implemented. Use a dedicated checkout. On macOS, keep it outside privacy-protected folders such as `~/Documents`, `~/Desktop`, and `~/Downloads` (prefer e.g. `~/code/bot-roundtable`): the Tunnel client runs from the checkout and reads its profile there, which can trigger or later revoke macOS file-access permission and stop the Tunnel. Do not point these scripts at an existing manually managed database without an explicitly reviewed manual state transfer.
 
 For persistent administrator credentials, room.env, safe UI access, create/tasks/inbox, explicit startup diagnostics, and manual state-transfer guidance, follow [runtime onboarding](ONBOARDING_RUNTIME.en.md). Windows credential persistence is separate from unsupported Windows process management.
 
@@ -29,7 +29,7 @@ For persistent administrator credentials, room.env, safe UI access, create/tasks
 ```sh
 export ROUNDTABLE_HOME='<CHECKOUT_DIRECTORY>'
 cd "${ROUNDTABLE_HOME}"
-python3.12 -m venv .venv
+python3.12 -m venv .venv   # or python3.13; on macOS without either: brew install python@3.12
 .venv/bin/python -m pip install -r requirements.lock
 .venv/bin/python scripts/setup-local.py --origin grok --worker dot --allowance 20 \
   --server-port '<SERVER_PORT>' --mcp-port '<MCP_PORT>'
