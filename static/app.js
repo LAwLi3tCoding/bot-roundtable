@@ -10,8 +10,8 @@ const roomPreviews = new Map();
 let connectionEvidence = [];
 function protocolLabel(id){const e=connectionEvidence.find(m=>m.id===id);return t('protocol_'+(e?.protocol_state||'unknown'));}
 function relativeTime(stamp){if(!stamp)return t('activityUnknown');const minutes=Math.max(0,Math.floor((Date.now()/1000-stamp)/60));return minutes===0?t('justNow'):(language==='zh'?`${minutes} 分钟前`:`${minutes} min ago`);}
-function memberEvidence(id){const e=connectionEvidence.find(m=>m.id===id);return `${protocolLabel(id)} · ${t('recentActivity')}: ${relativeTime(e?.last_activity)}`;}
-function noticeText(notice){const id=String(notice.actor||'').replace(/^bot:/,'');const actor=notice.actor==='user'?t('human'):(state.agents.find(a=>a.id===id)?.name||id);return `${actor} ${t('notice_'+notice.kind)}「${notice.task_title}」${notice.worker?' · @'+(state.agents.find(a=>a.id===notice.worker)?.name||notice.worker):''}${notice.summary?'\n'+notice.summary:''}`;}
+function memberEvidence(id){const e=connectionEvidence.find(m=>m.id===id);return e?.last_activity?`${protocolLabel(id)} · ${t('recentActivity')}: ${relativeTime(e.last_activity)}`:protocolLabel(id);}
+function noticeText(notice){const id=String(notice.actor||'').replace(/^bot:/,'');const actor=notice.actor==='user'?t('human'):(state.agents.find(a=>a.id===id)?.name||id);return `${actor} ${t('notice_'+notice.kind)}「${notice.task_title}」${notice.worker&&notice.worker!==id?' · @'+(state.agents.find(a=>a.id===notice.worker)?.name||notice.worker):''}${notice.summary?'\n'+notice.summary:''}`;}
 
 const credentialKey = 'roundtable-access-v1';
 const COOKIE_SESSION = 'cookie-session';
@@ -169,7 +169,7 @@ function renderState() {
   const chip=element('button','participant-chip'+(selected.has(agent.id)?' selected':''),agent.name); chip.type='button'; chip.dataset.agentId=agent.id; chip.setAttribute('aria-pressed',String(selected.has(agent.id))); chip.disabled=running; if(agent.id===state.room.lead) chip.append(element('span','',` · ${t('lead')}`)); chip.onclick=()=>{if(selected.has(agent.id))selected.delete(agent.id);else selected.add(agent.id);renderState();}; if(updateParticipants){$('participants').append(chip);if(focusedAgent===agent.id)chip.focus();}
   const row=element('div','member');const activity=connectionEvidence.find(e=>e.id===agent.id)?.last_activity;row.title=activity?new Date(activity*1000).toLocaleString():t('activityUnknown'); row.append(element('div','avatar small-avatar','◈')); const info=element('div','member-info'); info.append(element('strong','',agent.name),element('span','',memberEvidence(agent.id))); row.append(info); if(agent.id===state.room.lead) row.append(element('span','lead-badge',t('lead'))); $('member-list').append(row);
  }
- if(!state.agents.length)$('member-list').append(element('p','muted',t('noBots')));
+ if(!state.agents.length)$('member-list').append(element('p','muted',t('noBots')));else $('member-list').append(element('p','muted small protocol-hint',t('protocolHint')));$('room-subtitle').title=t('protocolHint');
  window.HandoffUI?.render();
  $('lead-note').textContent=state.room.lead ? `${t('lead')}: ${state.agents.find(a=>a.id===state.room.lead)?.name||state.room.lead}` : '';
 }
