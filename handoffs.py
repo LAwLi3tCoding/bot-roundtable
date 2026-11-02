@@ -10,7 +10,7 @@ TERMINAL = {"completed", "failed", "cancelled", "timeout", "revoked"}
 
 
 NOTIFICATION_EVENT = "roundtable.notification"
-NOTIFICATION_KINDS = ("task.assigned", "task.updated", "task.finished", "mention")
+NOTIFICATION_KINDS = ("task.assigned", "task.updated", "task.finished", "mention", "message")
 TASK_FINISHED = {
     "task_completed": "completed",
     "task_failed": "failed",
@@ -434,10 +434,8 @@ class Handoffs:
                     "SELECT COALESCE(MAX(id),0) FROM task_events"
                 ).fetchone()[0]
                 message_latest = (
-                    self.db.execute(
-                        "SELECT COALESCE(MAX(id),0) FROM discussion_messages"
-                    ).fetchone()[0]
-                    if getattr(self.store, "discussions", None) is not None
+                    self.db.execute("SELECT COALESCE(MAX(id),0) FROM mail_messages").fetchone()[0]
+                    if getattr(self.store, "mailboxes", None) is not None
                     else 0
                 )
                 return {"cursor": pack_cursor(task_latest, message_latest), "events": []}
@@ -500,19 +498,19 @@ class Handoffs:
                         "cursor": None,
                     }
                 )
-            discussions = getattr(self.store, "discussions", None)
+            discussions = getattr(self.store, "mailboxes", None)
             page = (
-                discussions.inbox(room, actor, {"after": message_after})
+                discussions.wake_inbox(room, actor, message_after)
                 if discussions is not None
                 else {"messages": [], "next_cursor": message_after}
             )
             for message in page["messages"]:
                 result.append(
                     {
-                        "eventId": f"mention_{self.event_namespace}_{message['id']}",
+                        "eventId": f"message_{self.event_namespace}_{message['id']}",
                         "name": NOTIFICATION_EVENT,
                         "timestamp": stamp(message["created"]),
-                        "data": {"kind": "mention", "id": str(message["id"])},
+                        "data": {"kind": "message", "id": str(message["id"])},
                         "cursor": None,
                     }
                 )

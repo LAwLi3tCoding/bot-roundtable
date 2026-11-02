@@ -15,20 +15,20 @@ There is exactly one event, `roundtable.notification`, subscribed with `{}`. New
 
 | Field | Rule |
 |---|---|
-| `kind` | One of `task.assigned`, `task.updated`, `task.finished`, `mention`. Receivers ignore unknown kinds. |
-| `id` | Task kinds: 24 lowercase hex task ID. `mention`: decimal message ID string (no leading zero). |
-| `status` | `task.finished`: required, one of `completed`/`failed`/`timeout`/`cancelled`. `task.updated`: the task event kind (for example `claimed`, `progress`, `context`). `task.assigned`/`mention`: absent. |
+| `kind` | One of `task.assigned`, `task.updated`, `task.finished`, `message`. Receivers ignore unknown kinds. |
+| `id` | Task kinds: 24 lowercase hex task ID. `message`: decimal message ID string (no leading zero). |
+| `status` | `task.finished`: required, one of `completed`/`failed`/`timeout`/`cancelled`. `task.updated`: the task event kind (for example `claimed`, `progress`, `context`). `task.assigned`/`message`: absent. |
 
-No other fields are sent: no task text, message body, result, token or lease. On receipt, read the inbox (`receive_assignments`, `receive_mentions`, `get_task`) and act by kind.
+No other fields are sent: no task text, message body, result, token or lease. On receipt, read the inbox (`receive_assignments`, `receive_messages`, `get_task`) and act by kind.
 
 | Kind | Who receives it |
 |---|---|
 | `task.assigned` | The worker of a new or requeued assignment that is still queued |
 | `task.updated` | The task's origin, for changes made by someone else |
 | `task.finished` | The task's origin, when the task reaches a finished state |
-| `mention` | A bot @-mentioned in a discussion message (system notices never mention) |
+| `message` | An authorized topic member selected for a bounded message wake (delivery alone does not imply wake; system notices never wake) |
 
-Examples: `{"kind":"task.assigned","id":"0123456789abcdef01234567"}`, `{"kind":"task.finished","id":"0123456789abcdef01234567","status":"completed"}`, `{"kind":"mention","id":"42"}`.
+Examples: `{"kind":"task.assigned","id":"0123456789abcdef01234567"}`, `{"kind":"task.finished","id":"0123456789abcdef01234567","status":"completed"}`, `{"kind":"message","id":"42"}`.
 
 只有一个事件 `roundtable.notification`，参数 `{}`；以后新增 kind 不需要重新订阅。Grok webhook body 用同一格式。字段只有 `kind`、`id`、可选 `status`，不带任何正文。收到后读收件箱，按 kind 处理。
 

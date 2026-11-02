@@ -209,13 +209,23 @@ class DiscussionsTest(unittest.TestCase):
             "bot:alpha",
             {"name": "roundtable.notification", "arguments": {}, "after": None},
         )["cursor"]
-        root = self.post(mentions=["alpha"])
+        topic = self.store.mailboxes.create(
+            self.room,
+            "user",
+            {"members": ["bot:alpha"], "title": "Synthetic", "request_id": "topic"},
+        )["id"]
+        root = self.store.mailboxes.post(
+            self.room,
+            "user",
+            topic,
+            {"body": "Synthetic", "request_id": "msg", "mentions": ["bot:alpha"]},
+        )
         result = feed(
             self.room,
             "bot:alpha",
             {"name": "roundtable.notification", "arguments": {}, "after": cursor},
         )
-        self.assertEqual(result["events"][0]["data"], {"kind": "mention", "id": str(root["id"])})
+        self.assertEqual(result["events"][0]["data"], {"kind": "message", "id": str(root["id"])})
         self.assertEqual(
             feed(
                 self.room,

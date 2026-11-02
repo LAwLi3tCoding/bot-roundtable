@@ -25,6 +25,7 @@ jobs:
       - run: node --check static/app.js
       - run: node --check static/i18n.js
       - run: node --check static/handoffs.js
+      - run: node --check static/mailbox.js
   browser:
     runs-on: ubuntu-latest
     steps:
@@ -39,3 +40,4 @@ jobs:
       - run: PYTHONPATH=. python tests/browser_onboarding.py
       - run: PYTHONPATH=. python tests/browser_ui_login.py
       - run: PYTHONPATH=. python tests/browser_mentions.py
+      - run: PYTHONPATH=. python tests/browser_mailboxes.py

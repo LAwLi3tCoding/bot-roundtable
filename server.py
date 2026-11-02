@@ -77,10 +77,14 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
                     "/i18n.js",
                     "/style.css",
                     "/handoffs.js",
+                    "/mailbox.js",
+                    "/mailbox.css",
                 ):
                     file, mime = {
                         "/": ("index.html", "text/html; charset=utf-8"),
                         "/app.js": ("app.js", "text/javascript; charset=utf-8"),
+                        "/mailbox.js": ("mailbox.js", "text/javascript; charset=utf-8"),
+                        "/mailbox.css": ("mailbox.css", "text/css; charset=utf-8"),
                         "/handoffs.js": ("handoffs.js", "text/javascript; charset=utf-8"),
                         "/i18n.js": ("i18n.js", "text/javascript; charset=utf-8"),
                         "/style.css": ("style.css", "text/css; charset=utf-8"),
@@ -218,6 +222,28 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
                 return (200, store.handoffs.operate(room, actor, operation, body))
             raise Problem(404, "Not found")
 
+        def mailbox_dispatch(self, room, actor, tail, method, body):
+            mailbox = store.mailboxes
+            if not tail:
+                if method == "GET":
+                    return (200, mailbox.topics(room, actor))
+                return (201, mailbox.create(room, actor, body))
+            if method != "POST" or len(tail) != 1:
+                raise Problem(404, "Not found")
+            operation = tail[0]
+            topic = body.get("topic_id")
+            if operation == "query":
+                return (200, mailbox.messages(room, actor, topic, body.get("after", 0)))
+            if operation == "messages":
+                return (201, mailbox.post(room, actor, topic, body))
+            if operation == "inbox":
+                return (200, mailbox.inbox(room, actor, body.get("after", 0)))
+            if operation == "read":
+                return (200, mailbox.read(room, actor, topic, body.get("cursor", 0)))
+            if operation == "stop":
+                return (200, mailbox.stop(room, actor, topic))
+            raise Problem(404, "Not found")
+
         def dispatch(self, method, path, token, body):
             if path in ("/api/rooms", "/api/bots"):
                 if not hmac.compare_digest(token, admin):
@@ -248,6 +274,8 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
                 if len(parts) == 6 and parts[5] == "access" and method == "GET":
                     return (200, {"authorized": True, "room": room, "agent": agent})
                 if parts[5] == "peer":
+                    if len(parts) >= 7 and parts[6] == "topics":
+                        return self.mailbox_dispatch(room, "bot:" + agent, parts[7:], method, body)
                     if (
                         len(parts) == 7
                         and method == "POST"
@@ -302,6 +330,8 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
             if not hmac.compare_digest(token, admin):
                 store.authorize(room, token)
             store.state(room)  # Verify existence even for an admin credential.
+            if len(parts) >= 4 and parts[3] == "topics":
+                return self.mailbox_dispatch(room, "user", parts[4:], method, body)
             if len(parts) == 4 and parts[3] == "connections" and method == "GET":
                 return (
                     200,

@@ -1,9 +1,8 @@
-"""Desktop bilingual flows against real local HTTP; deterministic demo bots only."""
+"""Owner setup, bilingual mailbox controls and isolation against synthetic HTTP state."""
 
 import os
 import secrets
 import threading
-from pathlib import Path
 
 from playwright.sync_api import expect, sync_playwright
 
@@ -17,14 +16,6 @@ def main():
     server = make_server(store, token, port=0)
     thread = threading.Thread(target=server.serve_forever)
     thread.start()
-    stop = threading.Event()
-
-    def tick():
-        while not stop.wait(0.15):
-            store.demo_tick()
-
-    worker = threading.Thread(target=tick)
-    worker.start()
     try:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(
@@ -37,7 +28,6 @@ def main():
             page.on("pageerror", lambda error: errors.append(str(error)))
             page.on("dialog", lambda dialog: dialog.accept())
             page.goto(f"http://127.0.0.1:{server.server_port}")
-            expect(page.locator(".welcome h2")).to_have_text("Bring your bots to the table.")
             page.locator("#access").click()
             page.locator("#admin").fill("wrong-token")
             page.locator("#access-form button[type=submit]").click()
@@ -53,59 +43,37 @@ def main():
             expect(page.locator("#secret-dialog")).to_be_visible()
             page.locator("#secret-dialog .close").click()
             expect(page.locator("#secrets")).to_be_empty()
-            expect(page.locator("#room-title")).to_have_text("Product lab")
-            # Management is on demand; the resting shell has just list and chat.
+            expect(page.locator("#room-title")).to_have_text("All")
             assert (
                 page.locator(".app-shell").evaluate(
                     "n => getComputedStyle(n).gridTemplateColumns.split(' ').length"
                 )
                 == 2
             )
-            expect(page.locator("#details")).not_to_be_visible()
-            page.locator("#options-open").click()
-            expect(page.locator("#options-dialog")).to_be_visible()
-            expect(page.locator(".participant-chip")).to_have_count(2)
-            first_target = page.locator(".participant-chip").first
-            first_target.click()
-            expect(first_target).to_have_attribute("aria-pressed", "false")
-            first_target.click()
-            expect(first_target).to_have_attribute("aria-pressed", "true")
-            page.locator("#budget").fill("4")
-            page.keyboard.press("Escape")
-            expect(page.locator("#options-dialog")).not_to_be_visible()
-            page.locator("#options-open").click()
-            expect(page.locator("#budget")).to_have_value("4")
-            page.locator("#options-dialog .close").click()
-            expect(page.locator("#options-open")).to_be_focused()
-            page.locator("#manage").click()
-            page.locator("#lead-select").select_option("demo-planner")
-            page.locator("#settings-form button[type=submit]").click()
-            page.locator("#manage-dialog .close").click()
-            page.locator("#body").fill(
-                "Plan a safe collaboration. <script>window.pwned=true</script>"
-            )
-            page.locator("#options-open").click()
-            page.locator("#start-discussion").click()
-            expect(page.locator("#status")).to_contain_text("Completed", timeout=10000)
-            expect(page.locator("article.message")).to_have_count(5)
+            page.locator('#mailbox-list [data-bot-id="demo-planner"]').click()
+            expect(page.locator("#body")).to_be_visible()
+            payload = "Plan safely. <script>window.pwned=true</script>"
+            page.locator("#body").fill(payload)
+            page.locator("#send").click()
+            expect(page.locator(".mailbox-message")).to_have_count(1)
+            expect(page.locator(".message-body")).to_have_text(payload)
             assert page.evaluate("window.pwned") is None
-            expect(page.locator("#messages")).to_contain_text("[DEMO Lead]")
-            human = page.locator(".human .message-body").first
-            bot = page.locator(".bot .message-body").first
-            assert human.evaluate("n => getComputedStyle(n).backgroundColor") == "rgb(17, 17, 17)"
-            assert bot.evaluate("n => getComputedStyle(n).backgroundColor") == "rgb(243, 243, 242)"
-            assert human.bounding_box()["x"] > bot.bounding_box()["x"]
-            original = page.locator("#messages").inner_text()
+            page.locator("#options-open").click()
+            expect(page.locator("#mailbox-details")).to_be_visible()
+            page.keyboard.press("Escape")
+            expect(page.locator("#options-open")).to_be_focused()
             page.locator("#language").select_option("zh")
             expect(page.locator("#manage")).to_have_text("管理")
-            expect(page.locator("#status")).to_contain_text("已完成")
-            expect(page.locator("#body")).to_have_attribute(
-                "placeholder", "发给所有人，或 @ 指定 Bot"
-            )
-            # Message body is not translated when switching the UI language.
-            expect(page.locator("#messages")).to_contain_text("Plan a safe collaboration.")
-            assert "[DEMO Lead]" in original
-            # Register a standalone Lead identity, join it, and exercise waiting/stop.
+            expect(page.locator("#mailbox-all")).to_have_text("全部")
+            expect(page.locator(".message-meta strong")).to_have_text("你")
+            expect(page.locator(".message-body")).to_have_text(payload)
+            page.locator("#stop").click()
+            expect(page.locator("#status")).to_have_text("已停止回复")
+            page.locator("#manage").click()
+            page.locator("#edit-name").fill("协作实验室")
+            page.locator("#settings-form button[type=submit]").click()
+            page.locator("#manage-dialog .close").click()
+            # Existing bot management remains functional beside mailbox topics.
             page.locator("#manage").click()
             page.locator("#create-lead").click()
             page.locator("#bot-name").fill("Research Lead")
@@ -115,92 +83,24 @@ def main():
             expect(page.locator("#secret-dialog")).to_be_visible()
             page.locator("#secret-dialog .close").click()
             expect(page.locator("#lead-select")).to_have_value("research-lead")
-            page.locator("#manage-dialog .close").click()
-            page.locator("#body").fill("Waiting for owner-connected Lead")
-            page.locator("#options-open").click()
-            page.locator("#start-discussion").click()
-            expect(page.locator("#status")).to_contain_text("进行中")
-            page.locator("#stop").click()
-            expect(page.locator("#status")).to_contain_text("已停止")
-            # History is real, stable and room-scoped.
-            first_run = store.state(store.list_rooms()[0]["id"])["runs"][0]["id"]
-            page.locator("#thread-select").select_option(first_run)
-            expect(page.locator("article.message")).to_have_count(5)
-            # Remove external Lead and rename room through management.
-            page.locator("#manage").click()
-            page.locator("#edit-name").fill("协作实验室")
             page.locator("#lead-select").select_option("demo-planner")
             page.locator("#settings-form button[type=submit]").click()
-            external_row = page.locator(".manage-member").filter(has_text="Research Lead")
-            external_row.locator(".danger").click()
+            page.locator(".manage-member").filter(has_text="Research Lead").locator(
+                ".danger"
+            ).click()
             expect(page.locator(".manage-member")).to_have_count(2)
             page.locator("#manage-dialog .close").click()
-            expect(page.locator("#room-title")).to_have_text("协作实验室")
-            Path("artifacts").mkdir(exist_ok=True)
-            page.screenshot(path="artifacts/desktop-zh.png", full_page=True)
-            page.locator("#language").select_option("en")
-            page.screenshot(path="artifacts/desktop-en.png", full_page=True)
-            page.locator("#mcp-open").click()
-            expect(page.locator("#mcp-config")).to_contain_text("ROOM_SCOPED_AGENT_TOKEN")
-            assert token not in page.locator("#mcp-config").inner_text()
-            expect(page.locator("#connection-results")).to_contain_text("No probe observed")
-            with store.lock:
-                store.connections.probe(
-                    store.list_rooms()[0]["id"], "demo-planner", "browser-probe-nonce"
-                )
-            page.locator("#connection-refresh").click()
-            expect(page.locator("#connection-results")).to_contain_text("Last scoped request")
-            expect(page.locator("#connection-results")).to_contain_text("browser-probe-nonce")
-            page.locator("#mcp-dialog .close").click()
-            page.locator("#language").select_option("zh")
-            page.locator("#mcp-open").click()
-            expect(page.locator("#connection-check")).to_contain_text("连接证据")
-            page.locator("#mcp-dialog .close").click()
-            page.locator("#language").select_option("en")
-            page.locator("#mcp-open").click()
-            page.locator("#mcp-dialog .close").click()
-            # Create a second room; no prior discussion is visible.
-            page.locator("#new-room").click()
-            page.locator("#name").fill("Separate room")
-            page.locator("#create").click()
-            page.locator("#secret-dialog .close").click()
-            expect(page.locator("article.message")).to_have_count(0)
-            page.locator(".room-nav").filter(has_text="协作实验室").click()
-            page.locator("#thread-select").select_option(first_run)
-            expect(page.locator("article.message")).to_have_count(5)
-            # All static translation keys exist in both dictionaries.
-            missing = page.evaluate(
-                "() => [...document.querySelectorAll('[data-i18n],[data-i18n-placeholder],[data-i18n-label]')].flatMap(n => ['en','zh'].filter(l => !I18N[l][n.dataset.i18n || n.dataset.i18nPlaceholder || n.dataset.i18nLabel]))"
-            )
-            assert missing == [], missing
-            assert page.evaluate(
-                "Object.keys(I18N.en).sort().join() === Object.keys(I18N.zh).sort().join()"
-            )
-            # Search does not navigate or discard the current conversation.
-            page.locator("#room-search").fill("not a matching room")
-            expect(page.locator(".room-nav")).to_have_count(0)
-            expect(page.locator("#room-list")).to_have_text("No matching conversations")
-            expect(page.locator("#room-title")).to_have_text("协作实验室")
-            page.locator("#room-search").fill("Separate")
-            expect(page.locator(".room-nav")).to_have_count(1)
-            page.locator("#room-search").fill("")
-            expect(page.locator(".room-nav")).to_have_count(2)
-            page.locator("#manage").click()
-            page.keyboard.press("Escape")
-            expect(page.locator("#manage-dialog")).not_to_be_visible()
-            expect(page.locator("#manage")).to_be_focused()
-            # Hold an old poll response while a mutation triggers its own fresh read.
-            # The mutation must not skip refresh, and the delayed poll must not overwrite it.
+            page.locator("#mailbox-all").click()
+            expect(page.locator("#room-subtitle")).to_contain_text("协作实验室")
+            # A held older room poll cannot undo a subsequent owner mutation.
             page.evaluate(r"""() => {
-                const original = window.fetch;
-                let held = false;
+                const original = window.fetch; let held = false;
                 window.staleReady = false;
                 window.fetch = async (...args) => {
                     const response = await original(...args);
                     if (!held && (!args[1]?.method || args[1].method === 'GET') &&
                         /^\/api\/rooms\/[a-f0-9]{24}$/.test(args[0])) {
-                        held = true;
-                        window.staleReady = true;
+                        held = true; window.staleReady = true;
                         await new Promise(resolve => window.releaseStale = resolve);
                     }
                     return response;
@@ -216,56 +116,59 @@ def main():
             page.locator("#manage").click()
             page.locator("#edit-name").fill("Latest room state")
             page.locator("#settings-form button[type=submit]").click()
-            expect(page.locator("#room-title")).to_have_text("Latest room state")
+            expect(page.locator("#room-subtitle")).to_contain_text("Latest room state")
             page.evaluate("window.releaseStale(); window.restoreFetch();")
             page.wait_for_timeout(100)
-            expect(page.locator("#room-title")).to_have_text("Latest room state")
+            expect(page.locator("#room-subtitle")).to_contain_text("Latest room state")
             page.locator("#edit-name").fill("协作实验室")
             page.locator("#settings-form button[type=submit]").click()
-            expect(page.locator("#room-title")).to_have_text("协作实验室")
+            expect(page.locator("#room-subtitle")).to_contain_text("协作实验室")
             page.locator("#manage-dialog .close").click()
-            # Invalid values in the detached options dialog must never queue a run.
-            before_runs = len(store.state(store.list_rooms()[0]["id"])["runs"])
-            page.locator("#body").fill("Budget validation only")
+            page.locator("#language").select_option("en")
+            page.locator("#mcp-open").click()
+            expect(page.locator("#mcp-config")).to_contain_text("ROOM_SCOPED_AGENT_TOKEN")
+            assert token not in page.locator("#mcp-config").inner_text()
+            expect(page.locator("#connection-results")).to_contain_text("No probe observed")
+            page.locator("#mcp-dialog .close").click()
+            page.locator("#new-room").click()
+            page.locator("#name").fill("Separate room")
+            page.locator("#create").click()
+            page.locator("#secret-dialog .close").click()
+            expect(page.locator("article.message")).to_have_count(0)
+            expect(page.locator("#messages")).not_to_contain_text(payload)
+            page.locator(".workspace-picker summary").click()
+            page.locator(".room-nav").filter(has_text="协作实验室").click()
+            expect(page.locator("#room-subtitle")).to_contain_text("协作实验室")
+            page.locator("#mailbox-list [data-topic-id]").first.click()
+            expect(page.locator(".message-body")).to_have_text(payload)
+            page.locator("#room-search").fill("not a matching conversation")
+            expect(page.locator("#mailbox-list .mailbox-row")).to_have_count(0)
+            expect(page.locator(".message-body")).to_have_text(payload)
+            page.locator("#room-search").fill("")
+            page.locator("#mailbox-new").click()
+            page.locator("#mailbox-members input").first.check()
             for invalid in ("0", "21", "1.5"):
-                page.locator("#options-open").click()
-                page.locator("#budget").fill(invalid)
-                page.keyboard.press("Escape")
-                page.locator("#options-open").click()
-                page.locator("#start-discussion").click()
-                expect(page.locator("#options-dialog")).to_be_visible()
-                expect(page.locator("#budget")).to_be_focused()
-                assert not page.locator("#budget").evaluate("n => n.checkValidity()")
-                page.locator("#budget").fill("4")
-                page.locator("#options-dialog .close").click()
-            assert len(store.state(store.list_rooms()[0]["id"])["runs"]) == before_runs
-            page.locator("#body").fill("")
-            for _ in range(3):
-                page.locator("#manage").click()
-                expect(page.locator("#details")).to_be_visible()
-                page.keyboard.press("Escape")
-                expect(page.locator("#manage")).to_be_focused()
-                page.locator("#mcp-open").click()
-                page.locator("#mcp-dialog .close").click()
-                expect(page.locator("#mcp-open")).to_be_focused()
+                page.locator("#mailbox-budget").fill(invalid)
+                page.locator("#mailbox-create-submit").click()
+                expect(page.locator("#mailbox-dialog")).to_be_visible()
+                assert not page.locator("#mailbox-budget").evaluate("n => n.checkValidity()")
+            page.keyboard.press("Escape")
+            page.locator("#mailbox-theme").select_option("dark")
+            expect(page.locator("html")).to_have_attribute("data-theme", "dark")
             assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
-            page.locator("#language").select_option("zh")
-            # Default access survives refresh in session storage, while only language is persistent.
+            missing = page.evaluate(
+                "() => [...document.querySelectorAll('[data-i18n],[data-i18n-placeholder],[data-i18n-label]')].flatMap(n => ['en','zh'].filter(l => !I18N[l][n.dataset.i18n || n.dataset.i18nPlaceholder || n.dataset.i18nLabel]))"
+            )
+            assert missing == [], missing
             page.reload()
-            expect(page.locator("#manage")).to_have_text("管理")
-            expect(page.locator("#access")).to_have_text("连接")
-            assert set(page.evaluate("Object.keys(localStorage)")) <= {
-                "roundtable-language",
-                "roundtable-last-room",
-            }
+            expect(page.locator("#access")).to_have_text("Connect")
+            expect(page.locator("html")).to_have_attribute("data-theme", "dark")
             assert not errors, errors
             browser.close()
         print(
-            "Browser product checks passed: EN/ZH, group creation/isolation, Lead, register/remove, history, stop, XSS, desktop layout/search/options, session access and language-only local persistence"
+            "Browser smoke passed: setup/auth, EN/ZH, mailbox XSS, stop, workspace isolation, search, controls and appearance"
         )
     finally:
-        stop.set()
-        worker.join()
         server.shutdown()
         server.server_close()
         thread.join()

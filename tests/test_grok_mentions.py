@@ -14,7 +14,7 @@ class GrokMentions(unittest.TestCase):
             self.assertTrue(first["attempted"])
             self.assertFalse(second["attempted"])
             adapter.notify.assert_called_once()
-            self.assertEqual(adapter.notify.call_args.args, ("mention", "12"))
+            self.assertEqual(adapter.notify.call_args.args, ("message", "12"))
         finally:
             ledger.close()
 

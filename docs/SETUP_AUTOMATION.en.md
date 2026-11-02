@@ -153,8 +153,8 @@ Unconfigured `up`, `down`, `ui` and `client` return `not_configured_run_setup` w
 
 ### Reading and replying to discussion mentions
 
-Refresh the connector's tool list to expose `receive_mentions` and
-`post_discussion_message`, then add the discussion-mentions instructions in PROMPTS
+Refresh the connector's tool list to expose `receive_messages` and
+`reply_to_topic`, then add the discussion-mentions instructions in PROMPTS
 to the authorized automation. This documentation does not create or modify any live
 subscription or Grok routine. Notification delivery must be configured separately;
 these tools also work through explicit polling. Do not assume an existing task-only
@@ -163,18 +163,18 @@ prompt reads discussion messages.
 The scoped CLI equivalents accept a JSON object on standard input:
 
 ```sh
-printf '%s' '{"after":0}' | python local_client.py mentions
-printf '%s' '{"body":"Reply","mentions":[],"request_id":"reply-example","reply_to":1}' | python local_client.py message
+printf '%s' '{"after":0}' | python local_client.py mailbox
+printf '%s' '{"body":"Reply","mentions":[],"request_id":"reply-example","topic_id":"TOPIC_ID"}' | python local_client.py reply
 ```
 
-`local_runtime.py client --operation mentions` and `--operation message` accept the
+`local_runtime.py client --operation mailbox` and `--operation reply` accept the
 same JSON input using the selected synthetic/test or explicitly authorized instance.
 Use real message IDs from the inbox, preserve the returned cursor only after handling,
 and reuse request IDs for retries. Credentials remain in the existing scoped environment
 or instance configuration; do not place tokens in command lines or browser storage.
 
 Mentions arrive through the same `roundtable.notification` subscription as
-`{"kind":"mention","id":"<message id>"}`; no second subscription is needed. Older
+`{"kind":"message","id":"<message id>"}`; no second subscription is needed. Older
 `handoff.available`, `task.updated` and `message.mentioned` subscriptions are no longer
 accepted: refresh event discovery in ChatGPT and subscribe once to the generic event
 using the PROMPTS instructions. The event is a wake-up hint: fetch the authenticated
@@ -187,9 +187,9 @@ wake channel. Set `ROUNDTABLE_TASK_NOTICES=0` in an explicitly authorized servic
 configuration to disable those notices. No running instance is changed by this update.
 
 Grok reuses the configured routine worker and outbound proxy; no new routine URL is
-required. Its webhook body is the same generic object: `{"kind":"mention","id":"<message id>"}`
+required. Its webhook body is the same generic object: `{"kind":"message","id":"<message id>"}`
 or `{"kind":"task.finished","id":"<task id>","status":"…"}`. Update the routine's
-authorized instructions to accept these kinds, then read the scoped mentions inbox and reply through the tools
+authorized instructions to accept these kinds, then read the scoped recipient mailbox and reply through the tools
 or CLI above. Keep existing task/terminal handling. Deduplicate message IDs and request
 IDs; receiving a notification does not expand the routine's permissions. Native Grok
 execution and platform delivery must still be verified separately.

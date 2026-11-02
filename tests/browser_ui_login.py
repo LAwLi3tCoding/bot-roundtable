@@ -44,7 +44,7 @@ def main():
             page = context.new_page()
             code = issue()
             page.goto(url + "/#roundtable-login=" + code)
-            expect(page.locator("#room-title")).to_have_text(second["name"])
+            expect(page.locator("#room-subtitle")).to_contain_text(second["name"])
             assert page.url == url + "/"
             cookies = context.cookies()
             session = next(c for c in cookies if c["name"] == "roundtable_ui")
@@ -52,9 +52,10 @@ def main():
             assert "roundtable_ui" not in page.evaluate("document.cookie")
             for kind in ("localStorage", "sessionStorage"):
                 assert page.evaluate(f"{kind}.getItem('roundtable-access-v1') === null")
+            page.locator(".workspace-picker summary").click()
             page.locator(f'[data-room-id="{first["id"]}"]').click()
             page.reload()
-            expect(page.locator("#room-title")).to_have_text(first["name"])
+            expect(page.locator("#room-subtitle")).to_contain_text(first["name"])
             page.locator("#access").click()
             expect(page.locator("#remember-access")).to_be_disabled()
             with page.expect_response("**/api/ui-login/revoke") as revoke:

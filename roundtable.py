@@ -107,6 +107,9 @@ class Store:
         from discussions import Discussions
 
         self.discussions = Discussions(self)
+        from mailboxes import Mailboxes
+
+        self.mailboxes = Mailboxes(self)
 
     @contextmanager
     def transaction(self):
@@ -371,6 +374,7 @@ class Store:
     def stop(self, room: str):
         with self.transaction():
             self.discussions.close(room)
+            self.mailboxes.close(room)
             self.db.execute(
                 "UPDATE runs SET status='stopped' WHERE room=? AND status='running'", (room,)
             )
@@ -483,8 +487,13 @@ class Store:
 
     def stop_peer(self, room: str, agent: str):
         with self.transaction():
-            if self.discussions.active(room):
-                raise Problem(403, "Only the room owner may stop ordinary discussion roots")
+            if (
+                self.discussions.active(room)
+                or self.db.execute(
+                    "SELECT 1 FROM mail_topics WHERE room=? AND stopped=0", (room,)
+                ).fetchone()
+            ):
+                raise Problem(403, "Only the room owner may stop all active conversations")
             active = self.db.execute(
                 "SELECT actor FROM runs WHERE room=? AND status='running'", (room,)
             ).fetchone()
@@ -503,7 +512,8 @@ class Store:
             return dict(
                 room=dict(room_row),
                 tasks=self.handoffs.listing(room, actor),
-                discussion_messages=self.discussions.listing(room),
+                discussion_messages=self.discussions.listing(room) if actor == "user" else [],
+                topics=self.mailboxes.topics(room, actor),
                 discussion_active=self.discussions.active(room),
                 agents=[
                     dict(r)

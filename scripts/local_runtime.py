@@ -947,7 +947,17 @@ def run_client(state, config, args):
         config["origin"],
         member["ROUNDTABLE_TOKEN"],
     )
-    if args.operation in ("create", "mentions", "message"):
+    if args.operation in (
+        "create",
+        "mentions",
+        "message",
+        "create-topic",
+        "topic",
+        "mailbox",
+        "reply",
+        "read-topic",
+        "stop-topic",
+    ):
         result = client.call(args.operation, read_json_stdin())
     elif args.operation == "roundtrip":
         result = client.roundtrip(config["worker"], str(state / "roundtrip.json"), args.timeout)
@@ -1209,6 +1219,13 @@ def main():
             "create",
             "tasks",
             "inbox",
+            "topics",
+            "create-topic",
+            "topic",
+            "mailbox",
+            "reply",
+            "read-topic",
+            "stop-topic",
             "mentions",
             "message",
         ],

@@ -18,7 +18,7 @@ from collections.abc import Callable
 from outbound import canonical_host, proxy_config, OutboundNotSentError, OutboundConfig
 
 
-NOTIFICATION_KINDS = ("task.assigned", "task.updated", "task.finished", "mention")
+NOTIFICATION_KINDS = ("task.assigned", "task.updated", "task.finished", "mention", "message")
 FINISHED_STATUSES = ("completed", "failed", "timeout", "cancelled")
 
 
@@ -32,7 +32,7 @@ def notification_body(kind, item_id, status=None):
     """
     if kind not in NOTIFICATION_KINDS or not isinstance(item_id, str):
         raise ValueError("Invalid notification")
-    if kind == "mention":
+    if kind in ("mention", "message"):
         if not re.fullmatch(r"[1-9][0-9]{0,17}", item_id) or status is not None:
             raise ValueError("Invalid mention notification")
     elif not re.fullmatch(r"[a-f0-9]{24}", item_id):

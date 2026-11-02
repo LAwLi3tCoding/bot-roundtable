@@ -110,7 +110,18 @@ class HTTPMCPTests(unittest.IsolatedAsyncioTestCase):
             receiver = await self.connect(stack, self.receiver)
             foreign = await self.connect(stack, self.foreign)
             tools = {tool.name for tool in (await caller.list_tools()).tools}
-            self.assertEqual(len(tools), 18)
+            self.assertTrue(
+                {
+                    "list_topics",
+                    "create_topic",
+                    "read_topic",
+                    "receive_messages",
+                    "reply_to_topic",
+                    "mark_topic_read",
+                    "stop_topic",
+                }
+                <= tools
+            )
             self.assertTrue({"receive_mentions", "post_discussion_message"} <= tools)
             # Interleave different authenticated principals; no session or context leakage.
             listed = await asyncio.gather(
@@ -169,6 +180,62 @@ class HTTPMCPTests(unittest.IsolatedAsyncioTestCase):
                     "status"
                 ],
                 "stopped",
+            )
+
+    async def test_real_mailbox_mcp_delivery_membership_replay_and_stop(self):
+        async with AsyncExitStack() as stack:
+            caller = await self.connect(stack, self.caller)
+            receiver = await self.connect(stack, self.receiver)
+            outsider = await self.connect(stack, self.second)
+            foreign = await self.connect(stack, self.foreign)
+            topic = unpack(
+                await caller.call_tool(
+                    "create_topic",
+                    dict(
+                        members=["bot:http-receiver"],
+                        title="Private mailbox",
+                        request_id="topic",
+                        budget=3,
+                    ),
+                )
+            )
+            tid = topic["id"]
+            payload = dict(
+                topic_id=tid,
+                body="Synthetic private content",
+                request_id="message",
+                mentions=["bot:http-receiver"],
+            )
+            sent = unpack(await caller.call_tool("reply_to_topic", payload))
+            self.assertEqual(unpack(await caller.call_tool("reply_to_topic", payload)), sent)
+            self.assertEqual(unpack(await caller.call_tool("receive_messages"))["messages"], [])
+            received = unpack(await receiver.call_tool("receive_messages"))["messages"]
+            self.assertEqual([item["id"] for item in received], [sent["id"]])
+            self.assertEqual(received[0]["sender"], "bot:http-caller")
+            for denied in (outsider, foreign):
+                self.assertEqual(unpack(await denied.call_tool("list_topics")), [])
+                self.assertTrue((await denied.call_tool("read_topic", dict(topic_id=tid))).isError)
+                self.assertTrue((await denied.call_tool("reply_to_topic", payload)).isError)
+                self.assertTrue((await denied.call_tool("stop_topic", dict(topic_id=tid))).isError)
+            reply = unpack(
+                await receiver.call_tool(
+                    "reply_to_topic",
+                    dict(topic_id=tid, body="Synthetic response", request_id="reply", mentions=[]),
+                )
+            )
+            self.assertEqual(reply["recipients"], ["bot:http-caller"])
+            unpack(
+                await receiver.call_tool("mark_topic_read", dict(topic_id=tid, cursor=reply["id"]))
+            )
+            self.assertEqual(unpack(await receiver.call_tool("list_topics"))[0]["unread"], 0)
+            unpack(await caller.call_tool("stop_topic", dict(topic_id=tid)))
+            self.assertTrue(
+                (
+                    await receiver.call_tool(
+                        "reply_to_topic",
+                        dict(topic_id=tid, body="Late", request_id="late", mentions=[]),
+                    )
+                ).isError
             )
 
     async def test_native_task_two_workers_fanin_web_events_and_cancel(self):

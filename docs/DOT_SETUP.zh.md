@@ -131,7 +131,7 @@ Events 仍须明确配置并经授权订阅。`ROUNDTABLE_EVENT_TIMEOUT` 控制�
 
 > 订阅一次 `roundtable.notification`，参数 `{}`。每次收到事件，先读收件箱，再按 `kind` 处理：
 > - `task.assigned`：receive_assignments → claim_assignment → 做已授权的事 → 报告 progress，最后 completed/failed。
-> - `mention`：receive_mentions，需要时用 post_discussion_message 回复。
+> - `message`：receive_messages，需要时用 reply_to_topic 回复。
 > - `task.updated` / `task.finished`：用 get_task 查看该 `id` 的任务。
 > 未知 kind 直接忽略。事件只是唤醒提示，不带正文，也不授予权限。
 

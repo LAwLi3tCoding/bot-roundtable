@@ -152,7 +152,7 @@ macOS 上，包含 server 的托管 `up` 默认启动本实例的 `caffeinate -i
 
 ### 读取和回复讨论区提及
 
-刷新连接器工具列表，使其提供 `receive_mentions` 和 `post_discussion_message`，
+刷新连接器工具列表，使其提供 `receive_messages` 和 `reply_to_topic`，
 再将 PROMPTS 的讨论区提及说明加入已授权的自动化。本说明不会创建或修改真实订阅或
 Grok routine。通知投递需单独配置；这些工具也支持显式轮询。不能假定原本只处理任务
 的提示词会读取讨论区消息。
@@ -160,17 +160,17 @@ Grok routine。通知投递需单独配置；这些工具也支持显式轮询�
 具有群范围权限的 CLI 从标准输入读取 JSON 对象：
 
 ```sh
-printf '%s' '{"after":0}' | python local_client.py mentions
-printf '%s' '{"body":"回复","mentions":[],"request_id":"reply-example","reply_to":1}' | python local_client.py message
+printf '%s' '{"after":0}' | python local_client.py mailbox
+printf '%s' '{"body":"回复","mentions":[],"request_id":"reply-example","topic_id":"TOPIC_ID"}' | python local_client.py reply
 ```
 
-`local_runtime.py client --operation mentions` 和 `--operation message` 使用相同 JSON，
+`local_runtime.py client --operation mailbox` 和 `--operation reply` 使用相同 JSON，
 作用于所选的合成测试实例或另行授权的真实实例。请使用收件箱返回的真实消息 ID，处理后
 再保存游标，重试沿用 request ID。凭据继续使用现有群范围环境变量或实例配置，不得放入
 命令行参数或浏览器持久存储。
 
 提及通过同一个 `roundtable.notification` 订阅送达，格式为
-`{"kind":"mention","id":"<消息ID>"}`，无需第二个订阅。旧的 `handoff.available`、
+`{"kind":"message","id":"<消息ID>"}`，无需第二个订阅。旧的 `handoff.available`、
 `task.updated`、`message.mentioned` 订阅已不再接受：在 ChatGPT 刷新事件发现后，按
 PROMPTS 说明重新订阅一次通用事件。事件只是唤醒提示：读取已认证收件箱，按消息 ID 去重，处理后再推进游标。订阅数量与刷新
 行为需要原生平台验证；本机协议测试不能证明厂商端支持。
@@ -180,7 +180,7 @@ PROMPTS 说明重新订阅一次通用事件。事件只是唤醒提示：读取
 `ROUNDTABLE_TASK_NOTICES=0`。本次代码更新不会修改正在运行的实例。
 
 Grok 复用已配置的 routine worker 和出站代理，无需新增 routine URL。将已授权 routine
-webhook body 使用同一通用格式：`{"kind":"mention","id":"<消息ID>"}` 或
+webhook body 使用同一通用格式：`{"kind":"message","id":"<消息ID>"}` 或
 `{"kind":"task.finished","id":"<任务ID>","status":"…"}`。将已授权 routine 提示词更新为
 接受这些 kind，随后读取群范围提及收件箱，
 通过上述工具或 CLI 回复；保留现有任务和终态处理。对消息 ID 与请求 ID 去重，收到通知
