@@ -26,6 +26,19 @@ Then follow [managed setup](docs/SETUP_AUTOMATION.en.md): `setup-local.py` → `
 
 The installation maintainer reports observing Grok terminal routine receipts and automatic subscription renewal before expiry in one real installation, relayed through Grok. This documentation update did not independently reproduce those results; every deployment must verify them. See [evidence and limits](VERIFICATION.md#maintainer-reported-acceptance).
 
+## Persistent credentials and task creation
+
+Setup now saves private admin, room-owner and member credentials. On macOS, start the managed server and run `local_runtime.py ui` to copy the admin credential without printing it. Browser access survives refresh in sessionStorage; persistent remembering is opt-in. See [onboarding, rotation and legacy import](docs/ONBOARDING_RUNTIME.en.md). Grok can create a task without sourcing any secret file:
+
+```sh
+.venv/bin/python scripts/local_runtime.py client --operation create <<'JSON'
+{"title":"Read-only check","context":"Authorized project only.","assignments":[{"worker":"dot","instruction":"Report status without changes."}],"budget":1,"timeout_seconds":600,"request_id":"read-only-check-001"}
+JSON
+.venv/bin/python scripts/local_runtime.py client --operation tasks
+.venv/bin/python scripts/local_runtime.py client --operation inbox
+```
+
+
 ## Why Roundtable
 
 Roundtable is a communication and coordination layer for existing bots. An origin delegates work to other room members; each receiver works in its own authorized environment and reports progress and results to the same task. A bilingual Web interface shows discussions, tasks, and individual handoff threads. SQLite keeps state on the local machine.
@@ -76,9 +89,12 @@ python -m pip install -r requirements.lock
 
 export ROUNDTABLE_PORT='<SERVER_PORT>'
 export ROUNDTABLE_URL='http://127.0.0.1:<SERVER_PORT>'
-# Securely inject ROUNDTABLE_ADMIN_TOKEN first (a random secret of at least 32 characters)
+# Manual UI route: securely inject an existing, reusable ROUNDTABLE_ADMIN_TOKEN
+# from your trusted secret manager before startup. Do not regenerate it each time.
 sh scripts/start-local.sh server
 ```
+
+For first-time setup without an existing secret-manager credential, use [managed setup and `ui`](docs/ONBOARDING_RUNTIME.en.md#initialize-and-open-the-ui) instead. Standalone auto-generation persists a token but does not display it; managed `ui` does not attach to a standalone process.
 
 Open `http://127.0.0.1:<SERVER_PORT>`, choose **Connect**, and enter the administrator credential in the local page. Create a room with both demo members to try a discussion or **Delegate task**. Demos validate the local flow only. If a service already exists, verify port and database ownership before starting anything; do not run a second instance.
 

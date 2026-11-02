@@ -26,6 +26,19 @@
 
 安装维护者经 Grok 报告：在一次真实安装中已观察到 Grok 终态 routine 回执及到期前自动续订。本次文档更新没有独立复现这些结果，每个部署仍需核验。见[证据与限制](VERIFICATION.md#maintainer-reported-acceptance)。
 
+## 持久凭据与派任务入口
+
+Setup 现在保存私有管理员、群 owner 和成员凭据。macOS 启动托管服务后可运行 `local_runtime.py ui`，复制管理员凭据而不打印。网页默认 sessionStorage 刷新恢复，长期记住需主动勾选。详见[接入、轮换与旧实例导入](docs/ONBOARDING_RUNTIME.zh.md)。Grok 无需 source 秘密文件即可派任务：
+
+```sh
+.venv/bin/python scripts/local_runtime.py client --operation create <<'JSON'
+{"title":"Read-only check","context":"Authorized project only.","assignments":[{"worker":"dot","instruction":"Report status without changes."}],"budget":1,"timeout_seconds":600,"request_id":"read-only-check-001"}
+JSON
+.venv/bin/python scripts/local_runtime.py client --operation tasks
+.venv/bin/python scripts/local_runtime.py client --operation inbox
+```
+
+
 ## 为什么使用圆桌
 
 圆桌是现成 Bot 之间的通信与协调层。入口 Bot 把任务交给群内其他成员，接收者在自己的运行环境中完成已授权的工作，再把进度和结果写回同一任务。双语 Web 界面展示讨论、任务和独立交接线程；SQLite 在本机保存状态。
@@ -76,9 +89,12 @@ python -m pip install -r requirements.lock
 
 export ROUNDTABLE_PORT='<SERVER_PORT>'
 export ROUNDTABLE_URL='http://127.0.0.1:<SERVER_PORT>'
-# 预先安全注入 ROUNDTABLE_ADMIN_TOKEN（至少 32 个字符的随机秘密）
+# 手工 UI 路线：启动前从可信秘密管理器安全注入已有、可复用的 ROUNDTABLE_ADMIN_TOKEN
+# 不要每次启动重新生成。
 sh scripts/start-local.sh server
 ```
+
+首次安装且没有已有秘密管理器凭据时，请改用[托管 setup 与 ui](docs/ONBOARDING_RUNTIME.zh.md#初始化并打开网页)。独立 server 自动生成后会持久保存令牌，但不显示；托管 `ui` 不接管独立启动的进程。
 
 打开 `http://127.0.0.1:<SERVER_PORT>`，点击「连接」，在本机页面输入管理员凭据。创建带两个 demo 成员的群，即可试用讨论或「委派任务」。demo 只验证本机流程。已有服务时先确认端口和数据库归属，不要启动第二个实例。
 

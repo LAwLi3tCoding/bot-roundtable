@@ -2,6 +2,8 @@
 
 这些脚本自动完成本地身份、私有文件和进程管理，**不会**创建厂商账号、安装 Tunnel、订阅 Events、给 bot 电脑权限或加载 launchd。支持 Python 3.12/3.13 的 macOS/Linux；尚未实现 Windows 进程管理。使用独立 checkout，不得指向手工管理的数据库或 `data/local-runtime`。
 
+持久管理员凭据、room.env、安全 UI 连接、create/tasks/inbox、明确启动诊断和只读旧实例导入，详见[本机接入与凭据恢复](ONBOARDING_RUNTIME.zh.md)。Windows 凭据持久化与尚不支持的 Windows 进程管理是两回事。
+
 ## 1. 前置条件与必须手动的账号步骤
 
 <a id="tunnel-client-install"></a>

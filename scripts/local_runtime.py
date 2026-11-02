@@ -2,7 +2,6 @@
 
 import argparse
 from contextlib import contextmanager
-import fcntl
 import getpass
 import hashlib
 import http.client
@@ -27,66 +26,39 @@ import plistlib
 
 HOME = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(HOME))
+from admin_credentials import (  # noqa: E402
+    CredentialError,
+    get_admin_token,
+    rotate_admin_token,
+    private_directory as credential_directory,
+    check_private as credential_check,
+    read_private as credential_read,
+    save_private as credential_save,
+)
+
 AMBIENT = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy")
 COMPONENTS = ("server", "mcp", "tunnel")
 MANAGED = (*COMPONENTS, "caffeinate")
 CHILDREN = {}
 
 
-class Failure(ValueError):
-    pass
+Failure = CredentialError
 
 
 def private_dir(path):
-    path = Path(os.path.abspath(path))
-    for parent in (path, *path.parents):
-        if parent.is_symlink():
-            raise Failure("symlink_directory")
-    path.mkdir(parents=True, mode=0o700, exist_ok=True)
-    if path.stat().st_uid != os.getuid() or stat.S_IMODE(path.stat().st_mode) & 0o077:
-        raise Failure("instance_directory_must_be_private")
-    return path
+    return credential_directory(path)
 
 
 def check_private(path):
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
-    try:
-        info = os.fstat(fd)
-        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
-            raise Failure("private_file_required")
-    finally:
-        os.close(fd)
+    credential_check(path)
 
 
 def private_read(path):
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
-    with os.fdopen(fd) as file:
-        info = os.fstat(file.fileno())
-        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
-            raise Failure("private_file_required")
-        return file.read(1_000_001)
+    return credential_read(path)
 
 
 def save(path, text, replace=False):
-    path = Path(path)
-    if path.exists() or path.is_symlink():
-        private_read(path)
-        if not replace:
-            raise Failure("existing_file_not_overwritten")
-    temp = path.with_name("." + path.name + "." + secrets.token_hex(8))
-    fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-    try:
-        with os.fdopen(fd, "w") as file:
-            file.write(text)
-            file.flush()
-            os.fsync(file.fileno())
-        if replace:
-            os.replace(temp, path)
-        else:
-            os.link(temp, path)  # Exclusive publication; no symlink overwrite race.
-            temp.unlink()
-    finally:
-        temp.unlink(missing_ok=True)
+    credential_save(path, text, replace)
 
 
 def write_json(path, value, replace=False):
@@ -115,9 +87,16 @@ def env_save(path, values, replace=False):
 
 @contextmanager
 def locked(state):
-    fd = os.open(state / ".lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    fd = os.open(state / ".lock", os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0), 0o600)
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        if os.name == "nt":
+            import msvcrt
+
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)  # type: ignore[attr-defined]
+        else:
+            import fcntl
+
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         yield
     finally:
         os.close(fd)
@@ -155,8 +134,10 @@ def load(state):
         if not re.fullmatch(r"[a-z][a-z0-9-]{1,39}", config.get(role, "")):
             raise Failure("invalid_instance_agent")
         check_private(state / (config[role] + ".env"))
-    for name in ("admin.env", "roundtable.db", "tunnel.yaml"):
+    for name in ("roundtable.db", "tunnel.yaml"):
         check_private(state / name)
+    if not (state / "admin.json").exists() and not (state / "admin.env").exists():
+        raise Failure("admin_credential_missing")
     if (
         any(
             type(config.get(k)) is not int or not 1 <= config[k] <= 65535
@@ -180,7 +161,17 @@ def setup(state, args):
     with locked(state):
         if (state / "instance.json").exists():
             load(state)
-            return {"ok": True, "already_configured": True}
+            return {
+                "ok": True,
+                "already_configured": True,
+                "next_steps": [
+                    "up.sh --without-tunnel",
+                    "local_runtime.py ui",
+                    "save-runtime-key.sh",
+                    "up.sh",
+                    "local_runtime.py doctor",
+                ],
+            }
         if list(p for p in state.iterdir() if p.name != ".lock"):
             raise Failure("incomplete_or_foreign_instance_use_new_empty_directory")
         if (
@@ -196,8 +187,7 @@ def setup(state, args):
         ):
             raise Failure("invalid_ports")
         write_json(state / "incomplete.json", {"reason": "initialization_in_progress"})
-        admin = secrets.token_urlsafe(48)
-        env_save(state / "admin.env", {"ROUNDTABLE_ADMIN_TOKEN": admin})
+        admin = get_admin_token(state, prefer_keyring=getattr(args, "keyring", False), environ={})
         from roundtable import Store
         from server import make_server
 
@@ -221,6 +211,10 @@ def setup(state, args):
                 {"name": "Local roundtable", "bots": [args.origin, args.worker]},
             )
             write_json(state / "recovery.json", room)
+            env_save(
+                state / "room.env",
+                {"ROUNDTABLE_ROOM": room["id"], "ROUNDTABLE_ROOM_TOKEN": room["token"]},
+            )
             request(
                 server.server_port,
                 f"/api/rooms/{room['id']}/grant",
@@ -267,7 +261,18 @@ def setup(state, args):
             server.server_close()
             thread.join()
             store.db.close()
-        return {"ok": True, "already_configured": False, "services_running": False}
+        return {
+            "ok": True,
+            "already_configured": False,
+            "services_running": False,
+            "next_steps": [
+                "up.sh --without-tunnel",
+                "local_runtime.py ui",
+                "save-runtime-key.sh",
+                "up.sh",
+                "local_runtime.py doctor",
+            ],
+        }
 
 
 def child_env(state, config, component):
@@ -283,10 +288,7 @@ def child_env(state, config, component):
     if component == "caffeinate":
         return env  # No administrator, member, runtime or routine credentials.
     if component == "server":
-        admin = env_read(state / "admin.env")
-        if set(admin) != {"ROUNDTABLE_ADMIN_TOKEN"}:
-            raise Failure("invalid_admin_environment")
-        env.update(admin)
+        env["ROUNDTABLE_ADMIN_TOKEN"] = get_admin_token(state)
         routine = state / "routine.json"
         if routine.exists():
             value = read_json(routine)
@@ -862,8 +864,7 @@ def configure_secret(state, config, kind, replace):
 
 
 def render(state, output):
-    output = Path(output).absolute()
-    output.mkdir(parents=True, exist_ok=True)
+    output = private_dir(output)
     for component in COMPONENTS:
         data = {
             "Label": "org.roundtable." + load(state)["identity"] + "." + component,
@@ -877,6 +878,10 @@ def render(state, output):
                 component,
             ],
             "WorkingDirectory": str(HOME),
+            "EnvironmentVariables": {
+                "PATH": str(Path.home() / ".local/bin")
+                + ":/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+            },
             "RunAtLoad": False,
             "KeepAlive": False,
         }
@@ -885,8 +890,10 @@ def render(state, output):
 
 
 def run_client(state, config, args):
-    from local_client import LocalClient
+    from local_client import LocalClient, read_json_stdin
 
+    if args.operation in ("create", "tasks", "inbox") and (args.task_id or args.body is not None):
+        raise Failure("client_argument_conflict")
     member = env_read(state / (config["origin"] + ".env"))
     client = LocalClient(
         member["ROUNDTABLE_URL"],
@@ -894,7 +901,9 @@ def run_client(state, config, args):
         config["origin"],
         member["ROUNDTABLE_TOKEN"],
     )
-    if args.operation == "roundtrip":
+    if args.operation == "create":
+        result = client.call("create", read_json_stdin())
+    elif args.operation == "roundtrip":
         result = client.roundtrip(config["worker"], str(state / "roundtrip.json"), args.timeout)
     elif args.operation == "wait":
         result = client.wait(args.task_id or "", args.timeout)
@@ -906,6 +915,80 @@ def run_client(state, config, args):
             )
         result = client.call(args.operation, payload)
     return result
+
+
+def profile_tunnel_id(text):
+    # Support the shipped profile's scalar ID, without evaluating YAML tags/aliases.
+    in_control = False
+    found = []
+    for line in text.splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if not line.startswith((" ", "\t")):
+            in_control = line.strip() == "control_plane:"
+        elif in_control and line.lstrip().startswith("tunnel_id:"):
+            value = line.split(":", 1)[1].strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+                value = value[1:-1]
+            found.append(value)
+    if len(found) != 1:
+        raise Failure("tunnel_id_placeholder")
+    return found[0]
+
+
+def preflight_tunnel(state):
+    if not (state / "runtime-key.env").exists():
+        raise Failure("runtime_key_missing")
+    key = env_read(state / "runtime-key.env")
+    if not key.get("CONTROL_PLANE_API_KEY"):
+        raise Failure("runtime_key_missing")
+    if set(key) != {"CONTROL_PLANE_API_KEY"} or not re.fullmatch(
+        r"sk-[A-Za-z0-9_-]{16,}", key["CONTROL_PLANE_API_KEY"]
+    ):
+        raise Failure("invalid_runtime_key_environment")
+    if not shutil.which("tunnel-client"):
+        raise Failure("tunnel_client_not_found")
+    tunnel_id = profile_tunnel_id(private_read(state / "tunnel.yaml"))
+    if (
+        not isinstance(tunnel_id, str)
+        or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", tunnel_id)
+        or "TUNNEL_ID" in tunnel_id.upper()
+        or tunnel_id.upper().startswith("YOUR_")
+    ):
+        raise Failure("tunnel_id_placeholder")
+
+
+def open_ui(state, config):
+    if sys.platform != "darwin":
+        return {
+            "ok": True,
+            "clipboard_copied": False,
+            "next": "Open the loopback UI and use your approved local credential manager; no token is displayed.",
+        }
+    if not owned(state, config, "server") or not ready(state, config, "server"):
+        raise Failure("owned_server_not_ready")
+    token = get_admin_token(state)
+    subprocess.run(
+        ["pbcopy"],
+        input=token.encode(),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=True,
+        timeout=5,
+    )
+    subprocess.run(
+        ["open", f"http://127.0.0.1:{config['server_port']}"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=True,
+        timeout=5,
+    )
+    return {
+        "ok": True,
+        "clipboard_copied": True,
+        "opened": True,
+        "clipboard_notice": "Clipboard may be retained or synced; paste only into the local UI and clear it when finished.",
+    }
 
 
 def main():
@@ -923,6 +1006,9 @@ def main():
             "approve-host",
             "render-launchd",
             "client",
+            "ui",
+            "rotate-admin-token",
+            "import-legacy",
             "_serve",
         ],
     )
@@ -945,11 +1031,24 @@ def main():
     parser.add_argument("--replace", action="store_true")
     parser.add_argument("--identity")
     parser.add_argument(
-        "--operation", choices=["doctor", "probe", "roundtrip", "wait", "task", "context"]
+        "--operation",
+        choices=[
+            "doctor",
+            "probe",
+            "roundtrip",
+            "wait",
+            "task",
+            "context",
+            "create",
+            "tasks",
+            "inbox",
+        ],
     )
     parser.add_argument("--task-id")
     parser.add_argument("--timeout", type=float, default=600)
     parser.add_argument("--body")
+    parser.add_argument("--keyring", action="store_true")
+    parser.add_argument("--from", dest="legacy_source")
     args = parser.parse_args()
     try:
         os.umask(0o077)
@@ -958,6 +1057,10 @@ def main():
             raise Failure("legacy_runtime_directory_not_supported")
         if args.action == "setup":
             result = setup(state, args)
+        elif args.action == "import-legacy":
+            from legacy_import import import_legacy
+
+            result = import_legacy(args.legacy_source, state, args, sys.modules[__name__])
         else:
             config = load(state)
             if args.action == "_serve":
@@ -986,6 +1089,8 @@ def main():
                         )
                     write_json(state / "instance.json", config, replace=True)
                 if args.action == "up":
+                    if not args.without_tunnel and args.component in (None, "tunnel"):
+                        preflight_tunnel(state)
                     if not config["proxy"] and any(os.environ.get(k) for k in AMBIENT):
                         raise Failure("explicit_outbound_proxy_required")
                     selected = (
@@ -1027,6 +1132,12 @@ def main():
                     result = {"ok": True}
                 elif args.action in ("status", "doctor"):
                     result = diagnostics(state, config)
+                elif args.action == "ui":
+                    result = open_ui(state, config)
+                elif args.action == "rotate-admin-token":
+                    if any(owned(state, config, c) for c in MANAGED):
+                        raise Failure("stop_instance_before_admin_rotation")
+                    result = rotate_admin_token(state, prefer_keyring=args.keyring)
                 elif args.action in ("runtime-key", "routine"):
                     result = configure_secret(state, config, args.action, args.replace)
                 elif args.action == "approve-host":
@@ -1046,7 +1157,10 @@ def main():
             json.dumps(
                 {
                     "ok": False,
-                    "reason": str(exc) if isinstance(exc, Failure) else "local_operation_failed",
+                    "reason": str(exc)
+                    if isinstance(exc, (Failure, CredentialError))
+                    else "local_operation_failed",
+                    "error_type": type(exc).__name__,
                     "secrets_included": False,
                 }
             )

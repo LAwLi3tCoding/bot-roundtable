@@ -247,15 +247,15 @@ def main():
                 expect(page.locator("#mcp-open")).to_be_focused()
             assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
             page.locator("#language").select_option("zh")
-            # Reload retains language only; no tokens or messages are persisted in browser storage.
+            # Default access survives refresh in session storage, while only language is persistent.
             page.reload()
             expect(page.locator("#manage")).to_have_text("管理")
-            expect(page.locator("#status")).to_have_text("尚未连接")
+            expect(page.locator("#access")).to_have_text("Owner 连接")
             assert page.evaluate("Object.keys(localStorage)") == ["roundtable-language"]
             assert not errors, errors
             browser.close()
         print(
-            "Browser product checks passed: EN/ZH, group creation/isolation, Lead, register/remove, history, stop, XSS, desktop layout/search/options, language-only persistence"
+            "Browser product checks passed: EN/ZH, group creation/isolation, Lead, register/remove, history, stop, XSS, desktop layout/search/options, session access and language-only local persistence"
         )
     finally:
         stop.set()

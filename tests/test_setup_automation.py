@@ -59,6 +59,9 @@ class SetupTests(unittest.TestCase):
         )
         for name in before:
             self.assertEqual((self.state / name).stat().st_mode & 0o777, 0o600)
+        room = runtime.env_read(self.state / "room.env")
+        self.assertEqual(room["ROUNDTABLE_ROOM"], config["room"])
+        self.assertGreaterEqual(len(room["ROUNDTABLE_ROOM_TOKEN"]), 32)
         origin = runtime.env_read(self.state / "test-origin.env")
         worker = runtime.env_read(self.state / "test-worker.env")
         self.assertNotEqual(origin["ROUNDTABLE_TOKEN"], worker["ROUNDTABLE_TOKEN"])
@@ -92,7 +95,7 @@ class SetupTests(unittest.TestCase):
         runtime.save(target, "synthetic-secret")
         link = self.state / "link"
         link.symlink_to(target)
-        with self.assertRaises(OSError):
+        with self.assertRaises(runtime.Failure):
             runtime.save(link, "replacement", True)
         target.chmod(0o644)
         with self.assertRaises(runtime.Failure):

@@ -36,3 +36,4 @@ jobs:
       - run: python -m playwright install --with-deps chromium
       - run: PYTHONPATH=. python tests/browser_smoke.py
       - run: PYTHONPATH=. python tests/browser_handoffs.py
+      - run: PYTHONPATH=. python tests/browser_onboarding.py

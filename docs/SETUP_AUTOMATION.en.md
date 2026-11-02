@@ -2,6 +2,8 @@
 
 These scripts automate local identities, private files and process lifecycle. They do **not** create vendor accounts, install Tunnel, subscribe to Events, grant a bot computer permissions, or load launchd. Linux/macOS with Python 3.12/3.13 are supported; Windows process management is not implemented. Use a dedicated checkout. Do not point these scripts at an existing manually managed database or `data/local-runtime`.
 
+For persistent administrator credentials, room.env, safe UI access, create/tasks/inbox, explicit startup diagnostics, and read-only legacy import, follow [runtime onboarding](ONBOARDING_RUNTIME.en.md). Windows credential persistence is separate from unsupported Windows process management.
+
 ## 1. Prerequisites and manual account checklist
 
 <a id="tunnel-client-install"></a>
@@ -37,7 +39,7 @@ The default state directory is `data/local`, mode 0700. Initialization creates a
 
 Re-running setup verifies the completed instance and skips creation without overwriting credentials. It does not change existing ports, names or allowances. An interrupted setup refuses automatic recreation, preserving its private recovery files: inspect/recover offline, or deliberately choose a new empty instance directory with `--state-dir '<PRIVATE_INSTANCE_DIRECTORY>'`. Do not delete an active instance to resolve a configuration error. Every later command must use the same `--state-dir` when customized. Do not share one database across instances.
 
-Generated `.env` files are data, never shell programs; the scripts parse them without `source`. They contain real secrets: do not `cat`, copy into chat, upload, or commit them. `data/` is gitignored. Each vendor's approved local tool should receive only its own member environment via secure local injection, never `admin.env` or the other member's file. Existing manual integrations can continue using `start-local.sh`; do not mix their process ownership with this manager.
+Generated `.env` files are data, never shell programs; the scripts parse them without `source`. They contain real secrets: do not `cat`, copy into chat, upload, or commit them. `data/` is gitignored. Each vendor's approved local tool should receive only its own member environment via secure local injection, never `admin.json`/`admin.env` or the other member's file. Existing manual integrations can continue using `start-local.sh`; do not mix their process ownership with this manager.
 
 ## 3. Profile, hidden runtime key, and startup
 

@@ -76,3 +76,15 @@ Browser coverage: English/Chinese UI, invalid-token error, group creation, Lead 
 Independent review details and reproduced issues are recorded in [SECURITY_REVIEW.md](SECURITY_REVIEW.md). Remote CI is commit-specific; consult the repository Actions run for the published commit rather than treating this local report as a remote CI result.
 
 Review follow-up: persisted membership-bound probe nonce with legacy schema migration; tested cross-room/rejoin isolation and browser display. Added safe local diagnosis stages, bounded callback deadlines, concurrent healthy delivery during slow callbacks, unsubscribe during delivery and verification, and stale receipt rejection. All external callback tests use injected/mocked transport, not vendor accounts.
+
+## Onboarding/runtime acceptance
+
+The onboarding change was checked on macOS with Python 3.12, synthetic temporary credentials, isolated databases, and port-zero servers. No live credential migration, OS keychain write, clipboard copy, provider callback, or running-instance change was performed.
+
+- `python -m unittest discover -s tests`: 187 tests passed with upper/lowercase HTTP_PROXY, HTTPS_PROXY and ALL_PROXY unset; 22 new onboarding contracts cover persistence, override/rotation, mocked keyring/ACL/clipboard, migration, receipt suppression, preflight, client and launchd output.
+- `ruff check .`, `ruff format --check .`, `mypy`: passed (44 Python files formatted; 18 mypy source files).
+- `PYTHONPATH=. python tests/browser_smoke.py`: bilingual existing UI regression passed with default session restoration.
+- `PYTHONPATH=. python tests/browser_handoffs.py`: synthetic stdio MCP and browser task lifecycle, room isolation and delayed navigation passed. Chromium uses Playwright's installed executable unless CHROMIUM_PATH is supplied.
+- `PYTHONPATH=. python tests/browser_onboarding.py`: nine real Chromium scenarios passed: default session access, refresh/task default and manual tab choice, remember/uncheck, repeated forget, room-only restoration, invalid saved access, denied storage, exact-host persistence boundary, pending-login invalidation.
+
+Windows ACL and macOS/Linux/Windows keyring paths have mock contract coverage, not native OS acceptance. Linux is also checked by repository CI; inspect the PR's exact commit result. These checks do not establish live vendor wake-up, Grok routine delivery, or Codex execution. Imported tasks are deliberately receipt-suppressed; only new tasks may produce future receipts after an operator explicitly enables a routine.

@@ -251,10 +251,22 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--db", default="data/roundtable.db")
+    parser.add_argument(
+        "--admin-state", help="Private persistent administrator credential directory"
+    )
+    parser.add_argument(
+        "--admin-keyring", action="store_true", help="Prefer a trusted installed OS keyring"
+    )
     args = parser.parse_args()
-    admin = os.environ.get("ROUNDTABLE_ADMIN_TOKEN", "")
-    if len(admin) < 32:
-        parser.error("Set ROUNDTABLE_ADMIN_TOKEN to a random secret of at least 32 characters")
+    from admin_credentials import get_admin_token, CredentialError
+
+    try:
+        admin = get_admin_token(
+            args.admin_state or str(Path(args.db).parent / "admin-credentials"),
+            prefer_keyring=args.admin_keyring,
+        )
+    except CredentialError as exc:
+        parser.error(str(exc))
     os.umask(0o077)
     Path(args.db).parent.mkdir(parents=True, exist_ok=True)
     store = Store(args.db)
