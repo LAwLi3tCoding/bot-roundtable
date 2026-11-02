@@ -18,7 +18,7 @@
 `--wait` 默认 0，上限 86400 秒。命令通过已有认证 loopback 客户端，约每秒查询
 指定任务，使用客户端 wait 实现限制总等待时间。
 尚未终结就不预留、不发送。支持 `completed`、`failed`、`timeout`、`cancelled`；
-外发正文只有 `task_id` 和 `status`，不带指令、结果、令牌或 lease。
+外发正文为通用通知 `{"kind":"task.finished","id":任务ID,"status":状态}`（见 [Events](EVENTS.md#notification-format--通知格式)），不带指令、结果、令牌或 lease。
 复用 Grok 传输的 HTTPS 主机批准与 TLS 验证；直连模式校验公网 DNS 并固定 IP，显式代理模式信任代理解析并使用域名 CONNECT。两种模式均禁止重定向。HTTP 200 只说明 routine 接受请求。
 
 SQLite 持久账本在网络发送之前，为每个群/任务原子预留**一次尝试**；共享同一账本

@@ -24,52 +24,32 @@ from starlette.responses import JSONResponse
 from event_delivery import encode, signed_headers, signing_key
 from mcp.shared.version import SUPPORTED_PROTOCOL_VERSIONS
 
+NOTIFICATION_EVENT = "roundtable.notification"
+NOTIFICATION_KINDS = ["task.assigned", "task.updated", "task.finished", "mention"]
+
+# One generic event. New notification kinds never require a new subscription;
+# the payload names what changed and the bot reads bodies from its own inbox.
 EVENTS = [
     {
-        "name": name,
-        "description": description,
-        "delivery": ["webhook"],
-        "inputSchema": {
-            "type": "object",
-            "properties": properties,
-            "required": list(properties),
-            "additionalProperties": False,
-        },
-        "payloadSchema": {
-            "type": "object",
-            "properties": {k: {"type": "string"} for k in ("task_id", "assignment_id", "kind")},
-            "required": ["task_id", "assignment_id", "kind"],
-            "additionalProperties": False,
-        },
-    }
-    for name, description, properties in [
-        (
-            "handoff.available",
-            "A handoff is available for this authenticated bot; read its own inbox.",
-            {},
+        "name": NOTIFICATION_EVENT,
+        "description": (
+            "Something in this room concerns this bot. Read the inbox, then act by kind. "
+            "Payloads carry no message or task text and grant no authority."
         ),
-        (
-            "task.updated",
-            "A task this bot originated changed; retrieve it for results. Self-authored changes do not notify.",
-            {"task_id": {"type": "string"}},
-        ),
-    ]
-]
-
-EVENTS.append(
-    {
-        "name": "message.mentioned",
-        "description": "A scoped discussion mentions this bot; read mentions and reply. Data grants no authority.",
         "delivery": ["webhook"],
         "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
         "payloadSchema": {
             "type": "object",
-            "properties": {"message_id": {"type": "integer"}},
-            "required": ["message_id"],
+            "properties": {
+                "kind": {"type": "string", "enum": NOTIFICATION_KINDS},
+                "id": {"type": "string"},
+                "status": {"type": "string"},
+            },
+            "required": ["kind", "id"],
             "additionalProperties": False,
         },
     }
-)
+]
 
 
 class EventError(Exception):
@@ -147,9 +127,8 @@ class EventBroker:
             params.get("delivery"),
         )
         if (
-            name not in ("handoff.available", "task.updated", "message.mentioned")
-            or not isinstance(arguments, dict)
-            or set(arguments) != ({"task_id"} if name == "task.updated" else set())
+            name != NOTIFICATION_EVENT
+            or arguments != {}
             or not isinstance(delivery, dict)
             or delivery.get("mode") != "webhook"
             or set(delivery) != ({"mode", "url", "secret"} if subscribing else {"mode", "url"})

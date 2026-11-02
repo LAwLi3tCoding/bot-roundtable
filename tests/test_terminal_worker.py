@@ -59,7 +59,7 @@ class TerminalWorkerTests(unittest.TestCase):
             entered.set()
             release.wait(2)
 
-        self.adapter.dispatch_mention.side_effect = deliver
+        self.adapter.notify.side_effect = deliver
         self.start()
         with self.store.transaction():
             for index in range(2):
@@ -79,7 +79,7 @@ class TerminalWorkerTests(unittest.TestCase):
             )
         release.set()
         time.sleep(0.1)
-        self.assertEqual(self.adapter.dispatch_mention.call_count, 1)
+        self.assertEqual(self.adapter.notify.call_count, 1)
 
     def test_mention_delivery_and_restart_deduplication(self):
         worker = self.start()
@@ -88,12 +88,12 @@ class TerminalWorkerTests(unittest.TestCase):
             "user",
             {"body": "Synthetic mention", "mentions": ["origin"], "request_id": "mention-test"},
         )
-        self.until(lambda: self.adapter.dispatch_mention.call_count == 1)
-        self.assertEqual(self.adapter.dispatch_mention.call_args.args, (message["id"],))
+        self.until(lambda: self.adapter.notify.call_count == 1)
+        self.assertEqual(self.adapter.notify.call_args.args, ("mention", str(message["id"])))
         worker.stop()
         self.start()
         time.sleep(0.05)
-        self.assertEqual(self.adapter.dispatch_mention.call_count, 1)
+        self.assertEqual(self.adapter.notify.call_count, 1)
 
     def task(self, origin="origin"):
         self.sequence += 1

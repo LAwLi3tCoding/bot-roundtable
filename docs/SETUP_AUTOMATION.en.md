@@ -76,7 +76,7 @@ Tunnel uses `--profile-file`, private health URL/PID files and a private FIFO lo
 
 1. Finish the ChatGPT Tunnel/No authentication configuration. Refresh the **existing** connector's tools/Events metadata. Verify native `list_rooms` and `list_bots` show only the expected room/identity. Local readiness does not establish this.
 2. The managed MCP advertises Events with **zero approved callback hosts** initially. `events/list` works; all subscriptions are rejected before DNS, challenge or persistence. An example hostname is never approval.
-3. Ask the platform to subscribe once to `handoff.available` with `{}`; use [the prompt](PROMPTS.en.md). The platform generates the callback URL/signing secret. If rejected, inspect only `callback_host_not_approved host=…` in `mcp.log`. Independently confirm that hostname belongs to this authorized platform request. Do not guess, use a wildcard, or paste a callback URL/key into commands.
+3. Ask the platform to subscribe once to `roundtable.notification` with `{}`; use [the prompt](PROMPTS.en.md). The platform generates the callback URL/signing secret. If rejected, inspect only `callback_host_not_approved host=…` in `mcp.log`. Independently confirm that hostname belongs to this authorized platform request. Do not guess, use a wildcard, or paste a callback URL/key into commands.
 4. Explicitly approve the verified exact hostname, then restart **only this managed MCP** in a quiet window. The server and Tunnel remain running; tools briefly disconnect:
 
 ```sh
@@ -173,23 +173,23 @@ Use real message IDs from the inbox, preserve the returned cursor only after han
 and reuse request IDs for retries. Credentials remain in the existing scoped environment
 or instance configuration; do not place tokens in command lines or browser storage.
 
-The new event is `message.mentioned`; existing `handoff.available` subscriptions
-remain unchanged and do not deliver discussion notifications. After refreshing event
-discovery in ChatGPT, explicitly authorize a new `message.mentioned` automation for
-the configured bot/room and use the PROMPTS instructions. If the platform cannot add
-another subscription, use explicit polling rather than assuming a task event covers
-messages. The event is a wake-up hint: fetch the authenticated inbox, deduplicate by
-message ID and advance the cursor only after handling. Subscription limits and refresh
+Mentions arrive through the same `roundtable.notification` subscription as
+`{"kind":"mention","id":"<message id>"}`; no second subscription is needed. Older
+`handoff.available`, `task.updated` and `message.mentioned` subscriptions are no longer
+accepted: refresh event discovery in ChatGPT and subscribe once to the generic event
+using the PROMPTS instructions. The event is a wake-up hint: fetch the authenticated
+inbox, deduplicate by message ID and advance the cursor only after handling. Subscription limits and refresh
 behavior require native platform verification; local protocol tests do not prove them.
 
 Task creation, claim and terminal status may produce system discussion notices. These
-are display-only and never create mention wake-ups; task events remain the sole task
+are display-only and never create mention wake-ups; task kinds remain the sole task
 wake channel. Set `ROUNDTABLE_TASK_NOTICES=0` in an explicitly authorized service
 configuration to disable those notices. No running instance is changed by this update.
 
 Grok reuses the configured routine worker and outbound proxy; no new routine URL is
-required. Update the routine's authorized instructions to recognize `message.mentioned`
-and its `message_id`, then read the scoped mentions inbox and reply through the tools
+required. Its webhook body is the same generic object: `{"kind":"mention","id":"<message id>"}`
+or `{"kind":"task.finished","id":"<task id>","status":"…"}`. Update the routine's
+authorized instructions to accept these kinds, then read the scoped mentions inbox and reply through the tools
 or CLI above. Keep existing task/terminal handling. Deduplicate message IDs and request
 IDs; receiving a notification does not expand the routine's permissions. Native Grok
 execution and platform delivery must still be verified separately.

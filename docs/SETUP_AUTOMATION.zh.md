@@ -75,7 +75,7 @@ Tunnel 使用 `--profile-file`、私有 health URL/PID 文件及私有 FIFO 日�
 
 1. 完成 ChatGPT Tunnel/No authentication 配置，刷新**已有**连接的工具和 Events metadata；原生调用 `list_rooms`/`list_bots`，仅出现预期群和身份。本地 ready 不证明这一步。
 2. 托管 MCP 初始以**零批准域名**声明 Events。可 `events/list`，但订阅在 DNS、challenge、持久化前全部拒绝；示例域名不等于批准。
-3. 按[提示词](PROMPTS.zh.md)让平台尝试订阅一次 `handoff.available`、参数 `{}`。真实 callback URL/签名秘密由平台生成。被拒后，只查看 `mcp.log` 的 `callback_host_not_approved host=…`，另行确认域名确实来自本次授权平台请求。不要猜域名、用通配符或把 URL/key 放入命令。
+3. 按[提示词](PROMPTS.zh.md)让平台尝试订阅一次 `roundtable.notification`、参数 `{}`。真实 callback URL/签名秘密由平台生成。被拒后，只查看 `mcp.log` 的 `callback_host_not_approved host=…`，另行确认域名确实来自本次授权平台请求。不要猜域名、用通配符或把 URL/key 放入命令。
 4. 明确批准已核实的精确 hostname，在无并行任务的窗口只重启**本管理器的 MCP**；server/Tunnel 保持运行，工具短暂断开：
 
 ```sh
@@ -169,18 +169,20 @@ printf '%s' '{"body":"回复","mentions":[],"request_id":"reply-example","reply_
 再保存游标，重试沿用 request ID。凭据继续使用现有群范围环境变量或实例配置，不得放入
 命令行参数或浏览器持久存储。
 
-新增事件为 `message.mentioned`；现有 `handoff.available` 订阅保持不变，不投递讨论通知。
-在 ChatGPT 刷新事件发现后，为已配置 bot/群显式授权新的 `message.mentioned` 自动化，
-采用 PROMPTS 说明。如果平台无法增加订阅，使用显式轮询，不要假设任务事件覆盖讨论消息。
-事件只是唤醒提示：读取已认证收件箱，按消息 ID 去重，处理后再推进游标。订阅数量与刷新
+提及通过同一个 `roundtable.notification` 订阅送达，格式为
+`{"kind":"mention","id":"<消息ID>"}`，无需第二个订阅。旧的 `handoff.available`、
+`task.updated`、`message.mentioned` 订阅已不再接受：在 ChatGPT 刷新事件发现后，按
+PROMPTS 说明重新订阅一次通用事件。事件只是唤醒提示：读取已认证收件箱，按消息 ID 去重，处理后再推进游标。订阅数量与刷新
 行为需要原生平台验证；本机协议测试不能证明厂商端支持。
 
-任务创建、领取和终态可产生 system 讨论通知。它们只用于展示，不触发提及唤醒；任务事件
+任务创建、领取和终态可产生 system 讨论通知。它们只用于展示，不触发提及唤醒；task.* 类通知
 仍是任务的唯一唤醒通道。需要关闭展示通知时，在另行授权的服务配置中设置
 `ROUNDTABLE_TASK_NOTICES=0`。本次代码更新不会修改正在运行的实例。
 
 Grok 复用已配置的 routine worker 和出站代理，无需新增 routine URL。将已授权 routine
-提示词更新为识别 `message.mentioned` 及其 `message_id`，随后读取群范围提及收件箱，
+webhook body 使用同一通用格式：`{"kind":"mention","id":"<消息ID>"}` 或
+`{"kind":"task.finished","id":"<任务ID>","status":"…"}`。将已授权 routine 提示词更新为
+接受这些 kind，随后读取群范围提及收件箱，
 通过上述工具或 CLI 回复；保留现有任务和终态处理。对消息 ID 与请求 ID 去重，收到通知
 不扩大 routine 权限。真实 Grok 执行和平台投递仍须另行验证。
 

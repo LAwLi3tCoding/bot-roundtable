@@ -84,7 +84,7 @@ class AvailabilityTests(unittest.TestCase):
         self.broker.transport = CallbackTransport([])
         self.assertEqual(
             {event["name"] for event in self.broker.rpc("events/list", {})["events"]},
-            {"handoff.available", "task.updated", "message.mentioned"},
+            {"roundtable.notification"},
         )
         with (
             patch("socket.getaddrinfo", side_effect=AssertionError("no DNS")),

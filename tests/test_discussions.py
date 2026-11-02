@@ -158,18 +158,22 @@ class DiscussionsTest(unittest.TestCase):
     def test_events_use_scoped_cursor(self):
         feed = self.store.handoffs.event_feed
         cursor = feed(
-            self.room, "bot:alpha", {"name": "message.mentioned", "arguments": {}, "after": None}
+            self.room,
+            "bot:alpha",
+            {"name": "roundtable.notification", "arguments": {}, "after": None},
         )["cursor"]
         root = self.post(mentions=["alpha"])
         result = feed(
-            self.room, "bot:alpha", {"name": "message.mentioned", "arguments": {}, "after": cursor}
+            self.room,
+            "bot:alpha",
+            {"name": "roundtable.notification", "arguments": {}, "after": cursor},
         )
-        self.assertEqual(result["events"][0]["data"]["message_id"], root["id"])
+        self.assertEqual(result["events"][0]["data"], {"kind": "mention", "id": str(root["id"])})
         self.assertEqual(
             feed(
                 self.room,
                 "bot:bravo",
-                {"name": "message.mentioned", "arguments": {}, "after": cursor},
+                {"name": "roundtable.notification", "arguments": {}, "after": cursor},
             )["events"],
             [],
         )

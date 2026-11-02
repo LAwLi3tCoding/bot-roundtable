@@ -72,7 +72,7 @@ class HandoffTests(unittest.TestCase):
         cursor = self.h.event_feed(
             self.rid,
             "bot:worker-one",
-            {"name": "message.mentioned", "arguments": {}, "after": None},
+            {"name": "roundtable.notification", "arguments": {}, "after": None},
         )["cursor"]
         task = self.create(assignments=[dict(worker="worker-one", instruction="Synthetic")])
         claim = self.claim(task)
@@ -85,14 +85,56 @@ class HandoffTests(unittest.TestCase):
         self.assertEqual(
             self.store.discussions.inbox(self.rid, "bot:worker-one", {})["messages"], []
         )
-        self.assertEqual(
-            self.h.event_feed(
+        events = self.h.event_feed(
+            self.rid,
+            "bot:worker-one",
+            {"name": "roundtable.notification", "arguments": {}, "after": cursor},
+        )["events"]
+        self.assertFalse([e for e in events if e["data"]["kind"] == "mention"])
+
+    def test_generic_notification_kinds_and_payloads(self):
+        def feed(actor, after):
+            return self.h.event_feed(
                 self.rid,
-                "bot:worker-one",
-                {"name": "message.mentioned", "arguments": {}, "after": cursor},
-            )["events"],
-            [],
+                actor,
+                {"name": "roundtable.notification", "arguments": {}, "after": after},
+            )
+
+        worker_cursor = feed("bot:worker-one", None)["cursor"]
+        origin_cursor = feed(self.actor, None)["cursor"]
+        task = self.create(assignments=[dict(worker="worker-one", instruction="Synthetic")])
+        assigned = feed("bot:worker-one", worker_cursor)["events"]
+        self.assertEqual(
+            [e["data"] for e in assigned], [{"kind": "task.assigned", "id": task["task_id"]}]
         )
+        self.assertEqual({e["name"] for e in assigned}, {"roundtable.notification"})
+        self.report(self.claim(task))
+        origin = [e["data"] for e in feed(self.actor, origin_cursor)["events"]]
+        self.assertIn({"kind": "task.updated", "id": task["task_id"], "status": "claimed"}, origin)
+        self.assertEqual(
+            origin[-1], {"kind": "task.finished", "id": task["task_id"], "status": "completed"}
+        )
+        self.assertTrue(all(set(e) <= {"kind", "id", "status"} for e in origin))
+        self.assertNotIn("Synthetic", repr(origin))
+        mention = self.store.discussions.post(
+            self.rid,
+            "user",
+            {"body": "Synthetic mention", "mentions": ["origin"], "request_id": "m1"},
+        )
+        cursor = feed(self.actor, origin_cursor)["cursor"]
+        self.assertEqual(feed(self.actor, cursor)["events"], [])
+        page = feed(self.actor, origin_cursor)["events"]
+        self.assertEqual(page[-1]["data"], {"kind": "mention", "id": str(mention["id"])})
+        for name, arguments in (
+            ("handoff.available", {}),
+            ("message.mentioned", {}),
+            ("task.updated", {"task_id": task["task_id"]}),
+            ("roundtable.notification", {"task_id": task["task_id"]}),
+        ):
+            with self.assertRaises(Problem):
+                self.h.event_feed(
+                    self.rid, self.actor, {"name": name, "arguments": arguments, "after": 0}
+                )
 
     def test_lead_origin_independent_assignments_progress_and_fanin(self):
         with self.assertRaises(Problem):

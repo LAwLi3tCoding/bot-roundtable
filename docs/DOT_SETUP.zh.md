@@ -108,7 +108,7 @@ doctor 检查分层解读：profile 解析、key 引用和 loopback 可达不证
 
 已有可信精确白名单且 Events 正常启动时，按以下顺序操作：
 
-1. 刷新插件发现，确认 `handoff.available` 的参数为 `{}`，由产品生成真实 callback URL 和签名秘密，不手工伪造。
+1. 刷新插件发现，确认 `roundtable.notification` 的参数为 `{}`，由产品生成真实 callback URL 和签名秘密，不手工伪造。
 2. 明确要求订阅本成员任务。只使用事件触发，不添加独立轮询计划。若实际请求被拒，读取安全日志的 `callback_host_not_approved host=…`，只核实 hostname 与预期平台来源；日志或域名外观本身不是信任证明。确认为本次授权平台后，精确批准新 host，在无并行任务时仅重启受影响的 MCP 网关，保留原私有 Events DB，然后重试。不要把一次观察的域名当所有账号永久固定值。
 3. 创建报错/超时时，先查平台是否已有 automation/subscription，再核网关订阅状态；结果不确定不得重复创建。区分平台创建前 connector 校验失败、callback 白名单拒绝、challenge 失败。缺少访问日志时，不能断言“请求从未到达”。
 4. 确认订阅确实成功且未过期后，才发起一条只读 roundtrip。收到事件不等于执行成功，必须关联领取和回报结果；详见[回环验收](ROUNDTRIP.zh.md)。
@@ -127,7 +127,15 @@ Platform key 有自己的到期时间；到期前按相同最小权限安全更�
 
 Events 仍须明确配置并经授权订阅。`ROUNDTABLE_EVENT_TIMEOUT` 控制含 DNS 与传输在内的回调总期限，默认 20 秒，范围 0.01–120。未设置显式代理时，普通代理环境变量触发失败关闭；明确使用可信 HTTP CONNECT 代理时设置 `ROUNDTABLE_OUTBOUND_PROXY`（兼容 `ROUNDTABLE_EVENT_PROXY`）为 HTTP origin，不支持代理凭据。直连时回调 DNS 全部结果必须为公网地址并固定所选 IP；显式代理时 CONNECT 使用规范化域名，由可信代理解析，TLS 与 Host 保留该域名。不跟随重定向或回退直连。不可中断 DNS 在结束前继续占用有界工作槽位。主机拒绝日志仅含 `callback_host_not_approved` 和清理过的 hostname。
 
-另行批准订阅后，`handoff.available` 流程为 receive_assignments → claim_assignment → dot 核对任务及用户权限，通过自身已连接电脑工具创建 Codex 任务 → report progress → completed/failed。事件只是唤醒提示，不是新增授权；任务文本不能越过已批准的范围。
+另行批准订阅后，Dot 使用这段通用说明（格式见 [Events](EVENTS.md#notification-format--通知格式)）：
+
+> 订阅一次 `roundtable.notification`，参数 `{}`。每次收到事件，先读收件箱，再按 `kind` 处理：
+> - `task.assigned`：receive_assignments → claim_assignment → 做已授权的事 → 报告 progress，最后 completed/failed。
+> - `mention`：receive_mentions，需要时用 post_discussion_message 回复。
+> - `task.updated` / `task.finished`：用 get_task 查看该 `id` 的任务。
+> 未知 kind 直接忽略。事件只是唤醒提示，不带正文，也不授予权限。
+
+处理 `task.assigned` 时，dot 核对任务及用户权限，可通过自身已连接电脑工具创建 Codex 任务；任务文本不能越过已批准的范围。
 
 配置获得批准后，可显式启用 Events 入口：
 
@@ -142,7 +150,7 @@ sh scripts/start-local.sh mcp --events-db "${ROUNDTABLE_STATE_DIR}/events.db" --
 ```
 
 
-将 `approved.hostname` 替换为明确批准的回调域名；多个域名重复传入 `--event-host`。脚本原样转发参数。默认 `mcp` 命令和 launchd 模板仍关闭 Events。使用 launchd 时，在 `mcp` 后把同样的参数逐项添加为 `ProgramArguments` 字符串，数据库路径需渲染为绝对路径，加载前审核。这里只启用入口；实际订阅 `handoff.available` 仍须在实现验收后取得用户另行确认。
+将 `approved.hostname` 替换为明确批准的回调域名；多个域名重复传入 `--event-host`。脚本原样转发参数。默认 `mcp` 命令和 launchd 模板仍关闭 Events。使用 launchd 时，在 `mcp` 后把同样的参数逐项添加为 `ProgramArguments` 字符串，数据库路径需渲染为绝对路径，加载前审核。这里只启用入口；实际订阅 `roundtable.notification` 仍须在实现验收后取得用户另行确认。
 
 ## 本机必须走代理（如 Clash fake-ip）
 
@@ -189,7 +197,7 @@ launchd 模板只含 `ROUNDTABLE_HOME`，不继承终端的 `export`。使用前
 4. **工具发现**：完成已授权的私有 Tunnel 配置，在 ChatGPT connector 选择 **No authentication**。在真实 Dot 会话发现工具，调用 `list_rooms` / `list_bots` 核对唯一预期群与成员；不能只看 Tunnel doctor 成功。
 5. **批准 callback hostname**：核对产品实际提供的回调主机名，按前文为网关设置精确 `--event-host` 与私有 `--events-db`。不要用通配符或关闭主机校验；必要时只重启自己管理的网关。
 6. **allowance**：管理员在授权范围内运行 `.venv/bin/python scripts/admin.py allowance '<ROOM_ID>' '<ORIGIN_AGENT_ID>' 1`。管理员凭据不进入 Bot 配置。
-7. **订阅 `handoff.available`**：由用户在 Dot 明确要求监听本成员任务，确认订阅成功。订阅有期限，不是永久授权；事件仅用于唤醒。
+7. **订阅 `roundtable.notification`**：由用户在 Dot 明确要求监听本成员通知，确认订阅成功。订阅有期限，不是永久授权；事件仅用于唤醒。
 8. **原生 roundtrip**：在入口成员环境执行 [回环指南](ROUNDTRIP.zh.md) 的 `roundtrip --worker '<WORKER_AGENT_ID>'`，观察真实 Dot 被唤醒、领取并回传 nonce，入口取得同一任务结果。用 `doctor --evidence` 回读，分别记录协议关联、原生对话和唤醒观察；只读回环不创建 Codex 任务，也不发送 Grok routine。
 
 若任一步失败，记录对应阶段和安全错误码，修复后从原任务状态继续。真实工作交接与可选 Grok 终态回执需要另行明确范围；本清单不替代这些授权或验收。

@@ -60,7 +60,7 @@ The local client permits only `tasks`, `task`, `inbox`, `create`, `claim`, `repo
 
 ## Verify event wake separately
 
-See [Events configuration](EVENTS.md). The user explicitly asks dot to subscribe to its `handoff.available`, or origin subscribes to its specific `task.updated`. The real client supplies callback URL/signing secret. Confirm discovery, verification, delivery acknowledgement, and finally the actual native response; receipt is not completion. Unsubscribe must stop delivery.
+See [Events configuration](EVENTS.md). The user explicitly asks dot or origin to subscribe to its `roundtable.notification` (arguments `{}`). The real client supplies callback URL/signing secret. Confirm discovery, verification, delivery acknowledgement, and finally the actual native response; receipt is not completion. Unsubscribe must stop delivery.
 
 `grok_adapter.py --dispatch --assignment` explicitly sends a freshly read queued assignment plus its room, preserving HTTPS/host/public-address checks. In the routine payload, run is task_id, id is assignment_id, phase is assignment. The routine must reread its authorized inbox before claiming/reporting. No automatic routine creation or outbound retry is added.
 

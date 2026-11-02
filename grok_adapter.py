@@ -7,6 +7,7 @@ an operator-side library; it is deliberately not enabled by the demo server.
 import http.client
 import ipaddress
 import json
+import re
 import os
 import socket
 import ssl
@@ -15,6 +16,37 @@ import math
 from urllib.parse import urlsplit
 from collections.abc import Callable
 from outbound import canonical_host, proxy_config, OutboundNotSentError, OutboundConfig
+
+
+NOTIFICATION_KINDS = ("task.assigned", "task.updated", "task.finished", "mention")
+FINISHED_STATUSES = ("completed", "failed", "timeout", "cancelled")
+
+
+def notification_body(kind, item_id, status=None):
+    """Validate and build the webhook body shared with roundtable.notification.
+
+    Rules: kind is one of NOTIFICATION_KINDS. task.* ids are 24 lowercase hex
+    characters; mention ids are positive decimal message ids as strings.
+    task.finished requires a finished status; task.updated may carry a status;
+    task.assigned and mention carry none. No other keys are ever sent.
+    """
+    if kind not in NOTIFICATION_KINDS or not isinstance(item_id, str):
+        raise ValueError("Invalid notification")
+    if kind == "mention":
+        if not re.fullmatch(r"[1-9][0-9]{0,17}", item_id) or status is not None:
+            raise ValueError("Invalid mention notification")
+    elif not re.fullmatch(r"[a-f0-9]{24}", item_id):
+        raise ValueError("Invalid task notification")
+    if kind == "task.finished" and status not in FINISHED_STATUSES:
+        raise ValueError("Finished notifications require a finished status")
+    if kind == "task.assigned" and status is not None:
+        raise ValueError("Assigned notifications carry no status")
+    if kind == "task.updated" and status is not None and not re.fullmatch(r"[a-z_]{1,32}", status):
+        raise ValueError("Invalid task status")
+    body = {"kind": kind, "id": item_id}
+    if status is not None:
+        body["status"] = status
+    return body
 
 
 class PinnedHTTPSConnection(http.client.HTTPSConnection):
@@ -67,35 +99,17 @@ class GrokWebhook:
         self._post(json.dumps(payload_data).encode())
         return {"accepted": True, "completed": False, "job_id": job["id"]}
 
-    def dispatch_terminal(
-        self, task_id: str, status: str, *, cancelled=None, state=None, transport=None
+    def notify(
+        self, kind: str, item_id: str, status=None, *, cancelled=None, state=None, transport=None
     ) -> dict:
-        """Send only an operator-authorized terminal hint, never task contents."""
-        import re
+        """Send one generic wake hint (kind + id + optional status), never contents."""
+        body = notification_body(kind, item_id, status)
+        self._post(json.dumps(body).encode(), cancelled, state, transport)
+        return {"accepted": True, **body}
 
-        if not re.fullmatch(r"[a-f0-9]{24}", task_id) or status not in (
-            "completed",
-            "failed",
-            "timeout",
-            "cancelled",
-        ):
-            raise ValueError("Terminal task receipt required")
-        self._post(
-            json.dumps({"task_id": task_id, "status": status}).encode(), cancelled, state, transport
-        )
-        return {"accepted": True, "task_id": task_id, "status": status}
-
-    def dispatch_mention(self, message_id, *, cancelled=None, state=None, transport=None):
-        """Send a scoped wake hint; routine must fetch authorized message contents."""
-        if type(message_id) is not int or not 0 < message_id < 2**63:
-            raise ValueError("Invalid mention message ID")
-        self._post(
-            json.dumps({"event": "message.mentioned", "message_id": message_id}).encode(),
-            cancelled,
-            state,
-            transport,
-        )
-        return {"accepted": True, "message_id": message_id}
+    def dispatch_terminal(self, task_id: str, status: str, **kwargs) -> dict:
+        """A task this bot originated finished; delivered as kind task.finished."""
+        return self.notify("task.finished", task_id, status, **kwargs)
 
     def _post(self, payload: bytes, cancelled=None, state=None, transport=None) -> None:
         config = transport if transport is not None else self.preflight()

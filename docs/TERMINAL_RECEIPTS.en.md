@@ -21,8 +21,9 @@ secrets in command arguments, source control, or chat.
 specified task through the existing authenticated loopback client, roughly once
 per second with a bounded total wait using the client wait implementation.
 If the task is still nonterminal, nothing is reserved or sent. Supported states
-are `completed`, `failed`, `timeout`, and `cancelled`. The payload contains only
-`task_id` and `status`, never instructions, results, tokens, or lease values.
+are `completed`, `failed`, `timeout`, and `cancelled`. The payload is the generic
+notification `{"kind":"task.finished","id":TASK_ID,"status":STATUS}` (see
+[Events](EVENTS.md#notification-format--通知格式)), never instructions, results, tokens, or lease values.
 The existing Grok transport validates an allowlisted HTTPS host, rejects private
 DNS results and pins the public IP in direct mode. Explicit proxy mode instead trusts proxy DNS and uses hostname CONNECT. TLS verification and redirect rejection apply in both modes. HTTP 200 means routine acceptance only.
 

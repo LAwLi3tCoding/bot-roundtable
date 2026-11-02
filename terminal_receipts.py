@@ -1,4 +1,4 @@
-"""Explicit terminal notifications with a durable at-most-one-attempt ledger.
+"""Explicit Grok webhook notifications (kinds task.finished and mention) with a durable at-most-one-attempt ledger.
 
 Reserve before network I/O. A crash after reservation can lose a notification;
 a crash after delivery can leave its outcome unknown. Neither is auto-retried.
@@ -105,7 +105,7 @@ class MentionAdapter(GrokWebhook):
         return self.adapter.preflight()
 
     def dispatch_terminal(self, task_id, status, **kwargs):
-        return self.adapter.dispatch_mention(int(task_id, 16), **kwargs)
+        return self.adapter.notify("mention", str(int(task_id, 16)), **kwargs)
 
 
 class TerminalReceipts:
