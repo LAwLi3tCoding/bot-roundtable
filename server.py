@@ -257,7 +257,36 @@ def main():
     parser.add_argument(
         "--admin-keyring", action="store_true", help="Prefer a trusted installed OS keyring"
     )
+    parser.add_argument(
+        "--demo",
+        action="store_true",
+        help="Seed deterministic demo members (also ROUNDTABLE_DEMO=1); off by default",
+    )
+    parser.add_argument(
+        "--prune-demo",
+        action="store_true",
+        help="Remove unreferenced demo bots from --db, print the result and exit",
+    )
     args = parser.parse_args()
+    demo = args.demo or os.environ.get("ROUNDTABLE_DEMO") == "1"
+    if args.prune_demo:
+        if demo:
+            parser.error("--prune-demo cannot be combined with demo mode")
+        if not Path(args.db).is_file():
+            parser.error("Database not found")
+        # Raw connection: no Store start-up side effects on a possibly running instance.
+        import sqlite3
+
+        from roundtable import prune_demo
+
+        db = sqlite3.connect(args.db, timeout=10)
+        try:
+            with db:
+                result = prune_demo(db)
+        finally:
+            db.close()
+        print(json.dumps(result))
+        return
     from admin_credentials import get_admin_token, CredentialError
 
     try:
@@ -269,7 +298,7 @@ def main():
         parser.error(str(exc))
     os.umask(0o077)
     Path(args.db).parent.mkdir(parents=True, exist_ok=True)
-    store = Store(args.db)
+    store = Store(args.db, demo=demo)
     server = make_server(store, admin, port=args.port)
     from terminal_receipts import configured_worker
 

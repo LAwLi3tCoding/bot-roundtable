@@ -95,7 +95,7 @@ class Clients:
 
 
 def main():
-    store = Store()
+    store = Store(demo=True)
     ids = ["entry-demo", "research-demo", "review-demo"]
     for aid, name in zip(ids, ["Demo Entry", "Demo Research", "Demo Review"]):
         store.register_bot(aid, name, "mailbox", "Synthetic MCP protocol test")
