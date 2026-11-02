@@ -67,7 +67,7 @@ def main():
                 "No reply arrived before the deadline. Check the bot connection and its event subscription.",
             )
             page.locator("#manage").click()
-            expect(page.locator("#member-list")).to_contain_text("Unknown (separate MCP process)")
+            expect(page.locator("#member-list")).to_contain_text("renew it with events/subscribe")
             browser.close()
     finally:
         server.shutdown()
