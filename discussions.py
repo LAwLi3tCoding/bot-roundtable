@@ -161,7 +161,8 @@ class Discussions:
                 if root_row["closed"]:
                     raise Problem(409, "Discussion was stopped")
                 budget = int(root_row["budget"] or 4)
-            depth = (parent["depth"] + 1 if parent else budget) if bot else 0
+            # A bot root starts like a human root; its wakes spend the initiation allowance.
+            depth = parent["depth"] + 1 if bot and parent else 0
             root = str(parent["root"] or parent["id"]) if parent and bot else None
             used = 0
             if bot and root:
