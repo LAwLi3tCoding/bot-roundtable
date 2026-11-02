@@ -84,8 +84,39 @@ def main():
             expect(page.locator("#mailbox-list")).to_be_visible()
             expect(page.locator("#room-title")).to_have_text("All")
             page.locator("#mailbox-theme").select_option("light")
+            assert page.locator("#sidebar").bounding_box()["width"] == 280
+            page.locator("#mailbox-collapse").click()
+            assert page.locator("#sidebar").bounding_box()["width"] == 88
+            page.locator("#mailbox-collapse").click()
+            page.locator("#mailbox-resize").focus()
+            expect(page.locator("#mailbox-resize")).to_be_focused()
+            page.keyboard.press("End")
+            page.keyboard.press("ArrowRight")
+            assert page.locator("#sidebar").bounding_box()["width"] == 400
+            page.keyboard.press("Home")
+            page.keyboard.press("ArrowLeft")
+            assert page.locator("#sidebar").bounding_box()["width"] == 240
+            page.keyboard.press("ArrowRight")
+            assert page.locator("#sidebar").bounding_box()["width"] == 250
+
             page.locator('[data-bot-id="sage"]').click()
             expect(page.locator("#room-title")).to_have_text("Sage")
+            # Observe the real insertion animation, including progress across frames.
+            page.evaluate("""() => {
+                window.motionEvidence = [];
+                new MutationObserver(() => {
+                    for (const el of document.querySelectorAll('.mailbox-message')) {
+                        for (const animation of el.getAnimations()) {
+                            if (animation.playState !== 'running') continue;
+                            const evidence = {name: animation.animationName, before: animation.currentTime};
+                            window.motionEvidence.push(evidence);
+                            requestAnimationFrame(() => requestAnimationFrame(() => {
+                                evidence.after = animation.currentTime;
+                            }));
+                        }
+                    }
+                }).observe(document.querySelector('#messages'), {childList: true, subtree: true});
+            }""")
             page.locator("#body").fill("@sage Please outline the review checklist.")
             page.locator("#send").dblclick()
             expect(page.locator(".mailbox-message")).to_have_count(1)
@@ -109,6 +140,21 @@ def main():
             expect(page.locator(".mailbox-message")).to_have_count(2)
             expect(page.locator(".message-meta strong").last).to_have_text("Sage")
             assert all(t["unread"] == 0 for t in store.mailboxes.topics(rid, "user"))
+            page.wait_for_function("() => motionEvidence.some(e => e.after > e.before)")
+            assert page.locator(".character-eyes").first.evaluate(
+                "e => e.getAnimations().some(a => a.playState === 'running')"
+            )
+            page.locator("#options-open").click()
+            page.locator("#mailbox-details-members .member").filter(has_text="Sage").locator(
+                "button"
+            ).click()
+            page.locator("#mailbox-avatar-initial").fill("SG")
+            page.locator("#mailbox-avatar-color").select_option("rose")
+            page.locator("#mailbox-avatar-character").select_option("initials")
+            page.locator('#mailbox-avatar-form button[type="submit"]').click()
+            page.keyboard.press("Escape")
+            expect(page.locator(".mailbox-message .avatar-rose").last).to_have_text("SG")
+
             screenshots = Path(os.environ.get("MAILBOX_SCREENSHOTS", "artifacts/mailboxes"))
             screenshots.mkdir(parents=True, exist_ok=True)
             page.screenshot(
@@ -121,6 +167,7 @@ def main():
             assert not errors, errors
             expect(page.locator("#room-title")).to_have_text("Sage")
             expect(page.locator(".mailbox-message")).to_have_count(2)
+            expect(page.locator(".mailbox-message .avatar-rose").last).to_have_text("SG")
             page.locator("#mailbox-new").click()
             page.locator('#mailbox-members input[value="bot:atlas"]').check()
             page.locator('#mailbox-members input[value="bot:nova"]').check()
@@ -214,6 +261,9 @@ def main():
             assert page.evaluate("matchMedia('(prefers-reduced-motion: reduce)').matches")
             assert page.locator(".mailbox-message").first.evaluate(
                 "e => parseFloat(getComputedStyle(e).animationDuration) <= .01"
+            )
+            assert page.locator(".character-eyes").first.evaluate(
+                "e => e.getAnimations().length === 0"
             )
             page.set_viewport_size({"width": 600, "height": 850})
             assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
