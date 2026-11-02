@@ -141,6 +141,7 @@ def main():
             expect(page.locator("#room-subtitle")).to_contain_text("协作实验室")
             page.locator("#mailbox-list [data-topic-id]").first.click()
             expect(page.locator(".message-body")).to_have_text(payload)
+            page.locator("#mailbox-search").click()
             page.locator("#room-search").fill("not a matching conversation")
             expect(page.locator("#mailbox-list .mailbox-row")).to_have_count(0)
             expect(page.locator(".message-body")).to_have_text(payload)

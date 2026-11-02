@@ -57,7 +57,7 @@ def main():
             page.locator("#admin").fill(token)
             page.locator("#access-form button[type=submit]").click()
             expect(page.locator("#room-subtitle")).to_contain_text("Synthetic task room")
-            page.locator("#discussion-view").click()
+            page.locator("#mailbox-all").click()
             expect(page.locator("#handoffs-view")).not_to_be_visible()
             page.locator("#access").click()
             expect(page.locator("#remember-access")).to_be_disabled()

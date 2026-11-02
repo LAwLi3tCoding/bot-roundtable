@@ -87,6 +87,16 @@ def main():
             expect(page.locator("#mailbox-list")).to_be_visible()
             expect(page.locator("#room-title")).to_have_text("All")
             page.locator("#mailbox-theme").select_option("light")
+            # Search is a toolbar disclosure; Escape clears and returns focus.
+            expect(page.locator("#room-search")).not_to_be_visible()
+            page.locator("#mailbox-search").click()
+            page.locator("#room-search").fill("no matching bot")
+            expect(page.locator("#mailbox-list [data-bot-id]")).to_have_count(0)
+            page.keyboard.press("Escape")
+            expect(page.locator("#mailbox-search")).to_be_focused()
+            expect(page.locator("#room-search")).not_to_be_visible()
+            assert page.locator("#task-view").evaluate("e => !!e.closest('#sidebar')")
+
             assert page.locator("#sidebar").bounding_box()["width"] == 280
             page.locator("#mailbox-collapse").click()
             assert page.locator("#sidebar").bounding_box()["width"] == 88
@@ -211,6 +221,10 @@ def main():
             page.locator("#mailbox-title").fill("Design review")
             page.locator("#mailbox-create-submit").dblclick()
             expect(page.locator("#room-title")).to_have_text("Design review")
+            page.locator("#mailbox-identity").click()
+            expect(page.locator("#mailbox-details")).to_be_visible()
+            page.locator("#mailbox-details [data-mailbox-close]").click()
+
             assert len(store.mailboxes.topics(rid, "user")) == 3
             page.locator("#body").fill("@atlas @nova Let us review the first release together.")
             page.locator("#send").click()
@@ -252,6 +266,14 @@ def main():
                 animations="disabled",
             )
             page.locator("#body").fill("")
+
+            # Guard the actual composition, including the row-reverse alignment regression.
+            own = page.locator(".mailbox-message.human .message-body").last.bounding_box()
+            peer = page.locator(".mailbox-message.bot .message-body").last.bounding_box()
+            canvas = page.locator("#chat").bounding_box()
+            assert own["x"] + own["width"] > canvas["x"] + canvas["width"] * 0.8
+            assert peer["x"] < canvas["x"] + canvas["width"] * 0.25
+            assert page.locator("#compose").bounding_box()["width"] == 960
             page.locator("#mailbox-theme").select_option("dark")
             expect(page.locator("html")).to_have_attribute("data-theme", "dark")
             page.screenshot(
@@ -321,7 +343,21 @@ def main():
             assert page.locator(".character-eyes").first.evaluate(
                 "e => e.getAnimations().length === 0"
             )
+            page.locator("#mailbox-collapse").click()
             page.set_viewport_size({"width": 600, "height": 850})
+            page.locator("#menu").click()
+            expect(page.locator("#mailbox-search")).to_be_visible()
+            expect(page.locator("#mailbox-search")).to_be_focused()
+            page.locator("#task-view").click()
+            expect(page.locator("#handoffs-view")).to_be_visible()
+            expect(page.locator("#new-task")).to_be_visible()
+            expect(page.locator("#room-title")).to_have_text("Design studio")
+            page.locator("#mailbox-identity").click()
+            expect(page.locator("#manage-dialog")).to_be_visible()
+            page.locator("#manage-dialog .close").click()
+            page.locator("#menu").click()
+            page.locator("#mailbox-all").click()
+            expect(page.locator("#room-title")).to_have_text("All")
             assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
             assert not errors, errors
             browser.close()

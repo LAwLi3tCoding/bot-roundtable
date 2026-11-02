@@ -289,6 +289,7 @@ def main():
             page.locator(".room-nav").filter(has_text=other["name"]).click()
             expect(page.locator(f'[data-task-id="{tid}"]')).to_have_count(0)
             expect(page.locator("#task-thread")).not_to_be_visible()
+            page.locator("#task-view").click()
             page.locator("#new-task").click()
             expect(page.locator("#task-workers input:checked")).to_have_count(0)
             expect(page.locator("#create-task")).to_be_disabled()
