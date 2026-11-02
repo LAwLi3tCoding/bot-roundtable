@@ -98,6 +98,9 @@ def main():
             assert page.locator("#sidebar").bounding_box()["width"] == 240
             page.keyboard.press("ArrowRight")
             assert page.locator("#sidebar").bounding_box()["width"] == 250
+            for _ in range(3):
+                page.keyboard.press("ArrowRight")
+            assert page.locator("#sidebar").bounding_box()["width"] == 280
 
             page.locator('[data-bot-id="sage"]').click()
             expect(page.locator("#room-title")).to_have_text("Sage")
