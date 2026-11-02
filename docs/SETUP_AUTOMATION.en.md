@@ -199,3 +199,5 @@ and chain depth share that root budget. The configured Lead is recorded as a sna
 for display, but an unmentioned Lead is not implicitly awakened. Existing explicitly
 orchestrated runs retain Lead opening/closing turns. Budget bounds are shared in intent;
 the two scheduling modes are not identical.
+
+Budget limitation: ordinary message roots and legacy orchestrated runs have independent counters, not a shared room-wide ledger. Both enforce 1–20 total replies per root/run. Ordinary roots count concurrent bot replies and inherit depth/budget; they do not schedule a Lead. Runs schedule sequential jobs with Lead first/last (minimum three replies). Starting both creates two separately bounded conversations; no combined cap is claimed. Unifying them requires choosing whether explicit-target semantics or automatic Lead invocation takes priority.
