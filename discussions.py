@@ -22,10 +22,28 @@ class Discussions:
         """)
 
         columns = {row[1] for row in store.db.execute("PRAGMA table_info(discussion_messages)")}
-        for column in ("root", "task_id", "budget", "lead", "sender_epoch"):
+        for column in ("root", "task_id", "budget", "lead", "sender_epoch", "closed"):
             if column not in columns:
                 store.db.execute(f"ALTER TABLE discussion_messages ADD COLUMN {column} TEXT")
         store.db.commit()
+
+    def active(self, room):
+        return (
+            self.store.db.execute(
+                "SELECT 1 FROM discussion_messages r WHERE r.room=? AND r.sender='user' "
+                "AND r.closed IS NULL AND r.root=CAST(r.id AS TEXT) AND "
+                "(SELECT COUNT(*) FROM discussion_messages m WHERE m.room=r.room AND m.root=r.root "
+                "AND m.sender LIKE 'bot:%') < CAST(COALESCE(r.budget,'4') AS INTEGER) LIMIT 1",
+                (room,),
+            ).fetchone()
+            is not None
+        )
+
+    def close(self, room):
+        self.store.db.execute(
+            "UPDATE discussion_messages SET closed='stopped' WHERE room=? AND sender='user'",
+            (room,),
+        )
 
     def system_notice(self, task, assignment, actor, kind, body, event_id):
         if os.environ.get("ROUNDTABLE_TASK_NOTICES", "1") == "0":
@@ -101,6 +119,12 @@ class Discussions:
                 return self.decode(old)
             if not db.execute("SELECT 1 FROM rooms WHERE id=?", (room,)).fetchone():
                 raise Problem(404, "Room not found")
+            if db.execute(
+                "SELECT 1 FROM runs WHERE room=? AND status='running'", (room,)
+            ).fetchone():
+                raise Problem(
+                    409, "Stop the orchestrated discussion before sending ordinary messages"
+                )
             members = {r["id"]: r for r in db.execute("SELECT * FROM agents WHERE room=?", (room,))}
             if any(bot not in members for bot in mentions):
                 raise Problem(400, "Mention must be a room member")
@@ -121,6 +145,8 @@ class Discussions:
                     "SELECT * FROM discussion_messages WHERE id=? AND room=?",
                     (parent["root"] or parent["id"], room),
                 ).fetchone()
+                if root_row["closed"]:
+                    raise Problem(409, "Discussion was stopped")
                 budget = int(root_row["budget"] or 4)
             depth = (parent["depth"] + 1 if parent else budget) if bot else 0
             root = str(parent["root"] or parent["id"]) if parent and bot else None
@@ -187,7 +213,7 @@ class Discussions:
         bot = actor.removeprefix("bot:")
         with self.store.lock:
             rows = self.store.db.execute(
-                "SELECT m.* FROM discussion_messages m JOIN discussion_mentions n ON n.message=m.id JOIN agents a ON a.room=n.room AND a.id=n.bot AND a.token=n.epoch WHERE n.room=? AND n.bot=? AND m.id>? ORDER BY m.id LIMIT 100",
+                "SELECT m.* FROM discussion_messages m JOIN discussion_mentions n ON n.message=m.id JOIN agents a ON a.room=n.room AND a.id=n.bot AND a.token=n.epoch WHERE n.room=? AND n.bot=? AND m.id>? AND NOT EXISTS (SELECT 1 FROM discussion_messages root WHERE CAST(root.id AS TEXT)=m.root AND root.closed IS NOT NULL) ORDER BY m.id LIMIT 100",
                 (room, bot, after),
             ).fetchall()
             return {

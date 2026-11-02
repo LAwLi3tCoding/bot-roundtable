@@ -311,3 +311,5 @@ Thanks to the MCP Python SDK community for its protocol implementation, and to t
 ### Local session security boundary
 
 This version retains the one-time credential bootstrap through `local_runtime.py ui`. It does not mint sessions based solely on loopback, Host and Origin, which cannot rule out a transparent local proxy. Restricted HttpOnly cookie renewal and revocation are available without enabling new security settings on real installations. Unauthenticated homepage login still requires an OS-authenticated bootstrap or an explicit product security decision; see [local sessions](docs/LOCAL_SESSION.en.md).
+
+For daily access, use the clickable “Open Roundtable” app to authenticate and open the page without handling login codes. See the [one-time launcher generation guide](docs/LOCAL_SESSION.en.md).

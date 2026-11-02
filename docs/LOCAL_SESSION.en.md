@@ -7,3 +7,19 @@ The one-time exchange accepts `cookie: true`. It then returns an HttpOnly, SameS
 HTTP cookies are not scoped by port: other services on the same hostname remain a local trust boundary. HttpOnly does not protect against malicious local software or same-origin script execution. The cookie is not Secure because this entry is HTTP loopback. Do not expose the browser entry through a tunnel. Header checks do not prove that an arbitrary proxy is absent. Supported MCP routing must remain separate and does not mint browser sessions. Real OS/vendor integration is not certified by synthetic tests.
 
 The remaining product choice is whether to add an OS-authenticated browser bootstrap or accept a documented weaker trust model for unattended homepage login. This implementation does neither silently.
+
+## Click “Open Roundtable” on macOS
+
+An installation maintainer can generate a clickable app once, from the installation directory:
+
+```sh
+.venv/bin/python scripts/local_runtime.py create-ui-launcher --output '<EXISTING_OUTPUT_DIRECTORY>/Open Roundtable.app' --state-dir '<STATE_DIRECTORY>' --name default
+```
+
+Replace the placeholders with your installation paths; quote paths containing spaces. Use the configured instance name. The command creates a new app and refuses to overwrite an existing one. It does not read credentials, start services, install into Applications, or change authentication settings. Put the generated app somewhere convenient or add it to the Dock yourself. Daily use is simply double-clicking it: the existing `ui` flow authenticates and opens the browser automatically. You never need to see or enter the one-time code. The managed service must already be running. If nothing opens, ask the maintainer to check that instance and recreate the shortcut if the checkout or Python path moved.
+
+The app stores paths and arguments only, never a token or code; it discards runtime output rather than writing a log. Tests execute the generated shell launcher with synthetic paths, including spaces and shell metacharacters. Finder/LaunchServices and macOS application-security prompts have not been tested natively. On Linux, a desktop launcher may invoke the equivalent `local_runtime.py ui --state-dir ... --name ...` command with terminal display disabled; this generator currently emits only macOS apps. The Windows managed UI flow remains unsupported.
+
+A session lasts one hour after exchange or successful renewal. The open page attempts renewal every five minutes; an expired session or server restart requires clicking the app again. It is neither a code prompt on every visit nor permanent authentication.
+
+Direct URL research: an already authenticated cookie can restore a visit safely. A new anonymous HTTP request cannot prove local-user presence from socket/Host/Origin alone. A future signed OS launcher or browser-extension/native-messaging bridge could obtain a short-lived capability through an OS-authenticated channel and open the browser. This requires a trusted installed component and explicit installation approval, not relaxed HTTP checks. Arbitrary transparent forwarding of the browser entry remains outside the guarantee.

@@ -1163,6 +1163,7 @@ def main():
             "routine",
             "approve-host",
             "render-launchd",
+            "create-ui-launcher",
             "client",
             "ui",
             "rotate-admin-token",
@@ -1226,6 +1227,14 @@ def main():
             args.name,
             custom_state=bool(args.state_dir or os.environ.get("ROUNDTABLE_STATE_DIR")),
         )
+        if args.action == "create-ui-launcher":
+            from ui_launcher import create_launcher
+
+            if not args.output:
+                raise Failure("launcher_output_required")
+            result = create_launcher(args.output, selected, args.name, sys.executable, __file__)
+            print(json.dumps(result))
+            return 0
         if args.action == "paths":
             print(json.dumps({"state_dir": str(selected), "log_dir": str(args.resolved_log_dir)}))
             return 0

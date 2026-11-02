@@ -311,3 +311,5 @@ License: [MIT](LICENSE)。Copyright (c) 2026 LAwLi3tCoding。
 ### 本机会话安全边界
 
 本版本保留 `local_runtime.py ui` 的一次性凭据引导，不会仅凭 loopback、Host 和 Origin 自动签发会话：这些信息不能排除透明本机反代。新增受限 HttpOnly cookie 的续期和撤销协议，且不对真实安装启用新的安全设置。无凭据直接打开首页登录仍需 OS 认证引导或明确的产品安全取舍；详见 [本机会话说明](docs/LOCAL_SESSION.zh.md)。
+
+日常可使用可点击的“打开圆桌”应用，自动验证并打开网页，不需手动处理登录码。维护者的一次性生成方法见[本机入口说明](docs/LOCAL_SESSION.zh.md)。

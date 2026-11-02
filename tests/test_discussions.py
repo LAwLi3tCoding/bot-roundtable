@@ -71,6 +71,36 @@ class DiscussionsTest(unittest.TestCase):
         status = {row["id"]: row for row in self.store.connections.status(self.room)}
         self.assertIsNone(status["alpha"]["last_reply"])
 
+    def test_modes_require_explicit_stop_and_cannot_cross_consume(self):
+        root = self.post(budget=2)
+        with self.assertRaises(Problem):
+            self.store.start(self.room, "run", ["alpha"], 2, "run-one")
+        with self.assertRaises(Problem):
+            self.store.stop_peer(self.room, "alpha")
+        self.assertTrue(self.store.state(self.room)["discussion_active"])
+        self.store.stop(self.room)
+        self.assertFalse(self.store.state(self.room)["discussion_active"])
+        self.assertEqual(self.discussions.inbox(self.room, "bot:alpha", {})["messages"], [])
+        self.assertGreater(
+            self.store.db.execute(
+                "SELECT COUNT(*) FROM discussion_mentions WHERE room=?", (self.room,)
+            ).fetchone()[0],
+            0,
+        )
+        run = self.store.start(self.room, "run", ["alpha"], 2, "run-one")
+        self.assertEqual(run["status"], "running")
+        with self.assertRaises(Problem):
+            self.post(request_id="second-root")
+        self.store.stop(self.room)
+        with self.assertRaises(Problem):
+            self.post("bot:alpha", reply_to=root["id"])
+        self.post(request_id="second-root")
+
+    def test_exhausted_root_allows_mode_switch(self):
+        root = self.post(budget=1)
+        self.post("bot:alpha", reply_to=root["id"])
+        self.store.start(self.room, "run", ["alpha"], 1, "run-one")
+
     def test_events_use_scoped_cursor(self):
         feed = self.store.handoffs.event_feed
         cursor = feed(

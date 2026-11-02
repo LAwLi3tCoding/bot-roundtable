@@ -58,6 +58,11 @@ def main():
             assert page.evaluate(
                 "document.getElementById('chat').scrollHeight-document.getElementById('chat').scrollTop-document.getElementById('chat').clientHeight < 2"
             )
+            expect(page.locator("#stop")).to_be_visible()
+            with page.expect_response("**/stop") as stopped:
+                page.locator("#stop").click()
+            assert stopped.value.status == 200
+            expect(page.locator("#stop")).not_to_be_visible()
             store.start(room["id"], "Synthetic timeout", ["test-worker"], 1, "timeout-browser")
             with store.transaction():
                 store.db.execute("UPDATE runs SET status='timeout' WHERE room=?", (room["id"],))

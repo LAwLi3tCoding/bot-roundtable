@@ -296,7 +296,7 @@ class TerminalWorker:
                     source.execute(
                         "SELECT n.message FROM discussion_mentions n JOIN agents a "
                         "ON a.room=n.room AND a.id=n.bot AND a.token=n.epoch "
-                        "WHERE n.room=? AND n.bot=? AND n.message>? ORDER BY n.message LIMIT 100",
+                        "WHERE n.room=? AND n.bot=? AND n.message>? AND NOT EXISTS (SELECT 1 FROM discussion_messages m JOIN discussion_messages root ON CAST(root.id AS TEXT)=m.root WHERE m.id=n.message AND root.closed IS NOT NULL) ORDER BY n.message LIMIT 100",
                         (self.room, self.origin, mention_cursor),
                     ).fetchall()
                     if mention_enabled
@@ -310,7 +310,7 @@ class TerminalWorker:
                     current_mention = source.execute(
                         "SELECT 1 FROM discussion_mentions n JOIN agents a "
                         "ON a.room=n.room AND a.id=n.bot AND a.token=n.epoch "
-                        "WHERE n.room=? AND n.bot=? AND n.message=?",
+                        "WHERE n.room=? AND n.bot=? AND n.message=? AND NOT EXISTS (SELECT 1 FROM discussion_messages m JOIN discussion_messages root ON CAST(root.id AS TEXT)=m.root WHERE m.id=n.message AND root.closed IS NOT NULL)",
                         (self.room, self.origin, mention["message"]),
                     ).fetchone()
                     result = (

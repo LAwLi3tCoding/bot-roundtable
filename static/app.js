@@ -130,7 +130,7 @@ function renderState() {
  $('room-title').textContent = state.room.name; $('room-subtitle').textContent = `${state.agents.length} ${t('participants')}${state.room.lead ? ' · '+t('leadBadge') : ''}`;
  const currentRun = state.runs.at(-1); const running = currentRun?.status === 'running';
  const displayRun = state.runs.find(r => r.id === threadId) || currentRun; $('status').textContent = displayRun ? `${t('run_' + displayRun.status)} · ${t('replied')} ${displayRun.turn} / ${t('replyBudget')} ${displayRun.budget}` : t('idle'); $('status').classList.toggle('running', running);
- $('send').disabled = false; $('send').hidden = false; $('stop').disabled = !running; $('stop').hidden = !running; $('body').disabled = false; $('budget').disabled = running;
+ $('send').disabled = false; $('send').hidden = false; $('stop').disabled = !(running || state.discussion_active); $('stop').hidden = !(running || state.discussion_active); $('body').disabled = false; $('budget').disabled = running;
  $('status').title=displayRun?.status==='timeout'?t('timeoutReason'):'';
  const selector = $('thread-select');selector.parentElement.hidden=state.runs.length<2;
  const threadSignature=JSON.stringify([language,state.runs.map(run=>[run.id,run.status])]);
