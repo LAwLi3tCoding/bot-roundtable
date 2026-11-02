@@ -1,6 +1,6 @@
 # 本地实例自动配置
 
-这些脚本自动完成本地身份、私有文件和进程管理，**不会**创建厂商账号、安装 Tunnel、订阅 Events、给 bot 电脑权限或加载 launchd。支持 Python 3.12/3.13 的 macOS/Linux；尚未实现 Windows 进程管理。使用独立 checkout，不得指向手工管理的数据库或 `data/local-runtime`。
+这些脚本自动完成本地身份、私有文件和进程管理，**不会**创建厂商账号、安装 Tunnel、订阅 Events、给 bot 电脑权限或加载 launchd。支持 Python 3.12/3.13 的 macOS/Linux；尚未实现 Windows 进程管理。使用独立 checkout。macOS 上不要放在 `~/Documents`、`~/Desktop`、`~/Downloads` 等受隐私保护的目录（推荐如 `~/code/bot-roundtable`）：Tunnel client 在项目目录中运行并读取其中的 profile，可能触发、之后又收回 macOS 文件访问授权并导致 Tunnel 中断。不得指向手工管理的数据库或 `data/local-runtime`。
 
 ## 1. 前置条件与必须手动的账号步骤
 
@@ -27,7 +27,7 @@
 ```sh
 export ROUNDTABLE_HOME='<CHECKOUT_DIRECTORY>'
 cd "${ROUNDTABLE_HOME}"
-python3.12 -m venv .venv
+python3.12 -m venv .venv   # 或 python3.13；macOS 都没有时：brew install python@3.12
 .venv/bin/python -m pip install -r requirements.lock
 .venv/bin/python scripts/setup-local.py --origin grok --worker dot --allowance 20 \
   --server-port '<SERVER_PORT>' --mcp-port '<MCP_PORT>'

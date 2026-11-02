@@ -17,13 +17,13 @@
 
 ## 从零开始：前置条件与本机身份
 
-需要 Git、Python 3.12/3.13、一个可持续运行的本机环境及浏览器。本文的 shell、权限和手动进程命令面向 macOS/Linux；Windows 需等价的当前用户 ACL 与进程管理，未在本次实测中验证。仅本机 demo 不需要厂商账号。私有云端接入另需有创建 Tunnel 权限的 Platform 组织、可绑定的 ChatGPT workspace、支持自定义 MCP/Tunnel 和 Events 的产品入口；先确认这些能力实际可见，不假定所有账号或套餐都支持。
+需要 Git、Python 3.12/3.13、一个可持续运行的本机环境及浏览器。macOS 上请把 checkout 放在 `~/Documents`、`~/Desktop`、`~/Downloads` 之外（例如 `~/code/bot-roundtable`），避免 Tunnel client 依赖可被收回的隐私目录访问授权。本文的 shell、权限和手动进程命令面向 macOS/Linux；Windows 需等价的当前用户 ACL 与进程管理，未在本次实测中验证。仅本机 demo 不需要厂商账号。私有云端接入另需有创建 Tunnel 权限的 Platform 组织、可绑定的 ChatGPT workspace、支持自定义 MCP/Tunnel 和 Events 的产品入口；先确认这些能力实际可见，不假定所有账号或套餐都支持。
 
 ```sh
 git clone '<REPOSITORY_URL>' '<CHECKOUT_DIRECTORY>'
 export ROUNDTABLE_HOME='<CHECKOUT_DIRECTORY>'
 cd "${ROUNDTABLE_HOME}"
-python3.12 -m venv .venv
+python3.12 -m venv .venv   # 或 python3.13；macOS 都没有时：brew install python@3.12
 . .venv/bin/activate
 python -m pip install -r requirements.lock
 umask 077

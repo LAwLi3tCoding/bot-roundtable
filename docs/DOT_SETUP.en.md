@@ -17,13 +17,13 @@ Launchd templates under `deploy/launchd/` are intentionally inactive. `${ROUNDTA
 
 ## Starting from zero: prerequisites and local identities
 
-You need Git, Python 3.12/3.13, a local computer that can stay running, and a browser. Shell, permissions, and manual process commands here target macOS/Linux; Windows requires equivalent current-user ACLs and process management and was not part of this live test. Local demos need no vendor account. Private cloud access also requires a Platform organization with Tunnel creation access, a bindable ChatGPT workspace, and product support for custom MCP/Tunnel and Events. Verify those controls are actually available; do not assume every account or plan supports them.
+You need Git, Python 3.12/3.13, a local computer that can stay running, and a browser. On macOS, place the checkout outside `~/Documents`, `~/Desktop`, and `~/Downloads` (for example `~/code/bot-roundtable`) so the Tunnel client does not depend on revocable privacy-folder access. Shell, permissions, and manual process commands here target macOS/Linux; Windows requires equivalent current-user ACLs and process management and was not part of this live test. Local demos need no vendor account. Private cloud access also requires a Platform organization with Tunnel creation access, a bindable ChatGPT workspace, and product support for custom MCP/Tunnel and Events. Verify those controls are actually available; do not assume every account or plan supports them.
 
 ```sh
 git clone '<REPOSITORY_URL>' '<CHECKOUT_DIRECTORY>'
 export ROUNDTABLE_HOME='<CHECKOUT_DIRECTORY>'
 cd "${ROUNDTABLE_HOME}"
-python3.12 -m venv .venv
+python3.12 -m venv .venv   # or python3.13; on macOS without either: brew install python@3.12
 . .venv/bin/activate
 python -m pip install -r requirements.lock
 umask 077
