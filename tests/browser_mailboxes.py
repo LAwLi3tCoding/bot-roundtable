@@ -3,6 +3,7 @@
 import http.client
 import json
 import os
+import re
 from pathlib import Path
 import secrets
 import threading
@@ -74,7 +75,9 @@ def main():
             browser = playwright.chromium.launch(
                 executable_path=os.environ.get("CHROMIUM_PATH") or None
             )
-            context = browser.new_context(viewport={"width": 1440, "height": 1000}, locale="en-US")
+            context = browser.new_context(
+                viewport={"width": 1440, "height": 1000}, locale="en-US", timezone_id="UTC"
+            )
             page = context.new_page()
             errors = []
             page.on("pageerror", lambda error: errors.append(str(error)))
@@ -104,6 +107,14 @@ def main():
 
             page.locator('[data-bot-id="sage"]').click()
             expect(page.locator("#room-title")).to_have_text("Sage")
+            assert page.locator("#compose").bounding_box()["height"] == 44
+            page.locator("#body").fill("first line\nsecond line")
+            expect(page.locator("#compose")).to_have_class(re.compile("composer-expanded"))
+            page.locator("#body").fill("short")
+            assert "composer-expanded" in page.locator("#compose").get_attribute("class")
+            page.locator("#body").fill("")
+            assert "composer-expanded" not in page.locator("#compose").get_attribute("class")
+            assert page.locator("#compose").bounding_box()["height"] == 44
             # Observe the real insertion animation, including progress across frames.
             page.evaluate("""() => {
                 window.motionEvidence = [];
@@ -142,6 +153,10 @@ def main():
             )
             expect(page.locator(".mailbox-message")).to_have_count(2)
             expect(page.locator(".message-meta strong").last).to_have_text("Sage")
+            expect(page.locator(".mailbox-time-divider")).to_have_count(1)
+            page.locator(".mailbox-message").last.focus()
+            expect(page.locator(".mailbox-message").last).to_be_focused()
+            expect(page.locator(".message-meta time").last).to_have_css("opacity", "1")
             assert all(t["unread"] == 0 for t in store.mailboxes.topics(rid, "user"))
             page.wait_for_function("() => motionEvidence.some(e => e.after > e.before)")
             assert page.locator(".character-eyes").first.evaluate(
@@ -215,6 +230,16 @@ def main():
                 full_page=True,
                 animations="disabled",
             )
+            page.locator("#body").fill(
+                "Review checklist\nKeyboard access, timestamps, and readable messages."
+            )
+            expect(page.locator("#compose")).to_have_class(re.compile("composer-expanded"))
+            page.screenshot(
+                path=str(screenshots / "mailbox-composer-light.png"),
+                full_page=True,
+                animations="disabled",
+            )
+            page.locator("#body").fill("")
             page.locator("#mailbox-theme").select_option("dark")
             expect(page.locator("html")).to_have_attribute("data-theme", "dark")
             page.screenshot(
@@ -260,6 +285,22 @@ def main():
                 },
             )
             assert status == 400
+            # Fixed midday UTC fixture: adjacent gaps 899s / 900s, then date change.
+            ids = [
+                m["id"] for m in store.mailboxes.messages(rid, "user", private["id"])["messages"]
+            ]
+            for message_id, stamp in zip(ids, (1767355200, 1767356099, 1767356999)):
+                store.db.execute(
+                    "UPDATE mail_messages SET created=? WHERE id=?", (stamp, message_id)
+                )
+            store.db.commit()
+            page.reload()
+            expect(page.locator(".mailbox-time-divider")).to_have_count(2)
+            store.db.execute("UPDATE mail_messages SET created=? WHERE id=?", (1767398390, ids[1]))
+            store.db.execute("UPDATE mail_messages SET created=? WHERE id=?", (1767398410, ids[2]))
+            store.db.commit()
+            page.reload()
+            expect(page.locator(".mailbox-time-divider")).to_have_count(3)
             page.emulate_media(reduced_motion="reduce")
             assert page.evaluate("matchMedia('(prefers-reduced-motion: reduce)').matches")
             assert page.locator(".mailbox-message").first.evaluate(

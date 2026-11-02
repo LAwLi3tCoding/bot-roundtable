@@ -390,20 +390,68 @@
   padding:12px max(30px,calc((100% - 850px)/2)) 24px
 }
 #compose {
+  position:relative;
+  box-sizing:border-box;
+  display:flex;
+  align-items:center;
+  height:44px;
+  min-height:44px;
   background:var(--control);
-  border:1px solid var(--line);
-  border-radius:24px;
-  padding:9px;
-  gap:10px;
-  box-shadow:none;
-  align-items:flex-end
+  border:.5px solid var(--line);
+  border-radius:22px;
+  padding:0 8px;
+  gap:8px;
+  transition:height 300ms ease,border-radius 300ms ease,border-color 150ms ease;
+}
+#compose:focus-within {
+  border-color:var(--muted);
 }
 #body {
-  font-size:15px;
-  line-height:23px;
+  min-width:0;
+  min-height:20px;
+  max-height:120px;
+  height:20px;
+  font-size:14px;
+  line-height:20px;
   color:var(--ink);
-  padding:6px 0;
-  background:transparent
+  padding:0;
+  margin:0;
+  border:0;
+  border-radius:0;
+  resize:none;
+  overflow-y:auto;
+  background:transparent;
+}
+#compose.composer-expanded {
+  display:block;
+  padding:10px 12px 46px;
+  border-radius:18px;
+}
+.composer-expanded #body {
+  width:100%;
+}
+.composer-actions {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex-shrink:0;
+}
+.composer-expanded .composer-actions {
+  position:absolute;
+  bottom:8px;
+  right:8px;
+}
+.composer-expanded #options-open {
+  position:absolute;
+  left:8px;
+  bottom:8px;
+}
+#compose #options-open, #compose #send {
+  width:28px;
+  height:28px;
+  min-height:28px;
+  flex-shrink:0;
+  padding:0;
 }
 #body::placeholder {
   color:var(--muted)
@@ -806,5 +854,43 @@ pre,.secondary {
     animation: none !important;
     transition: none !important;
     scroll-behavior: auto !important;
+  }
+}
+.mailbox-time-divider {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  box-sizing:border-box;
+  height:28px;
+  padding-block:6px;
+  margin:14px auto 8px;
+  width:max-content;
+  max-width:100%;
+  color:var(--muted);
+  font-size:12px;
+  line-height:16px;
+  font-variant-numeric:tabular-nums;
+}
+.mailbox-message .message-meta time {
+  opacity:0;
+  transition:opacity 150ms ease;
+}
+.mailbox-message:hover .message-meta time,
+.mailbox-message:focus-within .message-meta time {
+  opacity:1;
+}
+.mailbox-message:focus-visible {
+  outline:2px solid var(--muted);
+  outline-offset:4px;
+  border-radius:6px;
+}
+@media (hover:none) {
+  .mailbox-message .message-meta time {
+    opacity:1;
+  }
+}
+@media (prefers-reduced-motion:reduce) {
+  #compose, .mailbox-message .message-meta time {
+    transition:none;
   }
 }
