@@ -48,29 +48,18 @@ def main():
             page.locator("#access-form button[type=submit]").click()
             expect(page.locator("#room-title")).to_have_text("Synthetic task room")
             expect(page.locator("#handoffs-view")).to_be_visible()
-            assert page.evaluate("sessionStorage.getItem('roundtable-access-v1') !== null")
+            assert page.evaluate("sessionStorage.getItem('roundtable-access-v1') === null")
             assert page.evaluate("localStorage.getItem('roundtable-access-v1') === null")
-            checks += 1
             page.reload()
+            expect(page.locator("#room-title")).to_have_text("Your roundtable")
+            page.locator("#access").click()
+            page.locator("#admin").fill(token)
+            page.locator("#access-form button[type=submit]").click()
             expect(page.locator("#room-title")).to_have_text("Synthetic task room")
-            expect(page.locator("#handoffs-view")).to_be_visible()
             page.locator("#discussion-view").click()
-            page.wait_for_timeout(1500)
             expect(page.locator("#handoffs-view")).not_to_be_visible()
-            checks += 1
             page.locator("#access").click()
-            page.locator("#remember-access").check()
-            assert page.evaluate(
-                "localStorage.getItem('roundtable-access-v1') !== null && sessionStorage.getItem('roundtable-access-v1') === null"
-            )
-            page.reload()
-            expect(page.locator("#room-title")).to_have_text("Synthetic task room")
-            page.locator("#access").click()
-            expect(page.locator("#remember-access")).to_be_checked()
-            page.locator("#remember-access").uncheck()
-            assert page.evaluate(
-                "localStorage.getItem('roundtable-access-v1') === null && sessionStorage.getItem('roundtable-access-v1') !== null"
-            )
+            expect(page.locator("#remember-access")).to_be_disabled()
             checks += 1
             page.locator("#forget-access").click()
             expect(page.locator("#room-title")).to_have_text("Your roundtable")
@@ -83,14 +72,14 @@ def main():
             page.reload()
             expect(page.locator("#room-title")).to_have_text("Your roundtable")
             checks += 1
-            # Room-only credentials also survive refresh, but never recover owner scope.
+            # Room credentials stay in memory and never recover owner scope.
             page.locator("#access").click()
             page.locator("#room").fill(room["id"])
             page.locator("#token").fill(room["token"])
             page.locator("#room-connect").click()
             expect(page.locator("#room-title")).to_have_text("Synthetic task room")
             page.reload()
-            expect(page.locator("#access")).to_have_text("Room access")
+            expect(page.locator("#access")).to_have_text("Connect")
             checks += 1
             # Revocation/invalid saved credential drops browser state.
             page.evaluate(

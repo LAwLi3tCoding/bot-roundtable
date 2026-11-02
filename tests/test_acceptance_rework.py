@@ -52,6 +52,29 @@ class Rework(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
+    def test_down_without_lsof_preserves_database_and_reports_warning(self):
+        database = self.state / "synthetic.db"
+        runtime.save(database, "")
+        with sqlite3.connect(database) as db:
+            db.execute("CREATE TABLE marker(value)")
+        before = database.read_bytes()
+        output = io.StringIO()
+        with (
+            patch.object(sys, "argv", ["local_runtime.py", "down", "--state-dir", str(self.state)]),
+            patch.object(runtime, "stop_component") as stop,
+            patch("runtime_lifecycle.require_stopped") as stopped,
+            patch("sqlite_maintenance.shutil.which", return_value=None),
+            contextlib.redirect_stdout(output),
+        ):
+            self.assertEqual(runtime.main(), 0)
+        stopped.assert_called_once()
+        self.assertEqual(stop.call_count, 4)
+        result = json.loads(output.getvalue())
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["checkpointed_databases"], 0)
+        self.assertEqual(result["warnings"], ["checkpoint_skipped_database_inspection_unavailable"])
+        self.assertEqual(database.read_bytes(), before)
+
     def test_checkpoint_closed_copy_leaves_no_wal(self):
         live = runtime.private_dir(self.root / "writer")
         runtime.save(live / "sample.db", "")

@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import threading
+from http.cookies import SimpleCookie, CookieError
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import cast
@@ -30,7 +31,7 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
         def log_message(self, *_args):
             pass  # Do not log paths, payloads or Authorization headers.
 
-        def respond(self, status, data, mime="application/json"):
+        def respond(self, status, data, mime="application/json", cookie=None):
             payload = (
                 json.dumps(data, ensure_ascii=False).encode()
                 if mime == "application/json"
@@ -46,6 +47,8 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
                 "Content-Security-Policy",
                 "default-src 'self'; style-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'",
             )
+            if cookie is not None:
+                self.send_header("Set-Cookie", cookie)
             self.end_headers()
             self.wfile.write(payload)
 
@@ -84,6 +87,16 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
                     }[path]
                     return self.respond(200, (STATIC / file).read_bytes(), mime)
                 token = self.headers.get("Authorization", "").removeprefix("Bearer ")
+                if not token:
+                    cookies = SimpleCookie()
+                    cookies.load(self.headers.get("Cookie", ""))
+                    if "roundtable_ui" in cookies:
+                        token = cookies["roundtable_ui"].value
+                        if not sessions.valid(token) and path not in (
+                            "/api/ui-login/exchange",
+                            "/api/ui-login/revoke",
+                        ):
+                            raise Problem(403, "UI session expired")
                 body = {}
                 if method == "POST":
                     if self.headers.get("Transfer-Encoding"):
@@ -104,7 +117,12 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
                     )
                     if any(
                         self.headers.get(h)
-                        for h in ("Forwarded", "X-Forwarded-For", "X-Forwarded-Host")
+                        for h in (
+                            "Forwarded",
+                            "X-Forwarded-For",
+                            "X-Forwarded-Host",
+                            "X-Forwarded-Proto",
+                        )
                     ):
                         raise Problem(403, "UI login origin rejected")
                     if method != "POST":
@@ -114,12 +132,47 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
                             raise Problem(403, "Admin credential required")
                         return self.respond(201, sessions.issue())
                     if path == "/api/ui-login/exchange":
-                        return self.respond(200, sessions.exchange(body.get("code")))
+                        granted = sessions.exchange(body.get("code"))
+                        if body.get("cookie") is True:
+                            secret = granted.pop("session_token")
+                            return self.respond(
+                                200,
+                                granted,
+                                cookie=(
+                                    f"roundtable_ui={secret}; HttpOnly; SameSite=Strict; Path=/; "
+                                    f"Max-Age={sessions.session_seconds}"
+                                ),
+                            )
+                        return self.respond(200, granted)
+                    if path == "/api/ui-login/renew":
+                        granted = sessions.renew(token)
+                        return self.respond(
+                            200,
+                            granted,
+                            cookie=(
+                                f"roundtable_ui={token}; HttpOnly; SameSite=Strict; Path=/; "
+                                f"Max-Age={sessions.session_seconds}"
+                            ),
+                        )
                     if path == "/api/ui-login/revoke":
                         sessions.revoke(token)
-                        return self.respond(200, {"revoked": True})
+                        return self.respond(
+                            200,
+                            {"revoked": True},
+                            cookie="roundtable_ui=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0",
+                        )
                     raise Problem(404, "Not found")
                 if sessions.valid(token):
+                    if any(
+                        self.headers.get(h)
+                        for h in (
+                            "Forwarded",
+                            "X-Forwarded-For",
+                            "X-Forwarded-Host",
+                            "X-Forwarded-Proto",
+                        )
+                    ):
+                        raise Problem(403, "UI login origin rejected")
                     sessions.boundary(
                         self.client_address[0],
                         host_header,
@@ -138,7 +191,7 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
                 return self.respond(status, result)
             except Problem as exc:
                 self.respond(exc.status, {"error": str(exc)})
-            except (ValueError, TypeError):
+            except (ValueError, TypeError, CookieError):
                 self.respond(400, {"error": "Invalid JSON or field type"})
             except (OSError, TimeoutError):
                 self.close_connection = True
@@ -195,6 +248,17 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
                 if len(parts) == 6 and parts[5] == "access" and method == "GET":
                     return (200, {"authorized": True, "room": room, "agent": agent})
                 if parts[5] == "peer":
+                    if (
+                        len(parts) == 7
+                        and method == "POST"
+                        and parts[6] in ("messages", "mentions")
+                    ):
+                        action = (
+                            store.discussions.post
+                            if parts[6] == "messages"
+                            else store.discussions.inbox
+                        )
+                        return (200, action(room, "bot:" + agent, body))
                     if len(parts) == 7 and parts[6] == "probe" and method == "POST":
                         return (200, store.connections.probe(room, agent, body.get("nonce")))
                     if len(parts) == 7 and parts[6] == "capabilities" and method == "GET":
@@ -246,6 +310,8 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
                         "capabilities": capabilities(getattr(store, "terminal_worker", None)),
                     },
                 )
+            if len(parts) == 4 and parts[3] == "messages" and method == "POST":
+                return (201, store.discussions.post(room, "user", body))
             if len(parts) >= 4 and parts[3] == "tasks":
                 return self.task_dispatch(room, "user", parts[4:], method, body)
             if len(parts) == 3 and method == "GET":

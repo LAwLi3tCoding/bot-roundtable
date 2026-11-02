@@ -449,6 +449,18 @@ def redact(line, env):
 
 def safe_log(line):
     """Persist a strict status vocabulary, never arbitrary vendor/application text."""
+    # Fixed categories only; never persist exception payloads, paths or credentials.
+    for prefix, category in (
+        ("ModuleNotFoundError:", "dependency_missing"),
+        ("ImportError:", "dependency_import_failed"),
+        ("PermissionError:", "permission_denied"),
+        ("FileNotFoundError:", "required_file_missing"),
+        ("sqlite3.OperationalError:", "database_operation_failed"),
+    ):
+        if line.startswith(prefix):
+            return "component_error_" + category + "\n"
+    if line.startswith("OSError: [Errno 98]") or line.startswith("OSError: [Errno 48]"):
+        return "component_error_address_in_use\n"
     match = re.search(r"callback_host_not_approved host=([a-zA-Z0-9.-]+)(?:\s|$)", line)
     if match:
         from outbound import canonical_host
@@ -488,6 +500,7 @@ def supervise(state, config, component, identity):
     pipepath = state / "tunnel-log.pipe"
     source = None
     child = None
+    buffers: dict[int, bytes] = {}
     with (
         RotatingLog(
             logpath, config.get("log_max_bytes", 10 * 1024 * 1024), config.get("log_backups", 3)
@@ -531,7 +544,6 @@ def supervise(state, config, component, identity):
             selector.register(child.stdout, selectors.EVENT_READ)
             log.write("component_started\n")
             log.flush()
-            buffers: dict[int, bytes] = {}
             dropping = set()
             while not stop.is_set():
                 # Do not reap the leader until process-group cleanup: its PID cannot be reused.
@@ -587,6 +599,16 @@ def supervise(state, config, component, identity):
                         cleaned = not group_live(child.pid)
                     if cleaned:
                         child.wait(timeout=3)
+                        log.write("component_exit_code=" + str(child.returncode) + "\n")
+                        # A fast failing child can exit before the selector consumes stderr.
+                        # Drain only after confirmed exit; retain the bounded safe vocabulary.
+                        if child.stdout:
+                            os.set_blocking(child.stdout.fileno(), False)
+                            remaining = buffers.get(child.stdout.fileno(), b"") + (
+                                child.stdout.read(65536) or b""
+                            )
+                            for line in remaining.splitlines():
+                                log.write(safe_log(line.decode("utf-8", "replace")))
                     if child.stdout:
                         child.stdout.close()
             except Exception:
@@ -925,8 +947,8 @@ def run_client(state, config, args):
         config["origin"],
         member["ROUNDTABLE_TOKEN"],
     )
-    if args.operation == "create":
-        result = client.call("create", read_json_stdin())
+    if args.operation in ("create", "mentions", "message"):
+        result = client.call(args.operation, read_json_stdin())
     elif args.operation == "roundtrip":
         result = client.roundtrip(config["worker"], str(state / "roundtrip.json"), args.timeout)
     elif args.operation == "wait":
@@ -1141,6 +1163,7 @@ def main():
             "routine",
             "approve-host",
             "render-launchd",
+            "create-ui-launcher",
             "client",
             "ui",
             "rotate-admin-token",
@@ -1186,6 +1209,8 @@ def main():
             "create",
             "tasks",
             "inbox",
+            "mentions",
+            "message",
         ],
     )
     parser.add_argument("--task-id")
@@ -1202,6 +1227,14 @@ def main():
             args.name,
             custom_state=bool(args.state_dir or os.environ.get("ROUNDTABLE_STATE_DIR")),
         )
+        if args.action == "create-ui-launcher":
+            from ui_launcher import create_launcher
+
+            if not args.output:
+                raise Failure("launcher_output_required")
+            result = create_launcher(args.output, selected, args.name, sys.executable, __file__)
+            print(json.dumps(result))
+            return 0
         if args.action == "paths":
             print(json.dumps({"state_dir": str(selected), "log_dir": str(args.resolved_log_dir)}))
             return 0
@@ -1318,12 +1351,23 @@ def main():
                         stop_component(state, config, component)
                     from runtime_lifecycle import require_stopped
                     from sqlite_maintenance import checkpoint_state
+                    from runtime_errors import RuntimeFailure
 
                     checkpointed = 0
+                    warnings = []
                     if args.component is None:
                         require_stopped(state, config, sys.modules[__name__])
-                        checkpointed = checkpoint_state(state)
-                    result = {"ok": True, "checkpointed_databases": checkpointed}
+                        try:
+                            checkpointed = checkpoint_state(state)
+                        except RuntimeFailure as exc:
+                            if str(exc) != "database_inspection_unavailable_install_lsof":
+                                raise
+                            warnings.append("checkpoint_skipped_database_inspection_unavailable")
+                    result = {
+                        "ok": True,
+                        "checkpointed_databases": checkpointed,
+                        "warnings": warnings,
+                    }
                 elif args.action in ("status", "doctor"):
                     result = diagnostics(state, config)
                 elif args.action == "ui":

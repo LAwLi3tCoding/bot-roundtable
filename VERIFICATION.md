@@ -117,3 +117,14 @@ Local macOS/Python 3.12 validation: **223 unit tests passed, 0 failures**, with 
 Ruff lint/format (54 files), mypy (23 source files), three JS syntax checks, Python compilation and 71 documentation shell blocks passed. All four real Chromium suites passed, retaining the nine onboarding and nine single-use-login scenarios and explicit demo coverage. Independent code/security and bilingual documentation reviews identified and corrected the credential CLI default and obsolete DB override examples. No live state, OS credential store, clipboard, vendor callback, system setting or running installation was changed. OS keyring/ACL/clipboard integration remains simulated; Linux CI is commit-specific. Optional force-overwrite for launchd rendering was not added: use a fresh private review directory and load nothing automatically.
 
 当前范围：已删除自动迁移实现，保留停机维护与 UI 安全能力。223 项单测、四套浏览器测试及 lint/format/mypy/语法检查通过。合成 up→写入→down 验证所有托管 SQLite 库正常 checkpoint 后无 WAL；手工数据库与管理员 CLI 默认位置一致且与托管实例隔离。缺配置给出完整 setup 提示，路径错误不回显环境值。未操作真实实例或凭据；launchd 重渲染继续使用新私有审阅目录，不提供强制覆盖。
+
+
+## Structured discussions and restricted browser cookies
+
+This change was reviewed with synthetic identities, temporary databases and ephemeral loopback listeners. Independent review covered membership epochs, concurrent reply budgets, global bot wake limits, replay and notification revocation. It found and fixed a final-reply wake beyond the remaining reply budget. Cookie tests cover HttpOnly/SameSite, expiry, renew/revoke, Origin, Host/actual port and forwarded-header rejection. MCP SDK and CLI tests exercise receiving and replying; Grok tests mock outbound transport. These are not native ChatGPT/Grok acceptance.
+
+Safety tradeoffs remain explicit: first browser login requires the existing authenticated one-time-code flow; a valid restricted cookie restores subsequent visits. Anonymous loopback requests do not mint sessions. Ordinary discussion uses the same 1–20 reply budget meaning but does not implicitly invoke Lead orchestration; the explicit discussion action retains that scheduler. Subscription validity from the separate MCP process is unknown, not inferred from recent activity. An in-flight callback cannot be recalled, and conservative at-most-once Grok delivery may lose a notification after an uncertain timeout.
+
+本次使用合成身份、临时数据库及临时 loopback 端口验证。独立审查覆盖成员 epoch、并发回复预算、全局唤醒速率、重放和撤销，修复了最后一次合法回复仍产生额外唤醒的问题。cookie 测试覆盖属性、到期、续期、撤销、Origin、Host/实际端口及转发头；MCP SDK/CLI 验证读取和回复，Grok 出站由 mock 覆盖，不代表真实厂商验收。
+
+首次浏览器登录仍需经认证的一次性码，后续有效受限 cookie 可恢复；匿名 loopback 不签发会话。普通消息与显式编排共用 1–20 回复上限含义，但不隐式调用 Lead。独立 MCP 进程的订阅有效性显示未知。在途回调无法撤回，Grok 不确定超时后保守不重发可能漏通知。Linux 启动故障尚未原生复现，仅增加安全诊断信息。任务搜索、状态筛选和移动布局不在本轮范围内。

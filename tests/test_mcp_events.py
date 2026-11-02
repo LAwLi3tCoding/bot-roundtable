@@ -452,7 +452,10 @@ class EventsFixture(unittest.TestCase):
                     headers=headers,
                     json={"jsonrpc": "2.0", "id": 2, "method": "events/list", "params": {}},
                 )
-                self.assertEqual(len(result.json()["result"]["events"]), 2)
+                self.assertEqual(
+                    {event["name"] for event in result.json()["result"]["events"]},
+                    {"handoff.available", "task.updated", "message.mentioned"},
+                )
                 result = await client.post(
                     url,
                     headers=headers,

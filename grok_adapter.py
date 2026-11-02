@@ -85,6 +85,18 @@ class GrokWebhook:
         )
         return {"accepted": True, "task_id": task_id, "status": status}
 
+    def dispatch_mention(self, message_id, *, cancelled=None, state=None, transport=None):
+        """Send a scoped wake hint; routine must fetch authorized message contents."""
+        if type(message_id) is not int or not 0 < message_id < 2**63:
+            raise ValueError("Invalid mention message ID")
+        self._post(
+            json.dumps({"event": "message.mentioned", "message_id": message_id}).encode(),
+            cancelled,
+            state,
+            transport,
+        )
+        return {"accepted": True, "message_id": message_id}
+
     def _post(self, payload: bytes, cancelled=None, state=None, transport=None) -> None:
         config = transport if transport is not None else self.preflight()
         proxy = config.proxy

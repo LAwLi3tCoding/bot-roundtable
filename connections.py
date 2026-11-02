@@ -38,14 +38,59 @@ class Connections:
         }
 
     def status(self, room):
-        return [
-            dict(row) | {"vendor_account_verified": False}
+        result = []
+        with self.store.lock:
             for row in self.store.db.execute(
-                "SELECT a.id,COALESCE(b.name,a.id) AS name,a.kind,p.observed,p.nonce FROM agents a LEFT JOIN bots b ON b.id=a.id LEFT JOIN connection_probes p "
+                "SELECT a.id,a.token,COALESCE(b.name,a.id) AS name,a.kind,p.observed,p.nonce FROM agents a LEFT JOIN bots b ON b.id=a.id LEFT JOIN connection_probes p "
                 "ON p.room=a.room AND p.agent=a.id AND p.epoch=a.token WHERE a.room=?",
                 (room,),
-            )
-        ]
+            ):
+                value = dict(row)
+                epoch = value.pop("token")
+                task_events = self.store.db.execute(
+                    "SELECT e.kind,e.created FROM task_events e JOIN tasks t ON t.id=e.task "
+                    "JOIN assignments a ON a.id=e.assignment WHERE t.room=? AND a.worker=? "
+                    "AND a.epoch=? AND e.actor=? AND e.kind IN ('claimed','completed','failed','progress') ORDER BY e.id DESC",
+                    (room, row["id"], epoch, "bot:" + row["id"]),
+                ).fetchall()
+                last_claim = next(
+                    (event["created"] for event in task_events if event["kind"] == "claimed"), None
+                )
+                replies = [event["created"] for event in task_events if event["kind"] != "claimed"]
+                message = self.store.db.execute(
+                    "SELECT MAX(created) FROM discussion_messages WHERE room=? AND sender=? AND sender_epoch=?",
+                    (room, "bot:" + row["id"], epoch),
+                ).fetchone()[0]
+                if message is not None:
+                    replies.append(message)
+                last_reply = max(replies, default=None)
+                activity = [
+                    stamp
+                    for stamp in (value["observed"], last_claim, last_reply)
+                    if stamp is not None
+                ]
+                last_activity = max(activity, default=None)
+                expires = last_activity + 120 if last_activity is not None else None
+                value.update(
+                    protocol_state=(
+                        "unknown"
+                        if expires is None
+                        else "recent"
+                        if time.time() <= expires
+                        else "stale"
+                    ),
+                    activity_ttl_seconds=120,
+                    activity_expires_at=expires,
+                    vendor_account_verified=False,
+                    last_claim=last_claim,
+                    last_reply=last_reply,
+                    last_activity=max(activity, default=None),
+                    subscription_state="unknown",
+                    subscription_evidence="separate-mcp-process",
+                    activity_evidence="current-scoped-credential",
+                )
+                result.append(value)
+        return result
 
 
 def capabilities(worker=None):

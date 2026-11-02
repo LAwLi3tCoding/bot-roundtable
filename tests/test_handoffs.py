@@ -68,6 +68,32 @@ class HandoffTests(unittest.TestCase):
             ),
         )
 
+    def test_system_lifecycle_notices_never_emit_mention_wakes(self):
+        cursor = self.h.event_feed(
+            self.rid,
+            "bot:worker-one",
+            {"name": "message.mentioned", "arguments": {}, "after": None},
+        )["cursor"]
+        task = self.create(assignments=[dict(worker="worker-one", instruction="Synthetic")])
+        claim = self.claim(task)
+        self.report(claim)
+        notices = self.store.discussions.listing(self.rid)
+        self.assertEqual(len(notices), 3)
+        self.assertEqual({row["sender"] for row in notices}, {"system"})
+        for kind in ("delegated", "claimed", "completed"):
+            self.assertTrue(any(row["notice"]["kind"] == kind for row in notices))
+        self.assertEqual(
+            self.store.discussions.inbox(self.rid, "bot:worker-one", {})["messages"], []
+        )
+        self.assertEqual(
+            self.h.event_feed(
+                self.rid,
+                "bot:worker-one",
+                {"name": "message.mentioned", "arguments": {}, "after": cursor},
+            )["events"],
+            [],
+        )
+
     def test_lead_origin_independent_assignments_progress_and_fanin(self):
         with self.assertRaises(Problem):
             self.store.start(self.rid, "old discussion", ["worker-one"], 3, "old", actor=self.actor)

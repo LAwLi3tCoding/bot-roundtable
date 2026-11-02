@@ -307,3 +307,9 @@ Issues and PRs are welcome. Describe the problem, reproduction steps, expected b
 License: [MIT](LICENSE). Copyright (c) 2026 LAwLi3tCoding.
 
 Thanks to the MCP Python SDK community for its protocol implementation, and to the maintainers of Python, SQLite, Playwright, Ruff, and mypy. Product names such as Grok and ChatGPT Dot describe integration targets, not official affiliation or certification.
+
+### Local session security boundary
+
+This version retains the one-time credential bootstrap through `local_runtime.py ui`. It does not mint sessions based solely on loopback, Host and Origin, which cannot rule out a transparent local proxy. Restricted HttpOnly cookie renewal and revocation are available without enabling new security settings on real installations. Unauthenticated homepage login still requires an OS-authenticated bootstrap or an explicit product security decision; see [local sessions](docs/LOCAL_SESSION.en.md).
+
+For daily access, use the clickable “Open Roundtable” app to authenticate and open the page without handling login codes. See the [one-time launcher generation guide](docs/LOCAL_SESSION.en.md).

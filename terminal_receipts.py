@@ -95,6 +95,19 @@ def private_ledger(path):
         os.close(fd)
 
 
+class MentionAdapter(GrokWebhook):
+    """Reuse the same bounded transport and durable reservation path for wake hints."""
+
+    def __init__(self, adapter):
+        self.adapter = adapter
+
+    def preflight(self):
+        return self.adapter.preflight()
+
+    def dispatch_terminal(self, task_id, status, **kwargs):
+        return self.adapter.dispatch_mention(int(task_id, 16), **kwargs)
+
+
 class TerminalReceipts:
     def __init__(self, path, delivery_timeout=20, stop=None):
         self.stop = stop
@@ -111,6 +124,15 @@ class TerminalReceipts:
 
     def close(self):
         self.db.close()
+
+    def send_mention(self, scope, message_id, adapter):
+        if type(message_id) is not int or not 0 < message_id < 2**63:
+            raise ValueError("Invalid mention message ID")
+        return self.send(
+            "mention:" + scope,
+            {"id": format(message_id, "024x"), "status": "completed"},
+            MentionAdapter(adapter),
+        )
 
     def send(self, scope, task, adapter):
         """Task must be freshly obtained through an authorized scoped query."""
@@ -246,10 +268,64 @@ class TerminalWorker:
             cursor = ledger.db.execute(
                 "SELECT position FROM terminal_cursor WHERE scope=?", (key,)
             ).fetchone()[0]
+            mention_key = "mention:" + key
+            mention_enabled = (
+                source.execute(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('discussion_messages','discussion_mentions')"
+                ).fetchone()[0]
+                == 2
+            )
+            mention_current = (
+                source.execute("SELECT COALESCE(MAX(id),0) FROM discussion_messages").fetchone()[0]
+                if mention_enabled
+                else 0
+            )
+            with ledger.db:
+                ledger.db.execute(
+                    "INSERT OR IGNORE INTO terminal_cursor VALUES(?,?)",
+                    (mention_key, mention_current),
+                )
+            mention_cursor = ledger.db.execute(
+                "SELECT position FROM terminal_cursor WHERE scope=?", (mention_key,)
+            ).fetchone()[0]
             self.failed = False
             self.health = {"state": "running", "reason": "", "retry_seconds": 0}
             self.ready.set()
             while not self.stop_event.is_set():
+                mentions = (
+                    source.execute(
+                        "SELECT n.message FROM discussion_mentions n JOIN agents a "
+                        "ON a.room=n.room AND a.id=n.bot AND a.token=n.epoch "
+                        "WHERE n.room=? AND n.bot=? AND n.message>? AND NOT EXISTS (SELECT 1 FROM discussion_messages m JOIN discussion_messages root ON CAST(root.id AS TEXT)=m.root WHERE m.id=n.message AND root.closed IS NOT NULL) ORDER BY n.message LIMIT 100",
+                        (self.room, self.origin, mention_cursor),
+                    ).fetchall()
+                    if mention_enabled
+                    else []
+                )
+                for mention in mentions:
+                    if self.stop_event.is_set():
+                        break
+                    # Recheck each item after any preceding network wait; an in-flight
+                    # request cannot be recalled, but queued revoked work is skipped.
+                    current_mention = source.execute(
+                        "SELECT 1 FROM discussion_mentions n JOIN agents a "
+                        "ON a.room=n.room AND a.id=n.bot AND a.token=n.epoch "
+                        "WHERE n.room=? AND n.bot=? AND n.message=? AND NOT EXISTS (SELECT 1 FROM discussion_messages m JOIN discussion_messages root ON CAST(root.id AS TEXT)=m.root WHERE m.id=n.message AND root.closed IS NOT NULL)",
+                        (self.room, self.origin, mention["message"]),
+                    ).fetchone()
+                    result = (
+                        ledger.send_mention(key, mention["message"], self.adapter)
+                        if current_mention
+                        else {"attempted": False}
+                    )
+                    if result.get("outcome") == "definitely_not_sent" and not result["attempted"]:
+                        raise OutboundConfigurationError(result["reason"])
+                    mention_cursor = mention["message"]
+                    with ledger.db:
+                        ledger.db.execute(
+                            "UPDATE terminal_cursor SET position=? WHERE scope=?",
+                            (mention_cursor, mention_key),
+                        )
                 rows = source.execute(
                     "SELECT e.id AS event_id,e.kind,t.id,t.status,t.room,t.origin,"
                     "t.origin_epoch=a.token AS epoch_valid FROM task_events e "
