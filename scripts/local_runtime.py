@@ -1,7 +1,7 @@
 """Private, isolated local instance lifecycle. Never manages an unowned service."""
 
 import argparse
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 import getpass
 import hashlib
 import http.client
@@ -45,7 +45,7 @@ MANAGED = (*COMPONENTS, "caffeinate")
 CHILDREN = {}
 
 
-Failure = CredentialError
+from runtime_errors import RuntimeFailure as Failure  # noqa: E402
 
 
 def private_dir(path):
@@ -163,17 +163,13 @@ def load(state):
 def setup(state, args):
     with locked(state):
         if (state / "instance.json").exists():
-            load(state)
+            config = load(state)
+            room_repair = repair_room_env(state, config)
             return {
+                "room_env": room_repair,
                 "ok": True,
                 "already_configured": True,
-                "next_steps": [
-                    "up.sh --without-tunnel",
-                    "local_runtime.py ui",
-                    "save-runtime-key.sh",
-                    "up.sh",
-                    "local_runtime.py doctor",
-                ],
+                "next_steps": next_steps(state),
             }
         if list(p for p in state.iterdir() if p.name != ".lock"):
             raise Failure("incomplete_or_foreign_instance_use_new_empty_directory")
@@ -293,13 +289,7 @@ def setup(state, args):
             "ok": True,
             "already_configured": False,
             "services_running": False,
-            "next_steps": [
-                "up.sh --without-tunnel",
-                "local_runtime.py ui",
-                "save-runtime-key.sh",
-                "up.sh",
-                "local_runtime.py doctor",
-            ],
+            "next_steps": next_steps(state),
         }
 
 
@@ -798,6 +788,7 @@ def diagnostics(state, config):
         "server_url": f"http://127.0.0.1:{config['server_port']}",
         "mcp_url": f"http://127.0.0.1:{config['mcp_port']}/mcp",
         "components": {},
+        "admin_environment_override_active": bool(os.environ.get("ROUNDTABLE_ADMIN_TOKEN")),
         "ambient_proxy_present": any(os.environ.get(k) for k in AMBIENT),
         "explicit_proxy_configured": bool(config["proxy"]),
         "events_enabled": config["events"],
@@ -991,37 +982,149 @@ def preflight_tunnel(state):
         raise Failure("tunnel_id_placeholder")
 
 
-def open_ui(state, config):
-    if sys.platform != "darwin":
+def open_ui(state, config, copy_token=False):
+    if copy_token:
+        choices = (
+            [["pbcopy"]]
+            if sys.platform == "darwin"
+            else [["clip.exe"]]
+            if sys.platform == "win32"
+            else [["wl-copy"], ["xclip", "-selection", "clipboard"]]
+        )
+        command = next((cmd for cmd in choices if shutil.which(cmd[0])), None)
+        if not command:
+            return {
+                "ok": False,
+                "clipboard_copied": False,
+                "reason": "clipboard_unavailable_use_private_credential_manager",
+                "credential_record": str(state / "admin.json"),
+            }
+        token = get_admin_token(state)
+        subprocess.run(
+            command,
+            input=token.encode("utf-16le" if sys.platform == "win32" else "utf-8"),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=True,
+            timeout=5,
+        )
         return {
             "ok": True,
-            "clipboard_copied": False,
-            "next": "Open the loopback UI and use your approved local credential manager; no token is displayed.",
+            "clipboard_copied": True,
+            "clipboard_notice": "Clipboard may retain or sync secrets; clear after use.",
         }
+    # Issuance itself requires the persistent admin credential, even on loopback.
+    if sys.platform == "win32":
+        return {"ok": False, "reason": "windows_manager_unsupported_use_ui_copy_token"}
     if not owned(state, config, "server") or not ready(state, config, "server"):
         raise Failure("owned_server_not_ready")
-    token = get_admin_token(state)
-    subprocess.run(
-        ["pbcopy"],
-        input=token.encode(),
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=True,
-        timeout=5,
+    binary = (
+        "open"
+        if sys.platform == "darwin"
+        else "rundll32.exe"
+        if sys.platform == "win32"
+        else "xdg-open"
+    )
+    if not shutil.which(binary):
+        return {
+            "ok": False,
+            "reason": "browser_launcher_unavailable_use_ui_copy_token",
+            "credential_record": str(state / "admin.json"),
+        }
+    grant = request(config["server_port"], "/api/ui-login/issue", get_admin_token(state), {})
+    code = grant.get("code", "")
+    if not re.fullmatch(r"[A-Za-z0-9_-]{43}", code):
+        raise Failure("ui_login_issue_invalid")
+    url = f"http://127.0.0.1:{config['server_port']}/#roundtable-login={code}"
+    command = (
+        [binary] + (["url.dll,FileProtocolHandler"] if sys.platform == "win32" else []) + [url]
     )
     subprocess.run(
-        ["open", f"http://127.0.0.1:{config['server_port']}"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=True,
-        timeout=5,
+        command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True, timeout=5
     )
-    return {
-        "ok": True,
-        "clipboard_copied": True,
-        "opened": True,
-        "clipboard_notice": "Clipboard may be retained or synced; paste only into the local UI and clear it when finished.",
-    }
+    return {"ok": True, "opened": True, "one_time_login": True, "expires_in": grant["expires_in"]}
+
+
+def next_steps(state):
+    import shlex
+
+    python = shlex.quote(sys.executable)
+    script = shlex.quote(str(HOME / "scripts/local_runtime.py"))
+    selected = shlex.quote(str(state))
+    return [
+        f"{python} {script} {operation} --state-dir {selected}"
+        for operation in ("up --without-tunnel", "ui", "runtime-key", "up", "doctor")
+    ]
+
+
+def repair_room_env(state, config, rotate=False):
+    from roundtable import digest
+
+    path = state / "room.env"
+    if path.exists():
+        check_private(path)
+        return {"ok": True, "already_present": True}
+    pending = state / "room-token.pending.env"
+    candidate = None
+    if pending.exists():
+        values = env_read(pending)
+        if (
+            set(values) != {"ROUNDTABLE_ROOM", "ROUNDTABLE_ROOM_TOKEN"}
+            or values.get("ROUNDTABLE_ROOM") != config["room"]
+            or not re.fullmatch(r"[A-Za-z0-9_-]{43}", values.get("ROUNDTABLE_ROOM_TOKEN", ""))
+        ):
+            raise Failure("invalid_pending_room_token_binding")
+        candidate = values["ROUNDTABLE_ROOM_TOKEN"]
+    for name in () if candidate else ("recovery.json", "admin.json"):
+        if (state / name).exists():
+            record = read_json(state / name)
+            candidate = record.get("room_token") or (
+                record.get("token") if record.get("id") == config["room"] else None
+            )
+            if candidate:
+                break
+    with closing(sqlite3.connect((state / "roundtable.db").as_uri() + "?mode=ro", uri=True)) as db:
+        row = db.execute("SELECT token FROM rooms WHERE id=?", (config["room"],)).fetchone()
+    if not row:
+        raise Failure("room_not_found")
+    if candidate and digest(candidate) == row[0]:
+        env_save(path, {"ROUNDTABLE_ROOM": config["room"], "ROUNDTABLE_ROOM_TOKEN": candidate})
+        pending.unlink(missing_ok=True)
+        return {"ok": True, "recovered": True}
+    if not rotate:
+        return {
+            "ok": False,
+            "reason": "room_token_hash_not_reversible_use_repair_room_env_rotate_room_token",
+        }
+    from state_migration import require_stopped
+
+    require_stopped(state, config, sys.modules[__name__])
+    if not pending.exists():
+        candidate = secrets.token_urlsafe(32)
+        env_save(pending, {"ROUNDTABLE_ROOM": config["room"], "ROUNDTABLE_ROOM_TOKEN": candidate})
+    else:
+        candidate = env_read(pending)["ROUNDTABLE_ROOM_TOKEN"]
+    with closing(sqlite3.connect(state / "roundtable.db")) as db, db:
+        db.execute("UPDATE rooms SET token=? WHERE id=?", (digest(candidate), config["room"]))
+    # A crash after the DB commit leaves a private recoverable pending token.
+    os.replace(pending, path)
+    return {"ok": True, "rotated_room_owner": True, "previous_room_owner_revoked": True}
+
+
+def approve_routine(state, config):
+    if (state / "routine.json").exists():
+        raise Failure("routine_already_configured")
+    from state_migration import require_stopped
+    from grok_adapter import GrokWebhook
+
+    require_stopped(state, config, sys.modules[__name__])
+    record = read_json(state / "routine.pending.json")
+    env = record.get("environment", {})
+    if set(env) != {"GROK_ROUTINE_URL", "GROK_ROUTINE_KEY", "GROK_ALLOWED_HOST"}:
+        raise Failure("invalid_routine_environment")
+    GrokWebhook(env["GROK_ROUTINE_URL"], env["GROK_ROUTINE_KEY"], env["GROK_ALLOWED_HOST"])
+    write_json(state / "routine.json", {"explicit_opt_in": True, "environment": env})
+    return {"ok": True, "approved": True, "takes_effect_on_next_start": True}
 
 
 def main():
@@ -1045,6 +1148,8 @@ def main():
             "migrate-state",
             "rebind",
             "paths",
+            "approve-routine",
+            "repair-room-env",
             "_serve",
         ],
     )
@@ -1068,6 +1173,8 @@ def main():
     parser.add_argument("--host")
     parser.add_argument("--output")
     parser.add_argument("--replace", action="store_true")
+    parser.add_argument("--copy-token", action="store_true")
+    parser.add_argument("--rotate-room-token", action="store_true")
     parser.add_argument("--identity")
     parser.add_argument(
         "--operation",
@@ -1220,11 +1327,22 @@ def main():
                         if component == "server":
                             stop_component(state, config, "caffeinate")
                         stop_component(state, config, component)
-                    result = {"ok": True}
+                    from state_migration import require_stopped
+                    from sqlite_snapshot import checkpoint_state
+
+                    checkpointed = 0
+                    if args.component is None:
+                        require_stopped(state, config, sys.modules[__name__])
+                        checkpointed = checkpoint_state(state)
+                    result = {"ok": True, "checkpointed_databases": checkpointed}
                 elif args.action in ("status", "doctor"):
                     result = diagnostics(state, config)
                 elif args.action == "ui":
-                    result = open_ui(state, config)
+                    result = open_ui(state, config, args.copy_token)
+                elif args.action == "approve-routine":
+                    result = approve_routine(state, config)
+                elif args.action == "repair-room-env":
+                    result = repair_room_env(state, config, args.rotate_room_token)
                 elif args.action == "rotate-admin-token":
                     if any(owned(state, config, c) for c in MANAGED):
                         raise Failure("stop_instance_before_admin_rotation")

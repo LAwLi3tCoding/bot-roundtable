@@ -9,17 +9,19 @@ const roomTokens = new Map();
 const roomPreviews = new Map();
 const credentialKey = 'roundtable-access-v1';
 const canStoreCredentials = location.hostname === '127.0.0.1';
-let authGeneration = 0;
+let authGeneration = 0, temporarySession = false;
 function clearStoredCredentials() {
  for (const kind of ['sessionStorage','localStorage']) storage(kind,'removeItem',credentialKey);
 }
 function saveAccess() {
  clearStoredCredentials();
  if (!canStoreCredentials || (!adminToken && !roomTokens.size)) return;
- const kind = $('remember-access').checked ? 'localStorage' : 'sessionStorage';
- storage(kind,'setItem',credentialKey,JSON.stringify({admin:adminToken,rooms:[...roomTokens]}));
+ const kind = !temporarySession && $('remember-access').checked ? 'localStorage' : 'sessionStorage';
+ storage(kind,'setItem',credentialKey,JSON.stringify({admin:adminToken,rooms:[...roomTokens],lastRoom:active?.id||'',temporary:temporarySession}));
 }
 function forgetAccess() {
+ if(temporarySession&&adminToken)void fetch('/api/ui-login/revoke',{method:'POST',headers:{Authorization:`Bearer ${adminToken}`,'Content-Type':'application/json'},body:'{}'}).catch(()=>{});
+ temporarySession=false;$('remember-access').disabled=!canStoreCredentials;
  authGeneration++; refreshGeneration++; refreshing=false;
  clearStoredCredentials(); adminToken='';roomTokens.clear();roomPreviews.clear();
  active=null;state=null;rooms=[];bots=[];selected.clear();threadId='';
@@ -43,13 +45,31 @@ async function restoreAccess() {
    adminToken=saved.admin;rooms=listed;bots=known;
   }else{
    const pair=saved.rooms[0];
-   if(!pair||!/^[a-f0-9]{24}$/.test(pair[0])||typeof pair[1]!=='string')throw new Error('invalidAccess');
+   if(!pair||!/^[a-f0-9]{24}$/.test(pair[0])||typeof pair[1]!=='string'||/^ui_[A-Za-z0-9_-]{43}$/.test(pair[1]))throw new Error('invalidAccess');
    const data=await api(`/api/rooms/${pair[0]}`,pair[1]);
    if(epoch!==authGeneration)return;
    roomTokens.set(pair[0],pair[1]);rooms=[data.room];
   }
-  $('remember-access').checked=Boolean(persistent);renderNavigation();
-  if(rooms.length)await selectRoom(rooms[0]);
+  temporarySession=/^ui_[A-Za-z0-9_-]{43}$/.test(saved.admin);$('remember-access').disabled=temporarySession||!canStoreCredentials;
+  $('remember-access').checked=Boolean(persistent)&&!temporarySession;renderNavigation();
+  if(rooms.length)await selectRoom(rooms.find(room=>room.id===saved.lastRoom)||rooms[0]);
+ }catch(error){if(epoch===authGeneration){forgetAccess();setError(error);}}
+}
+async function startAccess() {
+ const fragment=new URLSearchParams(location.hash.slice(1));
+ if(!fragment.has('roundtable-login'))return restoreAccess();
+ const code=fragment.get('roundtable-login');
+ history.replaceState(null,'',location.pathname+location.search);
+ forgetAccess();const epoch=authGeneration;
+ try{
+  if(!canStoreCredentials)throw new Error('needConnection');
+  const granted=await api('/api/ui-login/exchange','',{code});
+  if(epoch!==authGeneration)return;
+  const [listed,known]=await Promise.all([api('/api/rooms',granted.session_token),api('/api/bots',granted.session_token)]);
+  if(epoch!==authGeneration)return;
+  adminToken=granted.session_token;temporarySession=true;rooms=listed;bots=known;
+  $('remember-access').disabled=true;$('remember-access').checked=false;
+  saveAccess();renderNavigation();if(rooms.length)await selectRoom(rooms[0]);
  }catch(error){if(epoch===authGeneration){forgetAccess();setError(error);}}
 }
 function element(tag, className, value) { const node = document.createElement(tag); if (className) node.className = className; if (value !== undefined) node.textContent = value; return node; }
@@ -101,7 +121,7 @@ function renderNavigation() {
  $('access').textContent = adminToken ? t('ownerScope') : active ? t('roomOnly') : t('connect'); $('bot-count').textContent = bots.length;
 }
 async function reloadWorkspace() { requireAdmin(); [rooms,bots] = await Promise.all([api('/api/rooms',adminToken),api('/api/bots',adminToken)]); renderNavigation(); }
-async function selectRoom(room) { active = room; state = null; threadId = ''; selected = new Set(); document.querySelector('.app-shell').classList.add('chat-open'); renderNavigation(); await refresh(true); }
+async function selectRoom(room) { active = room; saveAccess(); state = null; threadId = ''; selected = new Set(); document.querySelector('.app-shell').classList.add('chat-open'); renderNavigation(); await refresh(true); }
 async function refresh(force = false) {
  if (!active || (refreshing && !force)) return;
  const current = active; const generation = ++refreshGeneration; refreshing = true;
@@ -171,8 +191,8 @@ $('options-open').onclick=()=>openDialog('options-dialog');
 document.querySelectorAll('.close').forEach(button=>button.onclick=()=>button.closest('dialog').close());
 $('secret-dialog').addEventListener('close',()=>{$('secrets').textContent='';});
 $('access').onclick=()=>openDialog('access-dialog');$('new-room').onclick=showCreate;$('hero-create').onclick=showCreate;
-$('access-form').onsubmit=event=>{event.preventDefault();action(async()=>{const epoch=++authGeneration;const candidate=$('admin').value;const [listed,known]=await Promise.all([api('/api/rooms',candidate),api('/api/bots',candidate)]);if(epoch!==authGeneration)return;roomTokens.clear();adminToken=candidate;$('admin').value='';rooms=listed;bots=known;saveAccess();closeDialog('access-dialog');renderNavigation();if(rooms.length)await selectRoom(rooms[0]);},$('access-dialog'));};
-$('room-connect').onclick=()=>action(async()=>{const id=$('room').value.trim();if(!/^[a-f0-9]{24}$/.test(id))throw new Error('Invalid room or agent credential');const epoch=++authGeneration;const token=$('token').value.trim();const data=await api(`/api/rooms/${id}`,token);if(epoch!==authGeneration)return;adminToken='';roomTokens.clear();roomTokens.set(id,token);rooms=[data.room];bots=[];$('token').value='';saveAccess();closeDialog('access-dialog');await selectRoom(data.room);},$('access-dialog'));
+$('access-form').onsubmit=event=>{event.preventDefault();action(async()=>{const epoch=++authGeneration;const candidate=$('admin').value;const [listed,known]=await Promise.all([api('/api/rooms',candidate),api('/api/bots',candidate)]);if(epoch!==authGeneration)return;roomTokens.clear();temporarySession=/^ui_[A-Za-z0-9_-]{43}$/.test(candidate);$('remember-access').disabled=temporarySession||!canStoreCredentials;if(temporarySession)$('remember-access').checked=false;adminToken=candidate;$('admin').value='';rooms=listed;bots=known;saveAccess();closeDialog('access-dialog');renderNavigation();if(rooms.length)await selectRoom(rooms[0]);},$('access-dialog'));};
+$('room-connect').onclick=()=>action(async()=>{const id=$('room').value.trim();if(!/^[a-f0-9]{24}$/.test(id))throw new Error('Invalid room or agent credential');const epoch=++authGeneration;const token=$('token').value.trim();if(/^ui_[A-Za-z0-9_-]{43}$/.test(token))throw new Error('Invalid room or agent credential');const data=await api(`/api/rooms/${id}`,token);if(epoch!==authGeneration)return;adminToken='';temporarySession=false;$('remember-access').disabled=!canStoreCredentials;roomTokens.clear();roomTokens.set(id,token);rooms=[data.room];bots=[];$('token').value='';saveAccess();closeDialog('access-dialog');await selectRoom(data.room);},$('access-dialog'));
 $('create-form').onsubmit=event=>{event.preventDefault();action(async()=>{requireAdmin();const chosen=[...document.querySelectorAll('#create-bots input:checked')].map(n=>n.value);const room=await api('/api/rooms',adminToken,{name:$('name').value,bots:chosen});roomTokens.set(room.id,room.token);closeDialog('create-dialog');await reloadWorkspace();await selectRoom(room);showSecrets({room_id:room.id,room_token:room.token,agents:room.agent_tokens});},$('create-dialog'));};
 $('compose').onsubmit=event=>{event.preventDefault();action(async()=>{if(!$('budget').checkValidity()){openDialog('options-dialog');$('budget').focus();$('budget').reportValidity();return;}if(!selected.size)throw new Error('emptySelection');await api(roomPath('/runs'),roomAuth(),{body:$('body').value,targets:state.agents.filter(a=>selected.has(a.id)).map(a=>a.id),budget:Number($('budget').value),request_id:crypto.randomUUID()});$('body').value='';threadId='';await refresh(true);});};
 $('stop').onclick=()=>action(async()=>{await api(roomPath('/stop'),roomAuth(),{});await refresh(true);});
@@ -189,7 +209,8 @@ $('mcp-open').onclick=()=>{renderMCP();openDialog('mcp-dialog');};
 $('forget-access').onclick=forgetAccess;
 $('remember-access').onchange=saveAccess;
 $('remember-access').disabled=!canStoreCredentials;
-translate();void restoreAccess();setInterval(()=>refresh().catch(error=>setError(error)),1200);
+window.addEventListener('hashchange',()=>{if(new URLSearchParams(location.hash.slice(1)).has('roundtable-login'))void startAccess();});
+translate();void startAccess();setInterval(()=>refresh().catch(error=>setError(error)),1200);
 
 async function refreshConnections(){
  const results=$('connection-results');results.replaceChildren();

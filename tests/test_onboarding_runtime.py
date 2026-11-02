@@ -244,38 +244,38 @@ class RuntimeContracts(unittest.TestCase):
             thread.join()
             store.db.close()
 
-    def test_ui_mock_clipboard_and_open_no_secret_arguments(self):
+    def test_ui_mock_clipboard_no_secret_arguments(self):
         config = {"server_port": 12345}
+        for platform, binary in (("darwin", "pbcopy"), ("linux", "wl-copy"), ("win32", "clip.exe")):
+            with (
+                patch.object(runtime.sys, "platform", platform),
+                patch.object(runtime.shutil, "which", return_value=binary),
+                patch.object(runtime, "get_admin_token", return_value="synthetic-private-value"),
+                patch.object(runtime.subprocess, "run") as run,
+            ):
+                result = runtime.open_ui(self.state, config, copy_token=True)
+                self.assertEqual(run.call_args.args[0], [binary])
+                self.assertNotIn("synthetic-private-value", str(run.call_args.args))
+                self.assertNotIn("synthetic-private-value", json.dumps(result))
         with (
-            patch.object(runtime.sys, "platform", "darwin"),
-            patch.object(runtime, "owned", return_value=True),
-            patch.object(runtime, "ready", return_value=True),
-            patch.object(runtime, "get_admin_token", return_value="synthetic-private-value"),
-            patch.object(runtime.subprocess, "run") as run,
-        ):
-            result = runtime.open_ui(self.state, config)
-        self.assertEqual(run.call_args_list[0].args[0], ["pbcopy"])
-        self.assertEqual(run.call_args_list[0].kwargs["input"], b"synthetic-private-value")
-        self.assertEqual(run.call_args_list[1].args[0], ["open", "http://127.0.0.1:12345"])
-        self.assertNotIn("synthetic-private-value", json.dumps(result))
-        with (
-            patch.object(runtime.sys, "platform", "linux"),
+            patch.object(runtime.shutil, "which", return_value=None),
             patch.object(runtime, "get_admin_token", side_effect=AssertionError),
         ):
-            self.assertFalse(runtime.open_ui(self.state, config)["clipboard_copied"])
+            self.assertFalse(
+                runtime.open_ui(self.state, config, copy_token=True)["clipboard_copied"]
+            )
 
     def test_ui_clipboard_failure_does_not_open(self):
         with (
             patch.object(runtime.sys, "platform", "darwin"),
-            patch.object(runtime, "owned", return_value=True),
-            patch.object(runtime, "ready", return_value=True),
+            patch.object(runtime.shutil, "which", return_value="pbcopy"),
             patch.object(runtime, "get_admin_token", return_value="synthetic"),
             patch.object(
                 runtime.subprocess, "run", side_effect=subprocess.CalledProcessError(1, "pbcopy")
             ) as run,
         ):
             with self.assertRaises(subprocess.CalledProcessError):
-                runtime.open_ui(self.state, {"server_port": 12345})
+                runtime.open_ui(self.state, {"server_port": 12345}, copy_token=True)
             self.assertEqual(run.call_count, 1)
 
     def test_preflight_diagnostics(self):
@@ -391,7 +391,7 @@ class LegacyTests(unittest.TestCase):
             import_legacy(str(self.source), self.target, self.args, runtime)
         self.assertEqual(list(self.target.iterdir()), [])
 
-    def test_database_snapshot_receipts_suppressed_and_wal_refused(self):
+    def test_database_snapshot_receipts_suppressed_with_leftover_wal(self):
         from roundtable import Store, digest
         from terminal_receipts import TerminalReceipts
 
@@ -421,10 +421,6 @@ class LegacyTests(unittest.TestCase):
         )
         store.db.close()
         runtime.save(Path(str(self.source / "roundtable.db") + "-wal"), "")
-        with self.assertRaisesRegex(runtime.Failure, "quiescent"):
-            import_legacy(str(self.source), self.target, self.args, runtime)
-        self.assertEqual(list(self.target.iterdir()), [])
-        Path(str(self.source / "roundtable.db") + "-wal").unlink()
         result = import_legacy(str(self.source), self.target, self.args, runtime)
         self.assertTrue(result["history_imported"])
         adapter = Mock()

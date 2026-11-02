@@ -95,12 +95,12 @@ class SetupTests(unittest.TestCase):
         runtime.save(target, "synthetic-secret")
         link = self.state / "link"
         link.symlink_to(target)
-        with self.assertRaises(runtime.Failure):
+        with self.assertRaises(runtime.CredentialError):
             runtime.save(link, "replacement", True)
         target.chmod(0o644)
-        with self.assertRaises(runtime.Failure):
+        with self.assertRaises(runtime.CredentialError):
             runtime.private_read(target)
-        with self.assertRaises(runtime.Failure):
+        with self.assertRaises(runtime.CredentialError):
             runtime.private_dir(link)
 
     def test_hidden_key_and_routine_no_echo_or_overwrite(self):
@@ -335,7 +335,7 @@ class SetupTests(unittest.TestCase):
         log = self.state / "logs/server.log"
         log.write_text("existing")
         log.chmod(0o644)
-        with self.assertRaises(runtime.Failure):
+        with self.assertRaises(runtime.CredentialError):
             runtime.supervise(self.state, config, "server", config["identity"])
 
     def test_fake_tunnel_real_process_fifo_health_and_stop(self):

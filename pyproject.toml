@@ -8,4 +8,4 @@ select = ["E4", "E7", "E9", "F"]
 [tool.mypy]
 python_version = "3.12"
 check_untyped_defs = true
-files = ["roundtable.py", "server.py", "grok_adapter.py", "mcp_bridge.py", "mcp_http.py", "handoffs.py", "connections.py", "local_client.py", "mcp_events.py", "event_delivery.py", "terminal_receipts.py", "scripts/check.py", "scripts/admin.py", "outbound.py", "scripts/local_runtime.py", "scripts/setup-local.py", "admin_credentials.py", "scripts/legacy_import.py", "state_paths.py", "private_logs.py", "scripts/state_migration.py"]
+files = ["roundtable.py", "server.py", "grok_adapter.py", "mcp_bridge.py", "mcp_http.py", "handoffs.py", "connections.py", "local_client.py", "mcp_events.py", "event_delivery.py", "terminal_receipts.py", "scripts/check.py", "scripts/admin.py", "outbound.py", "scripts/local_runtime.py", "scripts/setup-local.py", "admin_credentials.py", "scripts/legacy_import.py", "state_paths.py", "private_logs.py", "scripts/state_migration.py", "ui_sessions.py", "sqlite_snapshot.py", "runtime_errors.py"]

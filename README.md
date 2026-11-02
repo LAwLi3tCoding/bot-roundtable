@@ -38,7 +38,7 @@
 
 ## 持久凭据与派任务入口
 
-Setup 现在保存私有管理员、群 owner 和成员凭据。macOS 启动托管服务后可运行 `local_runtime.py ui`，复制管理员凭据而不打印。网页默认 sessionStorage 刷新恢复，长期记住需主动勾选。详见[接入、轮换与旧实例导入](docs/ONBOARDING_RUNTIME.zh.md)。Grok 无需 source 秘密文件即可派任务：
+Setup 现在保存私有管理员、群 owner 和成员凭据。启动托管服务后可运行 `local_runtime.py ui`，通过短时效、单次使用的 loopback 登录码自动连接。明确使用 `ui --copy-token` 可调用平台剪贴板工具，不打印令牌。网页刷新会自动连接上次的群；长期凭据需主动勾选记住，短期 UI 会话始终仅保存在 sessionStorage。详见[接入、轮换与旧实例导入](docs/ONBOARDING_RUNTIME.zh.md)。Grok 无需 source 秘密文件即可派任务：
 
 ```sh
 .venv/bin/python scripts/local_runtime.py client --operation create <<'JSON'

@@ -11,8 +11,9 @@ import shutil
 import socket
 import stat
 
+from runtime_errors import RuntimeFailure as Failure
+
 from admin_credentials import (
-    CredentialError as Failure,
     account,
     check_private,
     private_directory,

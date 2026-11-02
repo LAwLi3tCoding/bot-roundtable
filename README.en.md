@@ -38,7 +38,7 @@ The installation maintainer reports observing Grok terminal routine receipts and
 
 ## Persistent credentials and task creation
 
-Setup now saves private admin, room-owner and member credentials. On macOS, start the managed server and run `local_runtime.py ui` to copy the admin credential without printing it. Browser access survives refresh in sessionStorage; persistent remembering is opt-in. See [onboarding, rotation and legacy import](docs/ONBOARDING_RUNTIME.en.md). Grok can create a task without sourcing any secret file:
+Setup now saves private admin, room-owner and member credentials. Start the managed server and run `local_runtime.py ui` for a single-use, short-lived loopback login. Explicit `ui --copy-token` supports platform clipboard helpers without printing tokens. Browser access reconnects to the last room after refresh; remembering long-lived credentials is opt-in, while temporary UI sessions remain session-only. See [onboarding, rotation and legacy import](docs/ONBOARDING_RUNTIME.en.md). Grok can create a task without sourcing any secret file:
 
 ```sh
 .venv/bin/python scripts/local_runtime.py client --operation create <<'JSON'

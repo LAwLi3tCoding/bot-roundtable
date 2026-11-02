@@ -205,7 +205,7 @@ class Migration(unittest.TestCase):
 
     def test_symlink_wal_and_unsafe_permissions_refused(self):
         (self.source / "extra.json").symlink_to(self.source / "instance.json")
-        with self.assertRaises(runtime.Failure):
+        with self.assertRaises(credentials.CredentialError):
             migrate_state(self.source, self.target, self.args, runtime)
         (self.source / "extra.json").unlink()
         runtime.save(self.source / "roundtable.db-wal", "")
@@ -213,7 +213,7 @@ class Migration(unittest.TestCase):
             migrate_state(self.source, self.target, self.args, runtime)
         (self.source / "roundtable.db-wal").unlink()
         (self.source / "grok.env").chmod(0o644)
-        with self.assertRaises(runtime.Failure):
+        with self.assertRaises(credentials.CredentialError):
             migrate_state(self.source, self.target, self.args, runtime)
 
     def test_partial_failure_removes_only_own_staging(self):

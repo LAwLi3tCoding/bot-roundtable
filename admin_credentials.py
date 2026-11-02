@@ -333,6 +333,11 @@ def rotate_admin_token(state, *, prefer_keyring=False, environ=None):
         require_keyring = (state / "admin.json").exists() and json.loads(
             read_private(state / "admin.json")
         ).get("backend") == "keyring"
+        old_record = (
+            json.loads(read_private(state / "admin.json"))
+            if (state / "admin.json").exists()
+            else {}
+        )
         prefer_keyring = prefer_keyring or require_keyring
         value = secrets.token_urlsafe(48)
         backend = persist(
@@ -342,7 +347,17 @@ def rotate_admin_token(state, *, prefer_keyring=False, environ=None):
             replace=(state / "admin.json").exists(),
             require_keyring=require_keyring,
         )
-    return {"ok": True, "backend": backend, "restart_required": True}
+        cleanup = "not_needed"
+        if old_record.get("backend") == "keyring":
+            old_backend = trusted_keyring()
+            try:
+                if old_backend is None:
+                    raise CredentialError("admin_keyring_unavailable")
+                old_backend.delete_password(SERVICE, old_record["account"])
+                cleanup = "deleted"
+            except Exception:
+                cleanup = "failed_manual_cleanup_required"
+    return {"ok": True, "backend": backend, "restart_required": True, "old_keyring_entry": cleanup}
 
 
 def main():

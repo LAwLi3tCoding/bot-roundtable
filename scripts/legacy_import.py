@@ -8,9 +8,9 @@ import re
 import secrets
 import shlex
 import shutil
-import sqlite3
 
-from admin_credentials import CredentialError as Failure, persist, read_private, valid_token
+from admin_credentials import persist, read_private, valid_token
+from runtime_errors import RuntimeFailure as Failure
 
 
 def parse_env(text):
@@ -85,12 +85,32 @@ def import_legacy(source_path, target, args, runtime):
         raise Failure("legacy_agent_invalid")
     admin = source.read(["admin.json", "admin.env"])
     admin_token = valid_token(field(admin, ["token", "admin_token", "ROUNDTABLE_ADMIN_TOKEN"]))
-    room = source.read(["room.json", "room.env"])
+    room = source.read(["room.json", "room.env"], required=False)
+    if not room and admin.get("room") and admin.get("room_token"):
+        room = {"room": admin["room"], "room_token": admin["room_token"]}
+    if not room:
+        raise Failure("legacy_room_missing_supply_room_env_or_admin_room_and_room_token")
     room_id = field(room, ["id", "room", "room_id", "ROUNDTABLE_ROOM"])
     room_token = valid_token(field(room, ["token", "room_token", "ROUNDTABLE_ROOM_TOKEN"]))
     if not re.fullmatch(r"[a-f0-9]{24}", room_id):
         raise Failure("legacy_room_invalid")
+    # Recognize uniquely named role files, without guessing among multiple identities.
+    roles = []
+    for selected, prefix in ((origin, "grok"), (worker, "dot")):
+        if not any((source.path / (selected + ext)).exists() for ext in (".json", ".env")):
+            candidates = sorted(
+                p.stem
+                for p in source.path.glob(prefix + "*.json")
+                if re.fullmatch(r"[a-z][a-z0-9-]{1,39}", p.stem)
+            )
+            if selected == prefix and len(candidates) == 1:
+                selected = candidates[0]
+            else:
+                raise Failure("legacy_member_missing_use_origin_and_worker_matching_file_names")
+        roles.append(selected)
+    origin, worker = roles
     members = {}
+    source_ports = set()
     for agent in (origin, worker):
         record = source.read([agent + ".json", agent + ".env"])
         if (
@@ -99,6 +119,29 @@ def import_legacy(source_path, target, args, runtime):
         ):
             raise Failure("legacy_member_scope_mismatch")
         members[agent] = valid_token(field(record, ["token", "ROUNDTABLE_TOKEN"]))
+        if record.get("ROUNDTABLE_URL"):
+            from urllib.parse import urlsplit
+
+            url = urlsplit(record["ROUNDTABLE_URL"])
+            if (
+                url.scheme != "http"
+                or url.hostname not in ("127.0.0.1", "localhost")
+                or url.username
+                or url.password
+            ):
+                raise Failure("legacy_source_url_not_loopback")
+            source_ports.add(url.port or 80)
+    import socket
+
+    for port in source_ports:
+        with socket.socket() as sock:
+            sock.settimeout(0.2)
+            if sock.connect_ex(("127.0.0.1", port)) == 0:
+                raise Failure("legacy_source_running_stop_original_service")
+    if config:
+        from state_migration import require_stopped
+
+        require_stopped(source.path, config, runtime)
     key = source.read(
         ["tunnel/runtime-key.env", "runtime-key.env", "tunnel/key.env"], required=False
     )
@@ -173,22 +216,9 @@ def import_legacy(source_path, target, args, runtime):
         old_db = source.path / "roundtable.db"
         if old_db.exists():
             runtime.check_private(old_db)
-            if any(Path(str(old_db) + suffix).exists() for suffix in ("-wal", "-journal")):
-                raise Failure("legacy_database_requires_quiescent_backup")
-            before = old_db.stat()
-            with (
-                sqlite3.connect(old_db.as_uri() + "?mode=ro&immutable=1", uri=True) as old,
-                sqlite3.connect(stage / "roundtable.db") as new,
-            ):
-                old.backup(new)
-            after = old_db.stat()
-            if any(Path(str(old_db) + suffix).exists() for suffix in ("-wal", "-journal")) or (
-                before.st_dev,
-                before.st_ino,
-                before.st_size,
-                before.st_mtime_ns,
-            ) != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns):
-                raise Failure("legacy_source_changed")
+            from sqlite_snapshot import backup_readonly
+
+            backup_readonly(old_db, stage / "roundtable.db")
         store = Store(str(stage / "roundtable.db"))
         try:
             if old_db.exists():
