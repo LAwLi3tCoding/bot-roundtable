@@ -19,6 +19,7 @@ import threading
 import socket
 import select
 from pathlib import Path
+from state_paths import state_dir
 from urllib.parse import urlsplit
 
 from outbound import outbound_diagnostics
@@ -391,7 +392,8 @@ def main():
     parser.add_argument("--worker", default="dot")
     parser.add_argument("--body", help="Context body with a positional task ID")
     parser.add_argument(
-        "--evidence", default=os.environ.get("ROUNDTABLE_EVIDENCE", "data/roundtrip.json")
+        "--evidence",
+        default=os.environ.get("ROUNDTABLE_EVIDENCE", str(state_dir() / "roundtrip.json")),
     )
     parser.add_argument("--test", action="store_true", help="Mark synthetic worker evidence")
     args = parser.parse_args()

@@ -16,6 +16,7 @@ import threading
 import logging
 import socket
 
+from state_paths import state_dir
 from grok_adapter import GrokWebhook
 from local_client import LocalClient
 from outbound import OutboundConfigurationError, OutboundNotSentError
@@ -306,7 +307,7 @@ def configured_worker(source):
         os.environ["GROK_ROUTINE_KEY"],
         os.environ["GROK_ALLOWED_HOST"],
     )
-    ledger = os.environ.get("ROUNDTABLE_TERMINAL_LEDGER", "data/terminal-receipts.db")
+    ledger = os.environ.get("ROUNDTABLE_TERMINAL_LEDGER", str(state_dir() / "terminal-receipts.db"))
     private_ledger(ledger)
     return TerminalWorker(
         source,
@@ -323,7 +324,9 @@ def main():
     parser.add_argument("--dispatch-terminal", action="store_true", required=True)
     parser.add_argument(
         "--ledger",
-        default=os.environ.get("ROUNDTABLE_TERMINAL_LEDGER", "data/terminal-receipts.db"),
+        default=os.environ.get(
+            "ROUNDTABLE_TERMINAL_LEDGER", str(state_dir() / "terminal-receipts.db")
+        ),
     )
     parser.add_argument("--wait", type=float, default=0, metavar="SECONDS")
     args = parser.parse_args()

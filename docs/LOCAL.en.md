@@ -77,3 +77,5 @@ Keep claim leases in local machine-to-machine flows: use stdin/stdout pipes or p
 Explicit outbound proxy DNS and direct-mode public IP validation are distinct trust boundaries; see [proxy setup](DOT_SETUP.en.md). No Clash or system-network changes are required.
 
 Managed `up` defaults to temporary macOS sleep assertions tied to this server instance, with `--no-caffeinate` opt-out and verified process status. Manual `start-local.sh` is unchanged. Read the [AC/lid/network limitations](SETUP_AUTOMATION.en.md); no persistent power setting is changed.
+
+[State/log locations, named instances and stopped-instance migration](STORAGE.en.md). Managed setup chooses ports automatically when omitted; use status to obtain the actual URLs rather than assuming the standalone defaults.

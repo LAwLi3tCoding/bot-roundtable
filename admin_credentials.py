@@ -77,10 +77,25 @@ def private_directory(path):
     path = Path(os.path.abspath(path))
     if any(p.is_symlink() or p.is_junction() for p in (path, *path.parents)):
         raise CredentialError("symlink_directory")
-    existed = path.exists()
-    path.mkdir(parents=True, exist_ok=True, mode=0o700)
+    missing = []
+    ancestor = path
+    while not ancestor.exists():
+        missing.append(ancestor)
+        ancestor = ancestor.parent
+    for directory in reversed(missing):
+        created = False
+        try:
+            directory.mkdir(mode=0o700)
+            created = True
+        except FileExistsError:
+            if directory.is_symlink() or directory.is_junction() or not directory.is_dir():
+                raise CredentialError("symlink_directory") from None
+        if WINDOWS:
+            windows_acl(directory, create=created)
+        elif directory.stat().st_uid != os.getuid() or directory.stat().st_mode & 0o077:
+            raise CredentialError("private_directory_required")
     if WINDOWS:
-        windows_acl(path, create=not existed)
+        windows_acl(path)
     elif path.stat().st_uid != os.getuid() or path.stat().st_mode & 0o077:
         raise CredentialError("private_directory_required")
     return path
@@ -243,8 +258,11 @@ def stored_token(state):
             raise CredentialError("admin_record_invalid")
         if record.get("backend") == "file":
             return valid_token(record.get("token"))
+        if not re.fullmatch(r"[a-f0-9]{64}", str(record.get("account_binding", account(state)))):
+            raise CredentialError("admin_record_invalid")
         if record.get("backend") != "keyring" or not re.fullmatch(
-            re.escape(account(state)) + r"(?::[a-f0-9]{16})?", str(record.get("account", ""))
+            re.escape(record.get("account_binding", account(state))) + r"(?::[a-f0-9]{16})?",
+            str(record.get("account", "")),
         ):
             raise CredentialError("admin_record_invalid")
         backend = trusted_keyring()
@@ -330,7 +348,9 @@ def rotate_admin_token(state, *, prefer_keyring=False, environ=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=["init", "rotate-admin-token"])
-    parser.add_argument("--state-dir", default="data/admin-credentials")
+    from state_paths import state_dir
+
+    parser.add_argument("--state-dir", default=str(state_dir() / "admin-credentials"))
     parser.add_argument(
         "--keyring", action="store_true", help="Prefer an installed trusted OS keyring"
     )

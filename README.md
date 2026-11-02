@@ -26,6 +26,16 @@
 
 安装维护者经 Grok 报告：在一次真实安装中已观察到 Grok 终态 routine 回执及到期前自动续订。本次文档更新没有独立复现这些结果，每个部署仍需核验。见[证据与限制](VERIFICATION.md#maintainer-reported-acceptance)。
 
+## 数据存放位置
+
+| 平台 | 默认状态 | 默认日志 |
+| --- | --- | --- |
+| macOS | `~/Library/Application Support/bot-roundtable/<INSTANCE_NAME>` | `~/Library/Logs/bot-roundtable/<INSTANCE_NAME>` |
+| Linux | `${XDG_STATE_HOME:-~/.local/state}/bot-roundtable/<INSTANCE_NAME>` | `<STATE_DIRECTORY>/logs` |
+| Windows | `%LOCALAPPDATA%\bot-roundtable\<INSTANCE_NAME>` | `<STATE_DIRECTORY>\logs`；不支持托管进程管理/迁移 |
+
+优先级 `--state-dir` > `ROUNDTABLE_STATE_DIR` > 平台默认，实例名默认 `default`。ROUNDTABLE_HOME 仍是代码 checkout。Setup 支持 `--name`，未显式指定时自动选空闲端口。详见[文件用途、私有权限、备份、迁移、rebind 与卸载](docs/STORAGE.zh.md)。**旧 data/local 迁移/备份前不要运行 git clean -xfd。**
+
 ## 持久凭据与派任务入口
 
 Setup 现在保存私有管理员、群 owner 和成员凭据。macOS 启动托管服务后可运行 `local_runtime.py ui`，复制管理员凭据而不打印。网页默认 sessionStorage 刷新恢复，长期记住需主动勾选。详见[接入、轮换与旧实例导入](docs/ONBOARDING_RUNTIME.zh.md)。Grok 无需 source 秘密文件即可派任务：
@@ -196,9 +206,9 @@ Events 默认关闭。批准实际 callback hostname 后，按 [Events 协议](d
 
 ```sh
 .venv/bin/python local_client.py wait '<TASK_ID>' --timeout 600
-.venv/bin/python local_client.py roundtrip --worker '<WORKER_AGENT_ID>' --timeout 600 \
-  --evidence "${ROUNDTABLE_HOME}/data/roundtrip.json"
-.venv/bin/python local_client.py doctor --evidence "${ROUNDTABLE_HOME}/data/roundtrip.json"
+.venv/bin/python local_client.py roundtrip --worker '<WORKER_AGENT_ID>' --timeout 600
+
+.venv/bin/python local_client.py doctor
 ```
 
 `wait` 超时不会取消任务。`roundtrip` 会创建一个消耗 1 单位额度的只读 nonce 回传任务；接收者只回传 nonce，不执行命令、读取文件或创建编码任务。真实账号须已连接并获授权接收。原生对话和 Events 唤醒需分别观察，不能用合成测试代替；详见 [回环与证据](docs/ROUNDTRIP.zh.md)。

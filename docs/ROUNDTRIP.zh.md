@@ -6,8 +6,8 @@
 
 ```sh
 "${ROUNDTABLE_HOME}/.venv/bin/python" "${ROUNDTABLE_HOME}/local_client.py" wait TASK_ID --timeout 600
-"${ROUNDTABLE_HOME}/.venv/bin/python" "${ROUNDTABLE_HOME}/local_client.py" roundtrip --worker dot --timeout 600 --evidence "${ROUNDTABLE_HOME}/data/roundtrip.json"
-"${ROUNDTABLE_HOME}/.venv/bin/python" "${ROUNDTABLE_HOME}/local_client.py" doctor --evidence "${ROUNDTABLE_HOME}/data/roundtrip.json"
+"${ROUNDTABLE_HOME}/.venv/bin/python" "${ROUNDTABLE_HOME}/local_client.py" roundtrip --worker dot --timeout 600
+"${ROUNDTABLE_HOME}/.venv/bin/python" "${ROUNDTABLE_HOME}/local_client.py" doctor
 ```
 
 将 `TASK_ID` 和 `dot` 替换为授权任务及已注册成员 ID。`roundtrip` 是显式写操作：
@@ -54,3 +54,5 @@ challenge 的注入 mock callback，以及模拟 Dot worker 的领取、进度�
 | 事件驱动交接 | 真实 webhook 触发 Dot，再 receive → claim → completed，并原样回传 nonce | Codex 执行、Grok routine 或其他 Bot 的自动执行 |
 
 受控实测已达到第四层，只执行只读 nonce 回传，没有命令执行、文件访问、编码任务或 Grok 终态回执。每位安装者仍需独立验收自己的账号、权限和连接；这不是通用厂商身份认证或永久在线保证。测试前确认有效订阅，避免创建一条无人接收而超时的任务。未观察到 wake 时保持未验证，不能把完成状态或本地测试自动提升为唤醒证据。新订阅不重放先前任务事件，不要重建原任务来掩盖不确定结果。
+
+默认证据为 `<STATE_DIRECTORY>/roundtrip.json`，不依赖 cwd；可用 `--evidence` 或 ROUNDTABLE_EVIDENCE 覆盖，详见[存储说明](STORAGE.zh.md)。

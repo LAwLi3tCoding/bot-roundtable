@@ -88,3 +88,9 @@ The onboarding change was checked on macOS with Python 3.12, synthetic temporary
 - `PYTHONPATH=. python tests/browser_onboarding.py`: nine real Chromium scenarios passed: default session access, refresh/task default and manual tab choice, remember/uncheck, repeated forget, room-only restoration, invalid saved access, denied storage, exact-host persistence boundary, pending-login invalidation.
 
 Windows ACL and macOS/Linux/Windows keyring paths have mock contract coverage, not native OS acceptance. Linux is also checked by repository CI; inspect the PR's exact commit result. These checks do not establish live vendor wake-up, Grok routine delivery, or Codex execution. Imported tasks are deliberately receipt-suppressed; only new tasks may produce future receipts after an operator explicitly enables a routine.
+
+## External state storage follow-up
+
+The same feature branch additionally passed 209 unit tests (0 failures), including 22 new platform-path, stopped-instance migration, parent-permission, PID/cleanup uncertainty, keyring-reference, source-swap/FIFO, partial-copy rollback, rebind, automatic-port and log-rotation contracts. Ambient proxy variables were unset and the default state path was redirected to a temporary directory for the full run; no live state was migrated or inspected.
+
+`ruff check .`, `ruff format --check .` (48 files), and `mypy` (21 source files) passed. All three browser suites above passed again, including nine onboarding scenarios; 72 shell documentation blocks passed `sh -n`. Independent migration/security and bilingual documentation reviews identified issues which were corrected before publication. Linux CI must be checked against the follow-up commit. Windows path resolution and ACL/keyring contracts remain simulated; managed migration/process supervision is POSIX-only. No launchd jobs, system proxy settings, real credentials, or running installation were changed.

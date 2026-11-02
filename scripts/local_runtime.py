@@ -36,6 +36,9 @@ from admin_credentials import (  # noqa: E402
     save_private as credential_save,
 )
 
+from state_paths import state_dir, log_dir, instance_name, path_warnings  # noqa: E402
+from private_logs import RotatingLog  # noqa: E402
+
 AMBIENT = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy")
 COMPONENTS = ("server", "mcp", "tunnel")
 MANAGED = (*COMPONENTS, "caffeinate")
@@ -122,8 +125,8 @@ def request(port, path, token="", data=None, method=None):
 
 def load(state):
     config = read_json(state / "instance.json")
-    if config.get("version") != 1 or config.get("home") != str(HOME):
-        raise Failure("instance_home_mismatch")
+    if config.get("version") != 1:
+        raise Failure("instance_schema_unsupported")
     if (state / "incomplete.json").exists():
         raise Failure("incomplete_instance_requires_operator_recovery")
     if not re.fullmatch(r"[a-f0-9]{32}", config.get("identity", "")) or not re.fullmatch(
@@ -181,11 +184,32 @@ def setup(state, args):
         ):
             raise Failure("invalid_agents_or_allowance")
         if (
-            not 1 <= args.server_port <= 65535
-            or not 1 <= args.mcp_port <= 65535
-            or args.server_port == args.mcp_port
+            args.server_port is not None
+            and not 1 <= args.server_port <= 65535
+            or args.mcp_port is not None
+            and not 1 <= args.mcp_port <= 65535
+            or (args.server_port is not None and args.server_port == args.mcp_port)
         ):
             raise Failure("invalid_ports")
+        # Pick distinct free loopback ports, without claiming another process's socket.
+        sockets = []
+        try:
+            for option in ("server_port", "mcp_port"):
+                if getattr(args, option) is None:
+                    sock = socket.socket()
+                    sock.bind(("127.0.0.1", 0))
+                    sockets.append(sock)
+                    setattr(args, option, sock.getsockname()[1])
+        finally:
+            for sock in sockets:
+                sock.close()
+        if args.server_port == args.mcp_port:
+            raise Failure("port_selection_conflict_retry_setup")
+        if (
+            not 256 <= getattr(args, "log_max_bytes", 10 * 1024 * 1024) <= 1024 * 1024 * 1024
+            or not 1 <= getattr(args, "log_backups", 3) <= 20
+        ):
+            raise Failure("invalid_log_rotation_limits")
         write_json(state / "incomplete.json", {"reason": "initialization_in_progress"})
         admin = get_admin_token(state, prefer_keyring=getattr(args, "keyring", False), environ={})
         from roundtable import Store
@@ -236,6 +260,10 @@ def setup(state, args):
                 {
                     "version": 1,
                     "home": str(HOME),
+                    "name": getattr(args, "name", None) or "default",
+                    "log_dir": str(getattr(args, "resolved_log_dir", state / "logs")),
+                    "log_max_bytes": getattr(args, "log_max_bytes", 10 * 1024 * 1024),
+                    "log_backups": getattr(args, "log_backups", 3),
                     "identity": secrets.token_hex(16),
                     "room": room["id"],
                     "origin": args.origin,
@@ -463,17 +491,19 @@ def supervise(state, config, component, identity):
         raise Failure("instance_identity_mismatch")
     os.umask(0o077)
     env = child_env(state, config, component)
-    logpath = state / (component + ".log")
-    if logpath.exists():
-        check_private(logpath)
-    fd = os.open(logpath, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW, 0o600)
+    logpath = Path(config.get("log_dir", str(state / "logs"))) / (component + ".log")
     stop = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     signal.signal(signal.SIGINT, lambda *_: stop.set())
     pipepath = state / "tunnel-log.pipe"
     source = None
     child = None
-    with os.fdopen(fd, "a") as log, selectors.DefaultSelector() as selector:
+    with (
+        RotatingLog(
+            logpath, config.get("log_max_bytes", 10 * 1024 * 1024), config.get("log_backups", 3)
+        ) as log,
+        selectors.DefaultSelector() as selector,
+    ):
         try:
             if component == "tunnel":
                 if pipepath.exists() or pipepath.is_symlink():
@@ -763,6 +793,10 @@ def stop_component(state, config, component):
 def diagnostics(state, config):
     report = {
         "ok": True,
+        "path_warnings": path_warnings(state, HOME),
+        "rebind_required": config.get("home") != str(HOME),
+        "server_url": f"http://127.0.0.1:{config['server_port']}",
+        "mcp_url": f"http://127.0.0.1:{config['mcp_port']}/mcp",
         "components": {},
         "ambient_proxy_present": any(os.environ.get(k) for k in AMBIENT),
         "explicit_proxy_configured": bool(config["proxy"]),
@@ -869,9 +903,8 @@ def render(state, output):
         data = {
             "Label": "org.roundtable." + load(state)["identity"] + "." + component,
             "ProgramArguments": [
-                sys.executable,
-                str(Path(__file__).resolve()),
-                "up",
+                "/bin/sh",
+                str(HOME / "scripts/up.sh"),
                 "--state-dir",
                 str(state),
                 "--component",
@@ -1009,15 +1042,21 @@ def main():
             "ui",
             "rotate-admin-token",
             "import-legacy",
+            "migrate-state",
+            "rebind",
+            "paths",
             "_serve",
         ],
     )
-    parser.add_argument("--state-dir", default=str(HOME / "data/local"))
+    parser.add_argument("--state-dir")
+    parser.add_argument("--name")
+    parser.add_argument("--log-max-bytes", type=int, default=10 * 1024 * 1024)
+    parser.add_argument("--log-backups", type=int, default=3)
     parser.add_argument("--origin", default="grok")
     parser.add_argument("--worker", default="dot")
     parser.add_argument("--allowance", type=int, default=20)
-    parser.add_argument("--server-port", type=int, default=8765)
-    parser.add_argument("--mcp-port", type=int, default=8766)
+    parser.add_argument("--server-port", type=int)
+    parser.add_argument("--mcp-port", type=int)
     parser.add_argument("--component", choices=MANAGED)
     parser.add_argument("--without-tunnel", action="store_true")
     parser.add_argument(
@@ -1052,12 +1091,55 @@ def main():
     args = parser.parse_args()
     try:
         os.umask(0o077)
-        state = private_dir(args.state_dir)
-        if "local-runtime" in state.parts:
-            raise Failure("legacy_runtime_directory_not_supported")
+        args.name = instance_name(args.name)
+        selected = state_dir(args.state_dir, args.name)
+        args.resolved_log_dir = log_dir(
+            selected,
+            args.name,
+            custom_state=bool(args.state_dir or os.environ.get("ROUNDTABLE_STATE_DIR")),
+        )
+        if args.action == "paths":
+            print(json.dumps({"state_dir": str(selected), "log_dir": str(args.resolved_log_dir)}))
+            return 0
+        if args.action == "migrate-state":
+            if not args.legacy_source:
+                raise Failure("migration_explicit_source_required")
+            from state_migration import migrate_state
+
+            result = migrate_state(
+                Path(args.legacy_source),
+                selected,
+                args,
+                sys.modules[__name__],
+            )
+            print(json.dumps(result))
+            return 0
+        if (
+            args.action == "setup"
+            and not (
+                args.state_dir or os.environ.get("ROUNDTABLE_STATE_DIR") or args.name != "default"
+            )
+            and not selected.exists()
+            and (HOME / "data/local").exists()
+        ):
+            raise Failure("legacy_state_detected_use_migrate_state_or_explicit_new_instance")
+        if args.action in ("status", "doctor") and not selected.exists():
+            print(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "configured": False,
+                        "path_warnings": path_warnings(selected, HOME),
+                    }
+                )
+            )
+            return 0
+        state = private_dir(selected)
         if args.action == "setup":
             result = setup(state, args)
         elif args.action == "import-legacy":
+            args.server_port = args.server_port or 8765
+            args.mcp_port = args.mcp_port or 8766
             from legacy_import import import_legacy
 
             result = import_legacy(args.legacy_source, state, args, sys.modules[__name__])
@@ -1088,7 +1170,16 @@ def main():
                             set(config["event_hosts"] + [canonical_host(args.host)])
                         )
                     write_json(state / "instance.json", config, replace=True)
-                if args.action == "up":
+                if args.action == "rebind":
+                    from state_migration import require_stopped
+
+                    require_stopped(state, config, sys.modules[__name__])
+                    config["home"] = str(HOME)
+                    write_json(state / "instance.json", config, replace=True)
+                    result = {"ok": True, "rebound": True, "rerender_launchd_required": True}
+                elif args.action == "up":
+                    if config.get("home") != str(HOME):
+                        raise Failure("code_location_changed_run_rebind")
                     if not args.without_tunnel and args.component in (None, "tunnel"):
                         preflight_tunnel(state)
                     if not config["proxy"] and any(os.environ.get(k) for k in AMBIENT):
@@ -1147,9 +1238,7 @@ def main():
                         "restart_mcp_required": True,
                     }
                 else:
-                    if not args.output:
-                        raise Failure("output_directory_required")
-                    result = render(state, args.output)
+                    result = render(state, args.output or state / "launchd")
         print(json.dumps(result))
         return 0
     except Exception as exc:

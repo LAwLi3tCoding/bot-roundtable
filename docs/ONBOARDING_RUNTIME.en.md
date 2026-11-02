@@ -4,7 +4,7 @@ Use this with the [managed setup guide](SETUP_AUTOMATION.en.md). Account configu
 
 ## Initialize and open the UI
 
-Run commands from `${ROUNDTABLE_HOME}` with its installed `.venv`. Use the same `--state-dir '<PRIVATE_INSTANCE_DIRECTORY>'` on every command when not using the default `data/local`.
+Run commands from `${ROUNDTABLE_HOME}` with its installed `.venv`. Use the same `--state-dir '<PRIVATE_INSTANCE_DIRECTORY>'` on every command when overriding the [platform default state directory](STORAGE.en.md).
 
 ```sh
 .venv/bin/python scripts/setup-local.py --origin grok --worker dot --allowance 1 \
@@ -21,7 +21,7 @@ Then edit the non-secret Tunnel ID in the generated profile, run `sh scripts/sav
 
 Standalone `server.py` now creates and reuses a private credential beside its database in `admin-credentials/admin.json`; `--admin-state '<PRIVATE_DIRECTORY>'` chooses a different location. Managed instances keep it in their state directory. Do not generate a new environment token on every launch. An explicitly supplied `ROUNDTABLE_ADMIN_TOKEN` overrides the stored value for that process only and never changes it.
 
-By default, credentials are stored in a POSIX 0700 directory / 0600 file. Windows administrator credential persistence uses a current-user-only ACL, checks it before writing, and refuses unsafe/unavailable ACL protection; Windows managed process supervision remains unsupported. Optional `--keyring` on setup or `--admin-keyring` on standalone server prefers an installed supported OS backend (macOS Keychain, Linux Secret Service, Windows Credential Manager). Install and configure the optional `keyring` package yourself if desired; see its [official documentation](https://keyring.readthedocs.io/en/latest/). Unknown/plaintext backends are not trusted. If no supported backend is available for initial creation, private-file storage is used. An existing keyring identity that becomes inaccessible fails closed rather than silently creating another credential. A keyring write error also fails closed. Keyring metadata is bound to the state path: do not move it without a deliberate credential migration.
+By default, credentials are stored in a POSIX 0700 directory / 0600 file. Windows administrator credential persistence uses a current-user-only ACL, checks it before writing, and refuses unsafe/unavailable ACL protection; Windows managed process supervision remains unsupported. Optional `--keyring` on setup or `--admin-keyring` on standalone server prefers an installed supported OS backend (macOS Keychain, Linux Secret Service, Windows Credential Manager). Install and configure the optional `keyring` package yourself if desired; see its [official documentation](https://keyring.readthedocs.io/en/latest/). Unknown/plaintext backends are not trusted. If no supported backend is available for initial creation, private-file storage is used. An existing keyring identity that becomes inaccessible fails closed rather than silently creating another credential. A keyring write error also fails closed. Keyring metadata is initially bound to the state path: managed instances can use [migrate-state](STORAGE.en.md) to retain a validated reference to the original OS entry. Standalone servers should retain their original --admin-state path or arrange a separate explicit credential migration; do not move metadata manually.
 
 Stop only the instance you intend to rotate, unset any environment override, then use:
 

@@ -26,6 +26,16 @@ Then follow [managed setup](docs/SETUP_AUTOMATION.en.md): `setup-local.py` → `
 
 The installation maintainer reports observing Grok terminal routine receipts and automatic subscription renewal before expiry in one real installation, relayed through Grok. This documentation update did not independently reproduce those results; every deployment must verify them. See [evidence and limits](VERIFICATION.md#maintainer-reported-acceptance).
 
+## Data locations
+
+| Platform | Default state | Default logs |
+| --- | --- | --- |
+| macOS | `~/Library/Application Support/bot-roundtable/<INSTANCE_NAME>` | `~/Library/Logs/bot-roundtable/<INSTANCE_NAME>` |
+| Linux | `${XDG_STATE_HOME:-~/.local/state}/bot-roundtable/<INSTANCE_NAME>` | `<STATE_DIRECTORY>/logs` |
+| Windows | `%LOCALAPPDATA%\bot-roundtable\<INSTANCE_NAME>` | `<STATE_DIRECTORY>\logs`; managed supervision/migration unsupported |
+
+`--state-dir` > `ROUNDTABLE_STATE_DIR` > platform default; name defaults to `default`. `ROUNDTABLE_HOME` remains the code checkout. Setup supports `--name` and selects free ports unless explicitly supplied. See [file inventory, private permissions, backup, migration, rebind and uninstall](docs/STORAGE.en.md). **Do not run `git clean -xfd` before migrating/backing up old `data/local`.**
+
 ## Persistent credentials and task creation
 
 Setup now saves private admin, room-owner and member credentials. On macOS, start the managed server and run `local_runtime.py ui` to copy the admin credential without printing it. Browser access survives refresh in sessionStorage; persistent remembering is opt-in. See [onboarding, rotation and legacy import](docs/ONBOARDING_RUNTIME.en.md). Grok can create a task without sourcing any secret file:
@@ -196,9 +206,9 @@ From a terminal configured with the originating member's environment:
 
 ```sh
 .venv/bin/python local_client.py wait '<TASK_ID>' --timeout 600
-.venv/bin/python local_client.py roundtrip --worker '<WORKER_AGENT_ID>' --timeout 600 \
-  --evidence "${ROUNDTABLE_HOME}/data/roundtrip.json"
-.venv/bin/python local_client.py doctor --evidence "${ROUNDTABLE_HOME}/data/roundtrip.json"
+.venv/bin/python local_client.py roundtrip --worker '<WORKER_AGENT_ID>' --timeout 600
+
+.venv/bin/python local_client.py doctor
 ```
 
 A `wait` timeout does not cancel the task. `roundtrip` creates a read-only nonce-return task costing one allowance unit. The receiver returns the nonce without running commands, reading files, or creating coding tasks. The real account must already be connected and authorized to receive it. Observe the native conversation and Events wake separately; synthetic tests cannot substitute for either. See [roundtrip evidence](docs/ROUNDTRIP.en.md).

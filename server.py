@@ -250,7 +250,11 @@ def run_ticks(store, stop, interval=0.5):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=8765)
-    parser.add_argument("--db", default="data/roundtable.db")
+    from state_paths import state_dir
+
+    parser.add_argument(
+        "--db", default=os.environ.get("ROUNDTABLE_DB", str(state_dir() / "roundtable.db"))
+    )
     parser.add_argument(
         "--admin-state", help="Private persistent administrator credential directory"
     )
@@ -258,9 +262,10 @@ def main():
         "--admin-keyring", action="store_true", help="Prefer a trusted installed OS keyring"
     )
     args = parser.parse_args()
-    from admin_credentials import get_admin_token, CredentialError
+    from admin_credentials import get_admin_token, CredentialError, private_directory
 
     try:
+        private_directory(Path(args.db).absolute().parent)
         admin = get_admin_token(
             args.admin_state or str(Path(args.db).parent / "admin-credentials"),
             prefer_keyring=args.admin_keyring,

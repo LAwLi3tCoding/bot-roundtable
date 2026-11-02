@@ -1,6 +1,6 @@
 # Managed local setup
 
-These scripts automate local identities, private files and process lifecycle. They do **not** create vendor accounts, install Tunnel, subscribe to Events, grant a bot computer permissions, or load launchd. Linux/macOS with Python 3.12/3.13 are supported; Windows process management is not implemented. Use a dedicated checkout. Do not point these scripts at an existing manually managed database or `data/local-runtime`.
+These scripts automate local identities, private files and process lifecycle. They do **not** create vendor accounts, install Tunnel, subscribe to Events, grant a bot computer permissions, or load launchd. Linux/macOS with Python 3.12/3.13 are supported; Windows process management is not implemented. Use a dedicated checkout. Do not point these scripts at an existing manually managed database without an explicit migration.
 
 For persistent administrator credentials, room.env, safe UI access, create/tasks/inbox, explicit startup diagnostics, and read-only legacy import, follow [runtime onboarding](ONBOARDING_RUNTIME.en.md). Windows credential persistence is separate from unsupported Windows process management.
 
@@ -35,7 +35,7 @@ python3.12 -m venv .venv
   --server-port '<SERVER_PORT>' --mcp-port '<MCP_PORT>'
 ```
 
-The default state directory is `data/local`, mode 0700. Initialization creates a private administrator secret, registers both bots through a temporary loopback server on an OS-assigned port, creates one room and independent `grok.env`/`dot.env` files (0600), and closes that temporary server. The origin allowance defaults to 20; use `--allowance 1` for minimal acceptance testing. The worker allowance remains zero: receiving, claiming and reporting do not need initiation allowance. No external request is made.
+The default state directory is outside the checkout and platform-specific, mode 0700; see [locations and migration](STORAGE.en.md). Use `--name <INSTANCE_NAME>` consistently for a named instance. Omit port flags to select distinct available loopback ports; explicit port flags take precedence. Initialization creates a private administrator secret, registers both bots through a temporary loopback server on an OS-assigned port, creates one room and independent `grok.env`/`dot.env` files (0600), and closes that temporary server. The origin allowance defaults to 20; use `--allowance 1` for minimal acceptance testing. The worker allowance remains zero: receiving, claiming and reporting do not need initiation allowance. No external request is made.
 
 Re-running setup verifies the completed instance and skips creation without overwriting credentials. It does not change existing ports, names or allowances. An interrupted setup refuses automatic recreation, preserving its private recovery files: inspect/recover offline, or deliberately choose a new empty instance directory with `--state-dir '<PRIVATE_INSTANCE_DIRECTORY>'`. Do not delete an active instance to resolve a configuration error. Every later command must use the same `--state-dir` when customized. Do not share one database across instances.
 
@@ -43,7 +43,7 @@ Generated `.env` files are data, never shell programs; the scripts parse them wi
 
 ## 3. Profile, hidden runtime key, and startup
 
-Edit only the non-secret Tunnel ID in `data/local/tunnel.yaml`; setup copied the official `server_urls` list with `channel: main` and the chosen MCP port. Do not replace it with obsolete singular `server_url`. Keep the `api_key` and `Authorization` fields pointing at the environment-variable references from the template; never paste real values. The manager injects the full credential only into the gateway and Tunnel child environments.
+Edit only the non-secret Tunnel ID in `<STATE_DIRECTORY>/tunnel.yaml`; setup copied the official `server_urls` list with `channel: main` and the chosen MCP port. Do not replace it with obsolete singular `server_url`. Keep the `api_key` and `Authorization` fields pointing at the environment-variable references from the template; never paste real values. The manager injects the full credential only into the gateway and Tunnel child environments.
 
 ```sh
 sh scripts/save-runtime-key.sh
@@ -109,7 +109,7 @@ sh scripts/status.sh
 
 The local owner doctor reports component running/readiness, Events enabled/approved-host count, this worker's active subscription count/earliest refresh time, Tunnel readyz, origin allowance/low warning, ambient proxy presence, and scoped roundtrip evidence. It never exposes callback URLs or keys. It is a filesystem-owner command, **not an MCP member tool**. The existing member `local_client.py doctor` remains scoped to HTTP and its evidence file; it cannot read an administrator DB.
 
-Roundtrip consumes one origin budget unit and creates one read-only nonce task; wait and task deadline use the requested timeout (integer 30–86400). Evidence remains in `data/local/roundtrip.json`. Do not edit it to claim success. Configuration → HTTP transport → native tool call → manually requested nonce → webhook-triggered nonce are distinct evidence levels. Actual native tools/manual nonce/webhook-triggered claim-and-report have been observed in one installation; **Codex execution and Grok terminal routine acceptance were not established by that test**. Synthetic tests prove neither native identity nor wake. See [roundtrip evidence](ROUNDTRIP.en.md).
+Roundtrip consumes one origin budget unit and creates one read-only nonce task; wait and task deadline use the requested timeout (integer 30–86400). Evidence remains in `<STATE_DIRECTORY>/roundtrip.json`. Do not edit it to claim success. Configuration → HTTP transport → native tool call → manually requested nonce → webhook-triggered nonce are distinct evidence levels. Actual native tools/manual nonce/webhook-triggered claim-and-report have been observed in one installation; **Codex execution and Grok terminal routine acceptance were not established by that test**. Synthetic tests prove neither native identity nor wake. See [roundtrip evidence](ROUNDTRIP.en.md).
 
 For an inherited member environment, `local_client.py task <TASK_ID>` and `context <TASK_ID> --body '<CONTEXT>'` do not wait for stdin. JSON stdin remains supported without positional task ID, with a two-second input deadline. Conflicting inputs are rejected.
 
@@ -146,3 +146,5 @@ Non-macOS platforms and machines without the binary receive an explicit skipped 
 Development tests use a **fake caffeinate executable only**. They verify argv, owned lifecycle, server exit, opt-out, unsupported/missing binaries and foreign-PID refusal; no real sleep assertion or power-setting change is part of those tests. Rendered server launchd entries call the same `up --component server` default; review or add `--no-caffeinate` before separately authorizing loading. No plist is loaded by the renderer.
 
 Optional persistent power choices are separate operator actions, not the default recommendation. `man pmset` documents `-c` as AC/charger-only and requires administrator privileges for modifications. Persistent changes can affect all applications and continue after Roundtable stops, increasing power use and heat. Before any separately approved change, record the original AC values for each setting; restore those same values afterward, rather than resetting unrelated settings. This guide provides no mutation command and the scripts never apply pmset settings.
+
+Logs are in the separate [log directory](STORAGE.en.md), rotated at 10 MiB with three backups by default. Plists use a shell wrapper rather than a fixed venv interpreter; recreating the venv at the same path does not require re-rendering.

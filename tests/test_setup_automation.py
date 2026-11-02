@@ -331,7 +331,8 @@ class SetupTests(unittest.TestCase):
         with runtime.locked(self.state), self.assertRaises(BlockingIOError):
             runtime.setup(self.state, self.args)
         config = self.setup_instance()
-        log = self.state / "server.log"
+        runtime.private_dir(self.state / "logs")
+        log = self.state / "logs/server.log"
         log.write_text("existing")
         log.chmod(0o644)
         with self.assertRaises(runtime.Failure):
@@ -372,9 +373,9 @@ s.serve_forever()
         self.assertTrue(runtime.ready(self.state, config, "tunnel"))
         runtime.stop_component(self.state, config, "tunnel")
         self.assertFalse((self.state / "tunnel-log.pipe").exists())
-        text = (self.state / "tunnel.log").read_text()
+        text = (self.state / "logs/tunnel.log").read_text()
         self.assertNotIn("synthetic-not-for-logs", text)
-        self.assertEqual((self.state / "tunnel.log").stat().st_mode & 0o777, 0o600)
+        self.assertEqual((self.state / "logs/tunnel.log").stat().st_mode & 0o777, 0o600)
 
     def test_started_marker_without_pid_blocks_restart_and_false_stop(self):
         config = self.setup_instance()

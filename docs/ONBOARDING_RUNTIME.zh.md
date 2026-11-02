@@ -4,7 +4,7 @@
 
 ## 初始化并打开网页
 
-在 `${ROUNDTABLE_HOME}` 中使用已安装依赖的 `.venv`。默认状态目录是 `data/local`；自定义时，每条命令都带同一个 `--state-dir '<PRIVATE_INSTANCE_DIRECTORY>'`。
+在 `${ROUNDTABLE_HOME}` 中使用已安装依赖的 `.venv`。默认使用[仓库外的平台状态目录](STORAGE.zh.md)；自定义时，每条命令都带同一个 `--state-dir '<PRIVATE_INSTANCE_DIRECTORY>'`。
 
 ```sh
 .venv/bin/python scripts/setup-local.py --origin grok --worker dot --allowance 1 \
@@ -21,7 +21,7 @@ Setup 持久保存管理员凭据、`room.env`（群 ID 与群 owner token）、
 
 单独运行 `server.py` 时，会在数据库旁的 `admin-credentials/admin.json` 创建并复用私有凭据；可用 `--admin-state '<PRIVATE_DIRECTORY>'` 指定位置。托管实例保存在自身状态目录。不要每次启动重新生成环境令牌。显式提供的 `ROUNDTABLE_ADMIN_TOKEN` 仅覆盖当前进程使用值，不会改写持久值。
 
-默认使用 POSIX 0700 目录、0600 文件。Windows 管理员凭据持久化使用仅当前用户 ACL，写入前检查，无法保护或权限不安全时拒绝落盘；Windows 托管进程管理尚不支持。Setup 的 `--keyring` 或独立 server 的 `--admin-keyring` 可选优先使用已安装的系统后端（macOS Keychain、Linux Secret Service、Windows Credential Manager）。如需使用，请自行安装配置可选 `keyring` 包，参阅[官方文档](https://keyring.readthedocs.io/en/latest/)。未知或明文后端不受信任。首次创建找不到支持的后端时退回安全文件；已有 keyring 身份无法读取时拒绝继续，不会静默重新生成。Keyring 写入失败也不会静默降级。Keyring 元数据绑定状态路径，不应未经明确迁移直接移动。
+默认使用 POSIX 0700 目录、0600 文件。Windows 管理员凭据持久化使用仅当前用户 ACL，写入前检查，无法保护或权限不安全时拒绝落盘；Windows 托管进程管理尚不支持。Setup 的 `--keyring` 或独立 server 的 `--admin-keyring` 可选优先使用已安装的系统后端（macOS Keychain、Linux Secret Service、Windows Credential Manager）。如需使用，请自行安装配置可选 `keyring` 包，参阅[官方文档](https://keyring.readthedocs.io/en/latest/)。未知或明文后端不受信任。首次创建找不到支持的后端时退回安全文件；已有 keyring 身份无法读取时拒绝继续，不会静默重新生成。Keyring 写入失败也不会静默降级。Keyring 元数据初始绑定状态路径，托管实例可使用 [migrate-state](STORAGE.zh.md) 保留对原系统条目的验证后引用；独立 server 应保留原 --admin-state 路径，或另行明确迁移凭据，不应手工移动元数据。
 
 只停止准备轮换的实例，移除环境覆盖后运行：
 

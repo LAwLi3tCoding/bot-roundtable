@@ -6,8 +6,8 @@ commands or chat. No secret files are parsed by these commands.
 
 ```sh
 "${ROUNDTABLE_HOME}/.venv/bin/python" "${ROUNDTABLE_HOME}/local_client.py" wait TASK_ID --timeout 600
-"${ROUNDTABLE_HOME}/.venv/bin/python" "${ROUNDTABLE_HOME}/local_client.py" roundtrip --worker dot --timeout 600 --evidence "${ROUNDTABLE_HOME}/data/roundtrip.json"
-"${ROUNDTABLE_HOME}/.venv/bin/python" "${ROUNDTABLE_HOME}/local_client.py" doctor --evidence "${ROUNDTABLE_HOME}/data/roundtrip.json"
+"${ROUNDTABLE_HOME}/.venv/bin/python" "${ROUNDTABLE_HOME}/local_client.py" roundtrip --worker dot --timeout 600
+"${ROUNDTABLE_HOME}/.venv/bin/python" "${ROUNDTABLE_HOME}/local_client.py" doctor
 ```
 
 Replace `TASK_ID` and `dot` with the authorized task and registered member ID.
@@ -64,3 +64,5 @@ contract, not real provider delivery or native wake.
 | Event-driven handoff | Real webhook triggers Dot, then receive → claim → completed with the exact nonce | Codex execution, Grok routine, or automatic execution by other bots |
 
 A controlled live test reached the fourth level using only a read-only nonce response: no command execution, file access, coding task, or Grok terminal receipt. Each installation still needs its own account/permission/connection acceptance; this is not general vendor identity authentication or permanent availability. Confirm a valid subscription before creating a task that might otherwise expire without a receiver. Keep wake unverified unless observed; completed state and local tests cannot promote themselves into wake evidence. New subscriptions do not replay earlier task events; do not recreate the original task to hide an uncertain result.
+
+Default evidence is `<STATE_DIRECTORY>/roundtrip.json`, independent of cwd. `--evidence` or ROUNDTABLE_EVIDENCE can override it; see [storage](STORAGE.en.md).
