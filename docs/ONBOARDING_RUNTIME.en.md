@@ -17,6 +17,8 @@ Setup persists administrator, room-owner (`room.env`) and separate member creden
 
 For deliberate clipboard access, use `.venv/bin/python scripts/local_runtime.py ui --copy-token`: macOS uses `pbcopy`, Linux prefers `wl-copy` then `xclip`, Windows uses `clip.exe`. The token is supplied through stdin, never printed. Without a helper, the command reports the private credential-record location, not its contents; use a trusted local credential manager. Windows managed auto-login/process supervision is unsupported. Clipboard managers and sync can retain copied tokens: clear them afterwards. Setup never copies credentials.
 
+**Which path is remembered:** opening the local address directly only shows **Connect**. A temporary session obtained through `ui` cannot use **Remember on this device** (the checkbox is disabled); after closing the tab, the one-hour expiry or a server restart, run `ui` again. To reconnect automatically across browser restarts, copy the long-lived administrator token with `ui --copy-token`, paste it under **Connect**, tick **Remember on this device**, then clear the clipboard.
+
 Then edit the non-secret Tunnel ID in the generated profile, run `sh scripts/save-runtime-key.sh`, `sh scripts/up.sh`, and `.venv/bin/python scripts/local_runtime.py doctor`. Hidden key input requires a terminal. A complete `up` checks `runtime_key_missing`, `tunnel_client_not_found`, and `tunnel_id_placeholder` before starting components. `--without-tunnel` deliberately skips those Tunnel checks. Unexpected failures show only a category and exception class, never the exception message. A syntax check does not prove runtime-key permissions or expiry.
 
 ## Persistent administrator credentials
@@ -41,7 +43,7 @@ Only on the exact `127.0.0.1` origin, access tokens default to `sessionStorage`:
 
 Storage is scoped to the browser origin, including port, but is not a vault: same-origin scripts, extensions, browser-profile backups, or another person using the profile may access it. Session restore/duplicated tabs may preserve session storage; use Forget when finished. Use a private trusted browser profile and avoid persistent storage on shared devices.
 
-A room with tasks but no discussion messages initially opens **Tasks & handoffs**. Selecting Discussion stays selected during polling. Task lifecycle details remain in the existing task view; no duplicate system messages containing leases or tokens are generated.
+Grok and Dot cooperate through task handoffs, so an empty discussion is normal. A room with tasks but no discussion messages initially opens **Tasks & handoffs**; once any discussion message exists, **Discussion** opens first and you switch manually. Selecting Discussion stays selected during polling. Task lifecycle details remain in the existing task view; no duplicate system messages containing leases or tokens are generated.
 
 ## Grok creates a task without sourcing credentials
 

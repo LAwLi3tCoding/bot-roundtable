@@ -8,6 +8,7 @@
 
 <a id="tunnel-client-install"></a>
 
+- Linux 需安装 `lsof`（如 `sudo apt install lsof`）：完整托管 `down` 用它确认数据库已关闭后再 checkpoint；macOS 自带。
 - 按 README 建立虚拟环境并安装 `requirements.lock`，运行前审阅代码。自行安装兼容的[官方 Tunnel client](https://github.com/openai/tunnel-client/releases)；下述参数/schema 对应 **0.0.19**。先检查已有版本，不重复安装。
 
 <a id="platform-tunnel-runtime-key"></a>
@@ -116,7 +117,7 @@ roundtrip 消耗一个 origin budget 单位，只创建一个只读 nonce 任务
 
 <a id="grok-routine"></a>
 
-明确批准真实 routine 后，运行 `sh scripts/set-grok-routine.sh`，隐藏输入 HTTPS URL/key，脚本验证并推导精确 host。私有显式 opt-in 配置在**下次 server 启动**启用终态 worker；保存命令不重启服务。复制样例 env 不启用外发。保留 terminal ledger：每任务最多预留一次尝试，不自动重试 uncertain。详见[回执语义](TERMINAL_RECEIPTS.zh.md)。
+明确批准真实 routine 后，运行 `sh scripts/set-grok-routine.sh`，隐藏输入 HTTPS URL/key，脚本验证并推导精确 host。私有显式 opt-in 配置在**下次 server 启动**启用终态 worker；保存命令不重启服务。复制样例 env 不启用外发。保留 terminal ledger：每任务最多预留一次尝试，不自动重试 uncertain。详见[回执语义](TERMINAL_RECEIPTS.zh.md)。已准备好私有 `routine.pending.json` 时，也可在实例停止后用 `.venv/bin/python scripts/local_runtime.py approve-routine` 明确批准，见[待审批 routine](ONBOARDING_RUNTIME.zh.md#手工转移状态与待审批-routine)；未批准的 routine 不会发送终态回执。
 
 ```sh
 sh scripts/down.sh              # 仅本实例 Tunnel → MCP → caffeinate → server

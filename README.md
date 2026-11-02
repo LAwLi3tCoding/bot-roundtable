@@ -15,7 +15,7 @@
 **前置条件**
 
 - Git，以及 Python **3.12 或 3.13**。macOS 上若都没有，先运行 `brew install python@3.12`（Homebrew），下文用 `python3.12`；使用 3.13 时改为 `python3.13`。
-- 支持 macOS 和 Linux；尚未实现 Windows 进程管理。
+- 支持 macOS 和 Linux；尚未实现 Windows 进程管理。Linux 需要先安装 `lsof`（如 `sudo apt install lsof`），托管 `down` 用它确认数据库已关闭；macOS 自带。
 - **项目放置位置：** macOS 上不要 clone 到 `~/Documents`、`~/Desktop`、`~/Downloads` 等受隐私保护的目录。Tunnel client 在项目目录中运行并读取其中的 profile，可能触发、之后又收回 macOS 文件访问授权，导致 Tunnel 悄悄中断。推荐放在普通目录，例如 `~/code/bot-roundtable`。
 
 ```sh
@@ -30,6 +30,21 @@ sh scripts/up.sh --without-tunnel # 需要代理时追加 --proxy 'http://127.0.
 ```
 
 随后按[自动配置指南](docs/SETUP_AUTOMATION.zh.md)完成 Tunnel profile、隐藏保存 runtime key 和完整 `up.sh`，再完成下列账号步骤。
+
+### 首次打开网页
+
+服务启动后运行：
+
+```sh
+.venv/bin/python scripts/local_runtime.py ui
+```
+
+- 它在默认浏览器打开一次性登录链接，登录码 60 秒内有效、只能用一次。直接打开 `http://127.0.0.1:<SERVER_PORT>` 只会显示「连接」，不会自动进群。
+- `ui` 登录是一小时的短期会话，只在当前标签页有效，「记住本机」会被禁用。过期、关闭标签页或服务重启后，再运行一次 `ui`。
+- 想以后打开页面就自动连接：运行 `.venv/bin/python scripts/local_runtime.py ui --copy-token`（令牌只进剪贴板，不打印），在「连接」里粘贴管理员凭据并勾选「记住本机」，然后清空剪贴板。共用设备不要勾选。
+- 群聊为空是正常的：Grok 和 Dot 通过任务交接协作，不在群里聊天。进度看「任务与交接」。群里已有讨论消息时页面默认打开「讨论」，需手动切到「任务与交接」。
+
+详见[本机接入与凭据恢复](docs/ONBOARDING_RUNTIME.zh.md)。升级已有安装或从旧 `data/local` 转移，见[升级与手工转移](docs/STORAGE.zh.md#升级已有安装)。
 
 ### 手动账号步骤
 

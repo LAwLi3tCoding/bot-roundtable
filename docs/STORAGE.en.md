@@ -40,14 +40,28 @@ Managed logs default to **10 MiB per file and three backups**, plus the active f
 
 Setup selects two distinct available loopback ports unless `--server-port`/`--mcp-port` is supplied. Ports are saved in `instance.json`, member URLs and the profile; status/doctor report the actual loopback URLs. Selection is a probe, not a reservation until startup: if another process wins the race, startup refuses the occupied port and never adopts/kills that process. Review the configuration or deliberately initialize another isolated instance. Standalone default ports remain 8765/8766 for compatibility; automatic selection is managed setup only.
 
+## Upgrade an existing install
+
+Always stop with the manager of the **currently running version**, then update code, then start with the new version:
+
+```sh
+sh scripts/down.sh            # stop this instance with the old version
+git pull --ff-only
+.venv/bin/python -m pip install -r requirements.lock   # only if dependencies changed
+sh scripts/up.sh              # add the original --proxy argument when required
+.venv/bin/python scripts/local_runtime.py doctor
+```
+
+If the old install keeps its state in the checkout's `data/local`, transfer it manually as below after `pull` and before `up`; otherwise the new version uses the platform default directory and does not see the old state. Keep the old directory until acceptance.
+
 ## Manually transfer a stopped instance
 
 The project provides no automatic migration/import command. An operator must review old layouts and perform a one-time transfer; no script interprets or rewrites old credentials. Do not run `git clean -xfd` before a verified private backup of old `data/`.
 
 1. Stop the source with its original manager and prevent launchd/login jobs from restarting it. Confirm server, MCP, Tunnel and descendants are stopped. Do not copy a running SQLite database.
-2. Full managed `down` checks stopped ownership, then runs `PRAGMA wal_checkpoint(TRUNCATE)` for private `*.db` files, including task, Events and receipt databases. It requires `lsof` and refuses open databases; install that tool separately if absent. Component-only shutdown does not checkpoint. For an older manager or standalone server, use SQLite maintenance tooling on the stopped source to checkpoint every database, close connections and verify no `-wal` remains. If busy/uncertain, stop and investigate; never delete a WAL to force success.
-3. Copy into a new empty private destination while preserving POSIX 0700 directories/0600 files (or reviewed current-user Windows ACLs). Reject symlinks, special files and unsafe ownership. Retain administrator, room/member credentials, databases, existing receipt ledger and approved configuration together. Do not copy transient PID/started/child/stop/health/FIFO files as active process ownership. Keep private logs separately as needed; this project performs no log relocation.
-4. Verify each copied regular file by size and SHA-256 before any intentional configuration edits. Keep manifests private; do not print credential contents. Review old schema, absolute paths, log destination, code location and profile references; there is no automatic conversion of heterogeneous legacy JSON/env layouts. Keyring references are path-bound and need separately reviewed OS credential handling, not blind metadata copying.
+2. Full managed `down` checks stopped ownership, then runs `PRAGMA wal_checkpoint(TRUNCATE)` for private `*.db` files, including task, Events and receipt databases. It requires `lsof` and refuses open databases; install that tool separately if absent. Component-only shutdown does not checkpoint. For an older manager or standalone server, use SQLite maintenance tooling on the stopped source to checkpoint every database, close connections and verify no `-wal` remains. If busy/uncertain, stop and investigate; never delete a WAL to force success. The `sqlite3` shipped with macOS enables persistent WAL, so a checkpoint may leave **zero-byte** `-wal` and `-shm` files: zero size plus `PRAGMA integrity_check` returning `ok` is normal; a non-zero `-wal` has not been written back and needs investigation.
+3. Copy into a new empty private destination while preserving POSIX 0700 directories/0600 files (or reviewed current-user Windows ACLs). Reject symlinks, special files and unsafe ownership. Retain administrator, room/member credentials, databases, existing receipt ledger and approved configuration together. Do not copy transient PID/started/child/stop/health/FIFO files as active process ownership. Keep private logs separately as needed; this project performs no log relocation. An old managed layout usually needs only: `admin.env`/`admin.json`, `room.env` (if present), each member `.env`, `runtime-key.env`, `routine.json`, `instance.json`, `tunnel.yaml`, `roundtrip.json` and the three `*.db` files.
+4. Verify each copied regular file by size and SHA-256 before any intentional configuration edits. Keep manifests private; do not print credential contents. Review old schema, absolute paths, log destination, code location and profile references; when an old `instance.json` has no `log_dir` field, logs go to `<STATE_DIRECTORY>/logs/` rather than the platform default log directory; there is no automatic conversion of heterogeneous legacy JSON/env layouts. Keyring references are path-bound and need separately reviewed OS credential handling, not blind metadata copying.
 5. Preserve callback approval, proxy and receipt history without enabling new permissions. If receipt history is missing or uncertain, keep terminal notifications disabled until reconciled; never reset the ledger to replay old tasks. Do not run old and new copies simultaneously. Use `rebind` only for an already compatible managed configuration whose checkout moved; it does not convert old layouts.
 6. Validate the new private configuration and scoped access deliberately, retain the old directory and backup until acceptance, then decide cleanup separately. The project never deletes the original or performs this transfer for you.
 
