@@ -13,7 +13,7 @@ from server import make_server
 
 class CoreTests(unittest.TestCase):
     def setUp(self):
-        self.store = Store()
+        self.store = Store(demo=True)
         self.room = self.store.room("Test")
         self.rid = self.room["id"]
 
@@ -158,11 +158,11 @@ class CoreTests(unittest.TestCase):
 
     def test_persistence_and_restart_does_not_replay(self):
         with tempfile.TemporaryDirectory() as directory:
-            store = Store(directory + "/db")
+            store = Store(directory + "/db", demo=True)
             room = store.room("Persistent")
             store.start(room["id"], "topic", ["demo-planner"], 3, "key")
             store.db.close()
-            reopened = Store(directory + "/db")
+            reopened = Store(directory + "/db", demo=True)
             reopened.authorize(room["id"], room["token"])
             self.assertEqual(reopened.state(room["id"])["runs"][0]["status"], "interrupted")
             self.assertEqual(len(reopened.state(room["id"])["messages"]), 1)
@@ -172,7 +172,7 @@ class CoreTests(unittest.TestCase):
 
 class HTTPTests(unittest.TestCase):
     def setUp(self):
-        self.store = Store()
+        self.store = Store(demo=True)
         self.server = make_server(self.store, "a" * 32, port=0)
         self.thread = threading.Thread(target=self.server.serve_forever)
         self.thread.start()

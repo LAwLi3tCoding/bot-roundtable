@@ -30,8 +30,36 @@ def text(value: Any, maximum: int = 4000) -> str:
     return value
 
 
+DEMO_BOTS = (("demo-planner", "Demo Planner"), ("demo-critic", "Demo Critic"))
+
+
+def demo_referenced(db, aid: str) -> bool:
+    """True when a demo bot is a room member or appears in any discussion/task history."""
+    return any(
+        db.execute(sql, (value,)).fetchone()
+        for sql, value in (
+            ("SELECT 1 FROM agents WHERE id=?", aid),
+            ("SELECT 1 FROM messages WHERE sender=?", aid),
+            ("SELECT 1 FROM jobs WHERE agent=?", aid),
+            ("SELECT 1 FROM assignments WHERE worker=?", aid),
+            ("SELECT 1 FROM task_events WHERE actor=?", "bot:" + aid),
+        )
+    )
+
+
+def prune_demo(db) -> dict:
+    """Delete unreferenced demo registry entries; never touches rooms or history."""
+    ids = [r[0] for r in db.execute("SELECT id FROM bots WHERE kind='demo' ORDER BY rowid")]
+    removed = [aid for aid in ids if not demo_referenced(db, aid)]
+    for aid in removed:
+        db.execute("DELETE FROM bots WHERE id=? AND kind='demo'", (aid,))
+    return {"removed": removed, "kept": [aid for aid in ids if aid not in removed]}
+
+
 class Store:
-    def __init__(self, path: str = ":memory:", timeout: float = 60):
+    def __init__(self, path: str = ":memory:", timeout: float = 60, demo: bool = False):
+        # Deterministic demo members are opt-in (server.py --demo / ROUNDTABLE_DEMO=1).
+        self.demo = demo
         self.db = sqlite3.connect(path, check_same_thread=False)
         self.db.row_factory = sqlite3.Row
         self.lock = threading.RLock()
@@ -61,7 +89,7 @@ class Store:
         self.db.execute(
             "CREATE TABLE IF NOT EXISTS bots(id TEXT PRIMARY KEY, name TEXT, kind TEXT, description TEXT)"
         )
-        for aid, name in (("demo-planner", "Demo Planner"), ("demo-critic", "Demo Critic")):
+        for aid, name in DEMO_BOTS if demo else ():
             self.db.execute(
                 "INSERT OR IGNORE INTO bots VALUES (?,?,?,?)",
                 (aid, name, "demo", "Deterministic demo / 确定性示例"),
@@ -100,7 +128,7 @@ class Store:
             self.db.execute(
                 "INSERT INTO rooms(id,token,name) VALUES (?,?,?)", (rid, digest(token), name)
             )
-            for aid in ("demo-planner", "demo-critic"):
+            for aid, _ in DEMO_BOTS if self.demo else ():
                 self.db.execute(
                     "INSERT INTO agents(room,id,kind,token) VALUES (?,?,?,?)",
                     (rid, aid, "demo", ""),
@@ -108,7 +136,7 @@ class Store:
         return dict(id=rid, token=token, name=name)
 
     def create_group(self, name: str, bots: list | None = None) -> dict:
-        if bots is None:
+        if bots is None and self.demo:
             return self.room(name)
         if (
             not isinstance(bots, list)
@@ -364,7 +392,15 @@ class Store:
                 for r in self.db.execute(
                     "SELECT *,CASE WHEN kind='demo' THEN 'demo-local' ELSE 'owner-setup-required' END AS availability FROM bots ORDER BY rowid"
                 )
+                if self.demo or r["kind"] != "demo" or self._demo_referenced(r["id"])
             ]
+
+    def _demo_referenced(self, aid: str) -> bool:
+        return demo_referenced(self.db, aid)
+
+    def prune_demo(self) -> dict:
+        with self.transaction():
+            return prune_demo(self.db)
 
     def register_bot(self, aid: str, name: str, kind: str, description: str = "") -> dict:
         import re

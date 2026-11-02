@@ -12,7 +12,7 @@
 ```sh
 "${ROUNDTABLE_HOME}/.venv/bin/python" "${ROUNDTABLE_HOME}/terminal_receipts.py" \
   TASK_ID --dispatch-terminal --wait 600 \
-  --ledger "${ROUNDTABLE_HOME}/data/terminal-receipts.db"
+  --ledger "<STATE_DIRECTORY>/terminal-receipts.db"
 ```
 
 `--wait` 默认 0，上限 86400 秒。命令通过已有认证 loopback 客户端，约每秒查询
@@ -39,7 +39,7 @@ SQLite 持久账本在网络发送之前，为每个群/任务原子预留**一�
 export ROUNDTABLE_TERMINAL_NOTIFICATIONS=1
 export ROUNDTABLE_TERMINAL_ROOM=YOUR_TEST_ROOM_ID
 export ROUNDTABLE_TERMINAL_ORIGIN=grok-origin
-export ROUNDTABLE_TERMINAL_LEDGER="${ROUNDTABLE_HOME}/data/terminal-receipts.db"
+export ROUNDTABLE_TERMINAL_LEDGER="<STATE_DIRECTORY>/terminal-receipts.db"
 # GROK_ROUTINE_URL / GROK_ROUTINE_KEY / GROK_ALLOWED_HOST 由秘密管理器提供
 "${ROUNDTABLE_HOME}/.venv/bin/python" "${ROUNDTABLE_HOME}/server.py"
 ```
@@ -60,8 +60,10 @@ socket 调用占住名额直到结束。超时或容量耗尽消耗预留、记�
 `0` 即关闭；未设置时不启动线程，也不解析 routine 配置。
 
 两种模式都读取 `ROUNDTABLE_TERMINAL_LEDGER`，默认使用工作目录下的
-`data/terminal-receipts.db`。自动和手动模式应指定同一账本的绝对路径。
+`<STATE_DIRECTORY>/terminal-receipts.db`。自动和手动模式应指定同一账本的绝对路径。
 
 回执预检发生在账本预留之前：缺少显式代理或代理配置无效时标为 `definitely_not_sent`，不消耗发送次数，worker 游标保持待处理。网络结果不确定仍保留预留且永不重放。暂态 worker 故障通过可停止的 0.1 至 30 秒指数退避恢复；认证 doctor capabilities 显示 `terminal_worker` 状态、原因码、重试秒数和 `outbound_backend` 模式，不包含 URL 或秘密。账本通过排他创建 0600 文件及 0700 新目录保护，不改变全局 umask，不覆盖旧数据或放宽已有权限。
 
 托管实例用 `sh scripts/set-grok-routine.sh` 隐藏输入 URL/key，保存私有显式 opt-in；仅下次 server 启动启用 worker，不自动重启。精确 host 从已验证 HTTPS URL 推导，样例文件不启用外发。参阅[官方 routine](https://cursor.com/help/grok-bot/routines)、[用量/价格](https://x.ai/bot)及[安全回执提示词](PROMPTS.zh.md)。
+
+STATE_DIRECTORY 按[平台存储指南](STORAGE.zh.md)解析，迁移和备份应保留同一 ledger。

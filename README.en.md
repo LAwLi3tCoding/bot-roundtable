@@ -49,6 +49,31 @@ Then follow [managed setup](docs/SETUP_AUTOMATION.en.md): `setup-local.py` → `
 
 The installation maintainer reports observing Grok terminal routine receipts and automatic subscription renewal before expiry in one real installation, relayed through Grok. This documentation update did not independently reproduce those results; every deployment must verify them. See [evidence and limits](VERIFICATION.md#maintainer-reported-acceptance).
 
+## Data locations
+
+| Platform | Default state | Default logs |
+| --- | --- | --- |
+| macOS | `~/Library/Application Support/bot-roundtable/<INSTANCE_NAME>` | `~/Library/Logs/bot-roundtable/<INSTANCE_NAME>` |
+| Linux | `${XDG_STATE_HOME:-~/.local/state}/bot-roundtable/<INSTANCE_NAME>` | `<STATE_DIRECTORY>/logs` |
+| Windows | `%LOCALAPPDATA%\bot-roundtable\<INSTANCE_NAME>` | `<STATE_DIRECTORY>\logs`; managed supervision unsupported |
+
+`--state-dir` > `ROUNDTABLE_STATE_DIR` > platform default; name defaults to `default`. `ROUNDTABLE_HOME` remains the code checkout. Setup supports `--name` and selects free ports unless explicitly supplied. See [file inventory, private permissions, backup, migration, rebind and uninstall](docs/STORAGE.en.md). **Do not run `git clean -xfd` before migrating/backing up old `data/local`.**
+
+## Persistent credentials and task creation
+
+Manual `server.py`/`start-local.sh server` use `<STATE_DIRECTORY>/manual/roundtable.db` and its adjacent admin credentials; managed instances use `<STATE_DIRECTORY>/roundtable.db`. Explicit database settings take precedence: do not point both managers at one database. No automatic state-transfer command is provided; follow [manual transfer and backup](docs/STORAGE.en.md).
+
+Setup now saves private admin, room-owner and member credentials. Start the managed server and run `local_runtime.py ui` for a single-use, short-lived loopback login. Explicit `ui --copy-token` supports platform clipboard helpers without printing tokens. Browser access reconnects to the last room after refresh; remembering long-lived credentials is opt-in, while temporary UI sessions remain session-only. See [onboarding, rotation and credential recovery](docs/ONBOARDING_RUNTIME.en.md). Grok can create a task without sourcing any secret file:
+
+```sh
+.venv/bin/python scripts/local_runtime.py client --operation create <<'JSON'
+{"title":"Read-only check","context":"Authorized project only.","assignments":[{"worker":"dot","instruction":"Report status without changes."}],"budget":1,"timeout_seconds":600,"request_id":"read-only-check-001"}
+JSON
+.venv/bin/python scripts/local_runtime.py client --operation tasks
+.venv/bin/python scripts/local_runtime.py client --operation inbox
+```
+
+
 ## Why Roundtable
 
 Roundtable is a communication and coordination layer for existing bots. An origin delegates work to other room members; each receiver works in its own authorized environment and reports progress and results to the same task. A bilingual Web interface shows discussions, tasks, and individual handoff threads. SQLite keeps state on the local machine.
@@ -162,9 +187,9 @@ From a terminal configured with the originating member's environment:
 
 ```sh
 .venv/bin/python local_client.py wait '<TASK_ID>' --timeout 600
-.venv/bin/python local_client.py roundtrip --worker '<WORKER_AGENT_ID>' --timeout 600 \
-  --evidence "${ROUNDTABLE_HOME}/data/roundtrip.json"
-.venv/bin/python local_client.py doctor --evidence "${ROUNDTABLE_HOME}/data/roundtrip.json"
+.venv/bin/python local_client.py roundtrip --worker '<WORKER_AGENT_ID>' --timeout 600
+
+.venv/bin/python local_client.py doctor
 ```
 
 A `wait` timeout does not cancel the task. `roundtrip` creates a read-only nonce-return task costing one allowance unit. The receiver returns the nonce without running commands, reading files, or creating coding tasks. The real account must already be connected and authorized to receive it. Observe the native conversation and Events wake separately; synthetic tests cannot substitute for either. See [roundtrip evidence](docs/ROUNDTRIP.en.md).
@@ -188,11 +213,14 @@ python -m pip install -r requirements.lock
 
 export ROUNDTABLE_PORT='<SERVER_PORT>'
 export ROUNDTABLE_URL='http://127.0.0.1:<SERVER_PORT>'
-# Securely inject ROUNDTABLE_ADMIN_TOKEN first (a random secret of at least 32 characters)
+# Manual UI route: securely inject an existing, reusable ROUNDTABLE_ADMIN_TOKEN
+# from your trusted secret manager before startup. Do not regenerate it each time.
 sh scripts/start-local.sh server
 ```
 
-Open `http://127.0.0.1:<SERVER_PORT>`, choose **Connect**, and enter the administrator credential in the local page. Create a room with both demo members to try a discussion or **Delegate task**. Demos validate the local flow only. If a service already exists, verify port and database ownership before starting anything; do not run a second instance.
+For first-time setup without an existing secret-manager credential, use [managed setup and `ui`](docs/ONBOARDING_RUNTIME.en.md#initialize-and-open-the-ui) instead. Standalone auto-generation persists a token but does not display it; managed `ui` does not attach to a standalone process.
+
+Open `http://127.0.0.1:<SERVER_PORT>`, choose **Connect**, and enter the administrator credential in the local page. Demo members are off by default: to try the local flow, start with `sh scripts/start-local.sh server --demo` (or `ROUNDTABLE_DEMO=1`), then create a room with both demo members to try a discussion or **Delegate task**. Demos validate the local flow only; managed setup/up never enables them. Demo bots left in the directory by older versions are hidden unless a room or history references them; after stopping the service, remove them with `.venv/bin/python server.py --db <DATABASE_PATH> --prune-demo` (deletes only unreferenced demo registrations, never rooms or history). If a service already exists, verify port and database ownership before starting anything; do not run a second instance.
 
 To connect real bots, register identities in the UI and join them to a dedicated room, retaining separate member credentials. In another terminal with a securely injected member credential, start stdio MCP:
 

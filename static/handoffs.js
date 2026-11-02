@@ -1,6 +1,7 @@
 'use strict';
 // Same task IDs and event model as native MCP. All remote text stays inert textContent.
 window.HandoffUI = (() => {
+ let initialMode=false;
  let mode='discussion', roomId='', taskId='', assignmentId='', snapshot=null, cursor=0, events=[], generation=0, busy=false, listSignature='', detailSignature='';
  const name = actor => actor==='user'?t('human'):actor==='system'?t('taskSystem'):state?.agents.find(a=>a.id===actor.replace(/^bot:/,''))?.name||actor.replace(/^bot:/,'');
  const status = value => t('task_'+value);
@@ -10,7 +11,7 @@ window.HandoffUI = (() => {
  const post = (suffix,body) => api(endpoint(suffix),roomAuth(),body);
  function reset(){
   taskId='';assignmentId='';snapshot=null;cursor=0;events=[];generation++;busy=false;listSignature='';detailSignature='';$('task-note').value='';
-  for(const id of ['task-header','assignment-switch','handoff-instruction','handoff-events'])$(id).replaceChildren();
+  for(const id of ['task-list','task-header','assignment-switch','handoff-instruction','handoff-events'])$(id).replaceChildren();
   $('cancel-task').disabled=true;$('retry-task').hidden=true;$('task-more').hidden=true;
   $('task-note').disabled=true;$('task-note-form').querySelector('button').disabled=true;
  }
@@ -28,7 +29,8 @@ window.HandoffUI = (() => {
   finally{if(seq===generation)busy=false;}
  }
  function render(){
-  if(roomId!==(active?.id||'')){roomId=active?.id||'';reset();}
+  if(roomId!==(active?.id||'')){roomId=active?.id||'';initialMode=false;reset();}
+  if(active&&state&&!initialMode){mode=!state.messages.length&&state.tasks?.length?'tasks':'discussion';initialMode=true;}
   const connected=Boolean(active&&state),show=connected&&mode==='tasks';
   $('discussion-view').classList.toggle('selected',!show);$('task-view').classList.toggle('selected',show);
   $('task-view').textContent=t('taskTab')+(state?.tasks?.length?` (${state.tasks.length})`:'');

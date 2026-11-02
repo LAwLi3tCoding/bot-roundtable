@@ -5,7 +5,7 @@ from roundtable import Problem, Store
 
 class GroupTests(unittest.TestCase):
     def setUp(self):
-        self.store = Store()
+        self.store = Store(demo=True)
         self.room = self.store.room("Group")
         self.rid = self.room["id"]
 

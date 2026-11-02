@@ -85,3 +85,5 @@ Grok 的 `grok_adapter.py --dispatch --assignment` 可显式发送一份刚读�
 领取返回的 lease 仅供本机程序使用。可在权限受限的本机目录（Unix `umask 077`，Windows 使用仅当前用户 ACL）通过 stdin/stdout 管道或私有临时文件连接 claim 与 report；完成后删除临时文件。不要把 claim 输出粘贴到聊天、共享日志或截图；需要返回给原生会话的仅是非秘密任务 ID、进度和结果。
 
 托管 `up` 默认提供绑定本实例的临时 macOS 防睡眠，支持 `--no-caffeinate` 关闭和经核验的进程状态。手工 `start-local.sh` 不变；请阅读[AC/合盖/网络限制](SETUP_AUTOMATION.zh.md)，不修改持久电源设置。
+
+[状态/日志位置、命名实例与停机迁移](STORAGE.zh.md)。托管 setup 省略端口时自动选择，应通过 status 获取实际 URL，不能假定为手工启动默认值。

@@ -27,11 +27,11 @@ python3.12 -m venv .venv   # 或 python3.13；macOS 都没有时：brew install 
 . .venv/bin/activate
 python -m pip install -r requirements.lock
 umask 077
-mkdir -p data
-chmod 700 data
 export ROUNDTABLE_PORT='<SERVER_PORT>'
 export ROUNDTABLE_URL='http://127.0.0.1:<SERVER_PORT>'
-export ROUNDTABLE_DB="${ROUNDTABLE_HOME}/data/roundtable.db"
+export ROUNDTABLE_STATE_DIR='<PRIVATE_STATE_DIRECTORY>'
+.venv/bin/python -c 'import os; from admin_credentials import private_directory; private_directory(os.environ["ROUNDTABLE_STATE_DIR"])'
+export ROUNDTABLE_DB="${ROUNDTABLE_STATE_DIR}/manual/roundtable.db"
 ```
 
 把 checkout 占位符换成绝对路径，两个 server 端口保持一致；所有后续终端都需设置相同的非秘密路径/端口。已有 checkout 或环境无需重复 clone/创建。使用已有代理联网安装依赖时保留必要代理，不修改全局网络。Tunnel 客户端从[官方发行页](https://github.com/openai/tunnel-client/releases)按系统/架构取得，按官方说明核验来源后安装到 PATH；先运行 `tunnel-client --version`，已有兼容版本不必重装。以下 Tunnel 步骤以 0.0.19 为实测基准。
@@ -62,7 +62,7 @@ server 在前台运行，另开浏览器访问本机 `ROUNDTABLE_URL`。点“�
 这些是可审阅的交互命令示例，不是仓库自动保存/配置工具；终端之间不会自动共享后来设置的环境。Tunnel doctor/run 也需独立注入 `CONTROL_PLANE_API_KEY` 和同一成员的完整 Bearer。可将下方命令作为参数传给隐藏输入启动器，例如：
 
 ```sh
-.venv/bin/python -c 'import getpass, os, sys, warnings; warnings.simplefilter("error", getpass.GetPassWarning); os.environ["CONTROL_PLANE_API_KEY"] = getpass.getpass("Tunnel runtime key (hidden): "); os.environ["ROUNDTABLE_TUNNEL_AUTH_HEADER"] = "Bearer " + getpass.getpass("Dot member token (hidden): "); os.execvp(sys.argv[1], sys.argv[1:])' tunnel-client doctor --profile-file "${ROUNDTABLE_HOME}/data/tunnel/roundtable.yaml" --health.listen-addr 127.0.0.1:0 --explain
+.venv/bin/python -c 'import getpass, os, sys, warnings; warnings.simplefilter("error", getpass.GetPassWarning); os.environ["CONTROL_PLANE_API_KEY"] = getpass.getpass("Tunnel runtime key (hidden): "); os.environ["ROUNDTABLE_TUNNEL_AUTH_HEADER"] = "Bearer " + getpass.getpass("Dot member token (hidden): "); os.execvp(sys.argv[1], sys.argv[1:])' tunnel-client doctor --profile-file "${ROUNDTABLE_STATE_DIR}/tunnel/roundtable.yaml" --health.listen-addr 127.0.0.1:0 --explain
 ```
 
 先完成下节的 profile/key 配置再运行此示例。运行 Tunnel 时，用下节完整 `tunnel-client run …` 命令替换示例末尾的 `tunnel-client doctor …`；需要代理时同样追加控制面代理参数。权限/额度命令亦可用同样的 `getpass`+子进程方法只注入管理员变量，避免复制秘密到 `export` 命令。持续运行环境应改用自己已批准的秘密管理方式，并保护进程环境访问权限。
@@ -73,15 +73,15 @@ server 在前台运行，另开浏览器访问本机 `ROUNDTABLE_URL`。点“�
 
 1. **创建 Tunnel。** 在 [Platform Tunnels](https://platform.openai.com/settings/organization/tunnels) 核对账号及组织，先检查是否已有目标 Tunnel，避免重复创建。创建时填写名称/描述，授权预期 organization 和实际使用的 ChatGPT workspace；保存 Tunnel ID。只给目标工作区访问权，不把“同一邮箱”当作工作区绑定已经完成。
 2. **创建最小权限 runtime key。** 在 [API keys](https://platform.openai.com/settings/organization/api-keys) 选择预期项目、命名 key、选择 **Restricted**，只启用 **Tunnels Read、Use**，其他权限均为 None，不授予 Manage 或模型调用权限。明确选择有效期并记录续期责任。若界面不能提供这些精确权限，停止并核实支持方式，不用 All/project 全权限 key 替代。
-3. **安全保存。** 用已批准的秘密管理器或本机隐藏输入保存 key，仅向 Tunnel 进程提供 `CONTROL_PLANE_API_KEY`。本机文件和目录分别限制为 `600`、`700`，置于 Git 忽略的 `data/` 下；用 `git check-ignore <path>` 核对，勿用 `cat` 验证秘密。不要把 key 写进命令正文、聊天、截图、日志、tracked YAML/plist，或设置成 Codex 的 `OPENAI_API_KEY`。成员 token 与 Platform key 不是同一凭据：`ROUNDTABLE_TUNNEL_AUTH_HEADER` 必须安全注入完整的 scoped `Bearer …`，与网关固定 dot 成员一致。仓库没有自动读取或保存这些秘密的安装器。
+3. **安全保存。** 用已批准的秘密管理器或本机隐藏输入保存 key，仅向 Tunnel 进程提供 `CONTROL_PLANE_API_KEY`。本机文件和目录分别限制为 `600`、`700`，置于所选仓库外私有 STATE_DIRECTORY；仓库外不适用 git check-ignore，应核对权限，勿用 cat 验证秘密。不要把 key 写进命令正文、聊天、截图、日志、tracked YAML/plist，或设置成 Codex 的 `OPENAI_API_KEY`。成员 token 与 Platform key 不是同一凭据：`ROUNDTABLE_TUNNEL_AUTH_HEADER` 必须安全注入完整的 scoped `Bearer …`，与网关固定 dot 成员一致。这条手工路线不创建账号凭据；托管路线提供隐藏输入保存命令，详见 SETUP_AUTOMATION.zh.md。
 4. **准备 profile。** 先安全提供上述环境，再创建私有目录并复制模板：
 
 ```sh
 umask 077
-mkdir -p "${ROUNDTABLE_HOME}/data/tunnel"
-chmod 700 "${ROUNDTABLE_HOME}/data/tunnel"
-cp -n "${ROUNDTABLE_HOME}/examples/tunnel-client.yaml" "${ROUNDTABLE_HOME}/data/tunnel/roundtable.yaml"
-chmod 600 "${ROUNDTABLE_HOME}/data/tunnel/roundtable.yaml"
+mkdir -p "${ROUNDTABLE_STATE_DIR}/tunnel"
+chmod 700 "${ROUNDTABLE_STATE_DIR}/tunnel"
+cp -n "${ROUNDTABLE_HOME}/examples/tunnel-client.yaml" "${ROUNDTABLE_STATE_DIR}/tunnel/roundtable.yaml"
+chmod 600 "${ROUNDTABLE_STATE_DIR}/tunnel/roundtable.yaml"
 ```
 
 只在首次配置、目标文件尚不存在时复制，勿覆盖已有配置。编辑本地副本的 `<TUNNEL_ID>` 和实际 MCP 端口；YAML 使用 `mcp.server_urls` 列表（`channel: main`、`url`），不是旧的 `server_url`。`env:VARIABLE` 是客户端支持的秘密引用；不要假设 YAML 会展开 shell 的 `${...}`。
@@ -89,8 +89,8 @@ chmod 600 "${ROUNDTABLE_HOME}/data/tunnel/roundtable.yaml"
 5. **检查并手动运行。** 以下直接使用官方 `--profile-file`，不依赖命名 profile 的查找目录：
 
 ```sh
-tunnel-client doctor --profile-file "${ROUNDTABLE_HOME}/data/tunnel/roundtable.yaml" --health.listen-addr 127.0.0.1:0 --explain
-tunnel-client run --profile-file "${ROUNDTABLE_HOME}/data/tunnel/roundtable.yaml" --health.listen-addr 127.0.0.1:0 --health.url-file "${ROUNDTABLE_HOME}/data/tunnel/health.url" --pid.file "${ROUNDTABLE_HOME}/data/tunnel/tunnel.pid" --log.file "${ROUNDTABLE_HOME}/data/tunnel/runtime.log" --log.http-raw-unsafe=false
+tunnel-client doctor --profile-file "${ROUNDTABLE_STATE_DIR}/tunnel/roundtable.yaml" --health.listen-addr 127.0.0.1:0 --explain
+tunnel-client run --profile-file "${ROUNDTABLE_STATE_DIR}/tunnel/roundtable.yaml" --health.listen-addr 127.0.0.1:0 --health.url-file "${ROUNDTABLE_STATE_DIR}/tunnel/health.url" --pid.file "${ROUNDTABLE_STATE_DIR}/tunnel/tunnel.pid" --log.file "${ROUNDTABLE_STATE_DIR}/tunnel/runtime.log" --log.http-raw-unsafe=false
 ```
 
 需要既有 HTTP CONNECT 代理时，给 **doctor 和 run 两条命令**都追加 `--control-plane.http-proxy env:ROUNDTABLE_OUTBOUND_PROXY`，该环境变量值为 `http://127.0.0.1:<PORT>`。这是 Tunnel 客户端自己的选项，项目的代理变量不会自动配置它。不要设置全局 `--http-proxy` 去代理本机 MCP；在此启动进程中移除继承的 `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY` 及小写形式，让控制面走显式代理、本机 MCP 保持直连，不改变系统或 Clash 配置。
@@ -132,13 +132,13 @@ Events 仍须明确配置并经授权订阅。`ROUNDTABLE_EVENT_TIMEOUT` 控制�
 配置获得批准后，可显式启用 Events 入口：
 
 ```sh
-sh scripts/start-local.sh mcp --events-db "${ROUNDTABLE_HOME}/data/events.db" --event-host approved.hostname
+sh scripts/start-local.sh mcp --events-db "${ROUNDTABLE_STATE_DIR}/events.db" --event-host approved.hostname
 ```
 
 此简写仅适用于秘密管理器已向**当前启动进程**注入 grants/Bearer 的情形；前面的隐藏输入启动器不会把秘密留在父 shell。若采用交互隐藏输入，先优雅停止自己管理的旧 MCP（不要停 server），再重用下面的完整启动器，并将 `<EXACT_APPROVED_CALLBACK_HOST>` 替换为已核实批准的实际域名：
 
 ```sh
-.venv/bin/python -c 'import getpass, json, os, warnings; warnings.simplefilter("error", getpass.GetPassWarning); token = getpass.getpass("Dot member token (hidden): "); os.environ["ROUNDTABLE_HTTP_GRANTS"] = json.dumps([{"room": os.environ["ROUNDTABLE_ROOM"], "agent": os.environ["ROUNDTABLE_AGENT"], "token": token}]); os.environ["ROUNDTABLE_TUNNEL_AUTH_HEADER"] = "Bearer " + token; os.execvp("sh", ["sh", "scripts/start-local.sh", "mcp", "--events-db", os.path.join(os.environ["ROUNDTABLE_HOME"], "data/events.db"), "--event-host", "<EXACT_APPROVED_CALLBACK_HOST>"])'
+.venv/bin/python -c 'import getpass, json, os, warnings; warnings.simplefilter("error", getpass.GetPassWarning); token = getpass.getpass("Dot member token (hidden): "); os.environ["ROUNDTABLE_HTTP_GRANTS"] = json.dumps([{"room": os.environ["ROUNDTABLE_ROOM"], "agent": os.environ["ROUNDTABLE_AGENT"], "token": token}]); os.environ["ROUNDTABLE_TUNNEL_AUTH_HEADER"] = "Bearer " + token; os.execvp("sh", ["sh", "scripts/start-local.sh", "mcp", "--events-db", os.path.join(os.environ["ROUNDTABLE_STATE_DIR"], "events.db"), "--event-host", "<EXACT_APPROVED_CALLBACK_HOST>"])'
 ```
 
 
@@ -159,7 +159,7 @@ sh scripts/start-local.sh mcp --events-db "${ROUNDTABLE_HOME}/data/events.db" --
 | 变量 | 使用方与配置 |
 |---|---|
 | `ROUNDTABLE_HOME` | 启动脚本必需；checkout 的绝对路径 |
-| `ROUNDTABLE_PORT` / `ROUNDTABLE_DB` | 脚本传给 server 的端口与数据库；默认 8765 / `data/roundtable.db` |
+| `ROUNDTABLE_PORT` / `ROUNDTABLE_DB` | 脚本传给 server 的端口与数据库；默认 8765 / `<STATE_DIRECTORY>/manual/roundtable.db` |
 | `ROUNDTABLE_ADMIN_TOKEN` | server 和 allowance 命令；通过安全环境注入至少 32 字符的随机秘密 |
 | `ROUNDTABLE_URL` | bridge、HTTP 网关、本机客户端和 allowance；默认 `http://127.0.0.1:8765` |
 | `ROUNDTABLE_ROOM` / `ROUNDTABLE_AGENT` / `ROUNDTABLE_TOKEN` | stdio bridge 与本机客户端的群、成员和独立成员凭据 |
@@ -169,10 +169,10 @@ sh scripts/start-local.sh mcp --events-db "${ROUNDTABLE_HOME}/data/events.db" --
 | `ROUNDTABLE_EVENT_TIMEOUT` | Events 回调总期限；默认 20 秒，范围 0.01–120 |
 | `ROUNDTABLE_TUNNEL_AUTH_HEADER` | MCP 网关固定成员身份校验；安全注入完整 Bearer header |
 | `ROUNDTABLE_TUNNEL_PROFILE_FILE` / `ROUNDTABLE_TUNNEL_PROFILE` | `start-local.sh tunnel` 使用已审核文件路径，或本地 profile 名称 |
-| `ROUNDTABLE_EVIDENCE` | 本机客户端默认回环证据路径；默认 `data/roundtrip.json`，可由 `--evidence` 覆盖 |
+| `ROUNDTABLE_EVIDENCE` | 本机客户端默认回环证据路径；默认 `<STATE_DIRECTORY>/roundtrip.json`，可由 `--evidence` 覆盖 |
 | `ROUNDTABLE_TERMINAL_NOTIFICATIONS` | 仅值 `1` 启用 server 终态工作器，默认关闭 |
 | `ROUNDTABLE_TERMINAL_ROOM` / `ROUNDTABLE_TERMINAL_ORIGIN` | 终态工作器限定的群与当前入口成员 |
-| `ROUNDTABLE_TERMINAL_LEDGER` | 手动及自动终态回执共用的持久账本；默认 `data/terminal-receipts.db` |
+| `ROUNDTABLE_TERMINAL_LEDGER` | 手动及自动终态回执共用的持久账本；默认 `<STATE_DIRECTORY>/terminal-receipts.db` |
 | `GROK_ROUTINE_URL` / `GROK_ROUTINE_KEY` / `GROK_ALLOWED_HOST` | 已授权 Grok routine 的 HTTPS 地址、秘密和精确主机白名单；见 [终态回执](TERMINAL_RECEIPTS.zh.md) |
 
 Events 的数据库与允许主机是 CLI 参数 `--events-db` / `--event-host`，不是环境变量。非默认外部 HTTPS 地址通过 `--public-url` 声明，仍不改变 loopback 监听。
@@ -211,3 +211,5 @@ launchd 模板只含 `ROUNDTABLE_HOME`，不继承终端的 `export`。使用前
 停用此接入时，先取消产品内的事件 automation/订阅并确认不再续订，再断开/卸载目标 ChatGPT 插件；核对归属后停止专用 Tunnel/MCP 进程。只撤销专用 runtime key 和目标 Tunnel/workspace 访问，不影响其他应用共享的资源。需同时撤销本机成员能力时，在管理员界面移除该成员并更新网关授权；仅停止 Tunnel 不撤销已泄露的成员 token。保留受保护的数据备份；永久删除数据需另行决定。不要直接删除整个 `data/` 或全局 key/组织。共享 server 如仍用于其他成员应继续运行。
 
 托管 `up` 默认提供绑定本实例的临时 macOS 防睡眠，支持 `--no-caffeinate` 关闭和经核验的进程状态。手工 `start-local.sh` 不变；请阅读[AC/合盖/网络限制](SETUP_AUTOMATION.zh.md)，不修改持久电源设置。
+
+PRIVATE_STATE_DIRECTORY 参照[平台位置表](STORAGE.zh.md)选择。ROUNDTABLE_HOME 仍是代码位置，状态、日志和证据默认不再放在仓库内。已有托管 data/local 实例应先用原管理器停机，按 STORAGE 手工转移并校验后再清理旧 checkout。

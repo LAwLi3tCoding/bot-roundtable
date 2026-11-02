@@ -27,11 +27,11 @@ python3.12 -m venv .venv   # or python3.13; on macOS without either: brew instal
 . .venv/bin/activate
 python -m pip install -r requirements.lock
 umask 077
-mkdir -p data
-chmod 700 data
 export ROUNDTABLE_PORT='<SERVER_PORT>'
 export ROUNDTABLE_URL='http://127.0.0.1:<SERVER_PORT>'
-export ROUNDTABLE_DB="${ROUNDTABLE_HOME}/data/roundtable.db"
+export ROUNDTABLE_STATE_DIR='<PRIVATE_STATE_DIRECTORY>'
+.venv/bin/python -c 'import os; from admin_credentials import private_directory; private_directory(os.environ["ROUNDTABLE_STATE_DIR"])'
+export ROUNDTABLE_DB="${ROUNDTABLE_STATE_DIR}/manual/roundtable.db"
 ```
 
 Use an absolute checkout path and the same server port in both settings. Repeat the non-secret path/port settings in later terminals. Do not clone or recreate an existing environment unnecessarily. Retain any proxy needed to install dependencies without changing global networking. Obtain the Tunnel client for your OS/architecture from [official releases](https://github.com/openai/tunnel-client/releases), verify its source following official instructions, and install it on PATH. Check `tunnel-client --version` first; an existing compatible installation need not be replaced. The Tunnel steps below were exercised with 0.0.19.
@@ -62,7 +62,7 @@ Start a gateway granting only this dot identity as follows. Keep its foreground 
 These are reviewable interactive examples, not a repository utility that saves/configures secrets. Later environment changes are not shared automatically across terminals. Tunnel doctor/run need their own `CONTROL_PLANE_API_KEY` and the same member's complete Bearer. For example, pass the command below to a hidden-input launcher:
 
 ```sh
-.venv/bin/python -c 'import getpass, os, sys, warnings; warnings.simplefilter("error", getpass.GetPassWarning); os.environ["CONTROL_PLANE_API_KEY"] = getpass.getpass("Tunnel runtime key (hidden): "); os.environ["ROUNDTABLE_TUNNEL_AUTH_HEADER"] = "Bearer " + getpass.getpass("Dot member token (hidden): "); os.execvp(sys.argv[1], sys.argv[1:])' tunnel-client doctor --profile-file "${ROUNDTABLE_HOME}/data/tunnel/roundtable.yaml" --health.listen-addr 127.0.0.1:0 --explain
+.venv/bin/python -c 'import getpass, os, sys, warnings; warnings.simplefilter("error", getpass.GetPassWarning); os.environ["CONTROL_PLANE_API_KEY"] = getpass.getpass("Tunnel runtime key (hidden): "); os.environ["ROUNDTABLE_TUNNEL_AUTH_HEADER"] = "Bearer " + getpass.getpass("Dot member token (hidden): "); os.execvp(sys.argv[1], sys.argv[1:])' tunnel-client doctor --profile-file "${ROUNDTABLE_STATE_DIR}/tunnel/roundtable.yaml" --health.listen-addr 127.0.0.1:0 --explain
 ```
 
 Complete the profile/key setup below before running this example. To run the Tunnel, replace its trailing `tunnel-client doctor …` with the full `tunnel-client run …` command below; append the control-plane proxy option when required. The same `getpass` plus child-process approach can inject only the administrator variable for allowance commands, without pasting secrets into `export` statements. For unattended operation use your approved secret manager and protect access to process environments.
@@ -73,15 +73,15 @@ These commands were checked against the official `tunnel-client 0.0.19` help and
 
 1. **Create the Tunnel.** In [Platform Tunnels](https://platform.openai.com/settings/organization/tunnels), verify the account and organization and check for an existing target Tunnel before creating another. Set its name/description and authorize the intended organization and actual ChatGPT workspace. Retain the Tunnel ID. Grant only the intended workspace; matching email addresses do not establish workspace binding.
 2. **Create a least-privilege runtime key.** In [API keys](https://platform.openai.com/settings/organization/api-keys), select the intended project, name the key, choose **Restricted**, and enable only **Tunnels Read and Use**. All other permissions remain None; grant neither Manage nor model access. Choose an expiry deliberately and assign renewal responsibility. If these exact scopes are unavailable, stop and verify support instead of substituting an All/full-project key.
-3. **Store it securely.** Use an approved secret manager or hidden local input to save the key and provide `CONTROL_PLANE_API_KEY` only to the Tunnel process. Restrict local files/directories to `600`/`700` under Git-ignored `data/`; check with `git check-ignore <path>`, not by printing secrets. Never put keys in command text, chat, screenshots, logs, tracked YAML/plists, or Codex's `OPENAI_API_KEY`. The member token is a different credential: securely inject the full scoped `Bearer …` into `ROUNDTABLE_TUNNEL_AUTH_HEADER`, matching the gateway's fixed dot member. This repository has no installer that reads or saves these secrets for you.
+3. **Store it securely.** Use an approved secret manager or hidden local input to save the key and provide `CONTROL_PLANE_API_KEY` only to the Tunnel process. Restrict local files/directories to `600`/`700` under the chosen private STATE_DIRECTORY outside the checkout; Git check-ignore is not applicable outside the repository. Check permissions without printing secrets. Never put keys in command text, chat, screenshots, logs, tracked YAML/plists, or Codex's `OPENAI_API_KEY`. The member token is a different credential: securely inject the full scoped `Bearer …` into `ROUNDTABLE_TUNNEL_AUTH_HEADER`, matching the gateway's fixed dot member. This manual route does not provision account credentials. The managed route provides hidden-input save commands; see SETUP_AUTOMATION.en.md.
 4. **Prepare a profile.** Supply the secure environment first, then create the private directory and copy the template:
 
 ```sh
 umask 077
-mkdir -p "${ROUNDTABLE_HOME}/data/tunnel"
-chmod 700 "${ROUNDTABLE_HOME}/data/tunnel"
-cp -n "${ROUNDTABLE_HOME}/examples/tunnel-client.yaml" "${ROUNDTABLE_HOME}/data/tunnel/roundtable.yaml"
-chmod 600 "${ROUNDTABLE_HOME}/data/tunnel/roundtable.yaml"
+mkdir -p "${ROUNDTABLE_STATE_DIR}/tunnel"
+chmod 700 "${ROUNDTABLE_STATE_DIR}/tunnel"
+cp -n "${ROUNDTABLE_HOME}/examples/tunnel-client.yaml" "${ROUNDTABLE_STATE_DIR}/tunnel/roundtable.yaml"
+chmod 600 "${ROUNDTABLE_STATE_DIR}/tunnel/roundtable.yaml"
 ```
 
 Copy only on first setup when the destination does not exist; do not overwrite existing configuration. Edit `<TUNNEL_ID>` and the actual MCP port in the local copy. YAML uses a `mcp.server_urls` list with `channel: main` and `url`, not the old `server_url` field. `env:VARIABLE` is a supported secret reference; do not assume YAML expands shell `${...}` expressions.
@@ -89,8 +89,8 @@ Copy only on first setup when the destination does not exist; do not overwrite e
 5. **Check and run manually.** These direct official commands use `--profile-file`, independent of named-profile search directories:
 
 ```sh
-tunnel-client doctor --profile-file "${ROUNDTABLE_HOME}/data/tunnel/roundtable.yaml" --health.listen-addr 127.0.0.1:0 --explain
-tunnel-client run --profile-file "${ROUNDTABLE_HOME}/data/tunnel/roundtable.yaml" --health.listen-addr 127.0.0.1:0 --health.url-file "${ROUNDTABLE_HOME}/data/tunnel/health.url" --pid.file "${ROUNDTABLE_HOME}/data/tunnel/tunnel.pid" --log.file "${ROUNDTABLE_HOME}/data/tunnel/runtime.log" --log.http-raw-unsafe=false
+tunnel-client doctor --profile-file "${ROUNDTABLE_STATE_DIR}/tunnel/roundtable.yaml" --health.listen-addr 127.0.0.1:0 --explain
+tunnel-client run --profile-file "${ROUNDTABLE_STATE_DIR}/tunnel/roundtable.yaml" --health.listen-addr 127.0.0.1:0 --health.url-file "${ROUNDTABLE_STATE_DIR}/tunnel/health.url" --pid.file "${ROUNDTABLE_STATE_DIR}/tunnel/tunnel.pid" --log.file "${ROUNDTABLE_STATE_DIR}/tunnel/runtime.log" --log.http-raw-unsafe=false
 ```
 
 When an existing HTTP CONNECT proxy is required, append `--control-plane.http-proxy env:ROUNDTABLE_OUTBOUND_PROXY` to **both doctor and run**; set that environment variable to `http://127.0.0.1:<PORT>`. This is the Tunnel client's own option: the project's proxy variable does not configure it automatically. Do not use global `--http-proxy` to route local MCP through a proxy. Remove inherited `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY` and lowercase equivalents from this launch environment so the control plane uses its explicit proxy and loopback MCP stays direct, without changing system or Clash settings.
@@ -132,13 +132,13 @@ After separate subscription approval, `handoff.available` means: receive_assignm
 To opt in to the Events endpoint after configuration approval, start the gateway with:
 
 ```sh
-sh scripts/start-local.sh mcp --events-db "${ROUNDTABLE_HOME}/data/events.db" --event-host approved.hostname
+sh scripts/start-local.sh mcp --events-db "${ROUNDTABLE_STATE_DIR}/events.db" --event-host approved.hostname
 ```
 
 This shorthand assumes the secret manager has injected grants/Bearer into the **current launch environment**. The earlier hidden-input launcher does not retain secrets in its parent shell. For interactive hidden input, gracefully stop your managed old MCP (not the server), then reuse this complete launcher, replacing `<EXACT_APPROVED_CALLBACK_HOST>` with the actual verified approved hostname:
 
 ```sh
-.venv/bin/python -c 'import getpass, json, os, warnings; warnings.simplefilter("error", getpass.GetPassWarning); token = getpass.getpass("Dot member token (hidden): "); os.environ["ROUNDTABLE_HTTP_GRANTS"] = json.dumps([{"room": os.environ["ROUNDTABLE_ROOM"], "agent": os.environ["ROUNDTABLE_AGENT"], "token": token}]); os.environ["ROUNDTABLE_TUNNEL_AUTH_HEADER"] = "Bearer " + token; os.execvp("sh", ["sh", "scripts/start-local.sh", "mcp", "--events-db", os.path.join(os.environ["ROUNDTABLE_HOME"], "data/events.db"), "--event-host", "<EXACT_APPROVED_CALLBACK_HOST>"])'
+.venv/bin/python -c 'import getpass, json, os, warnings; warnings.simplefilter("error", getpass.GetPassWarning); token = getpass.getpass("Dot member token (hidden): "); os.environ["ROUNDTABLE_HTTP_GRANTS"] = json.dumps([{"room": os.environ["ROUNDTABLE_ROOM"], "agent": os.environ["ROUNDTABLE_AGENT"], "token": token}]); os.environ["ROUNDTABLE_TUNNEL_AUTH_HEADER"] = "Bearer " + token; os.execvp("sh", ["sh", "scripts/start-local.sh", "mcp", "--events-db", os.path.join(os.environ["ROUNDTABLE_STATE_DIR"], "events.db"), "--event-host", "<EXACT_APPROVED_CALLBACK_HOST>"])'
 ```
 
 
@@ -159,7 +159,7 @@ Ambient `HTTPS_PROXY`/`HTTP_PROXY`/`ALL_PROXY` without the explicit setting prod
 | Variable | Consumer and configuration |
 |---|---|
 | `ROUNDTABLE_HOME` | Required by the startup script; absolute checkout path |
-| `ROUNDTABLE_PORT` / `ROUNDTABLE_DB` | Script arguments to the server; defaults 8765 / `data/roundtable.db` |
+| `ROUNDTABLE_PORT` / `ROUNDTABLE_DB` | Script arguments to the server; defaults 8765 / `<STATE_DIRECTORY>/manual/roundtable.db` |
 | `ROUNDTABLE_ADMIN_TOKEN` | Server and allowance command; securely inject a random secret of at least 32 characters |
 | `ROUNDTABLE_URL` | Bridge, HTTP gateway, local client, and allowance; default `http://127.0.0.1:8765` |
 | `ROUNDTABLE_ROOM` / `ROUNDTABLE_AGENT` / `ROUNDTABLE_TOKEN` | Room, member, and independent member credential for stdio bridge and local client |
@@ -169,10 +169,10 @@ Ambient `HTTPS_PROXY`/`HTTP_PROXY`/`ALL_PROXY` without the explicit setting prod
 | `ROUNDTABLE_EVENT_TIMEOUT` | Total Events callback deadline; default 20 seconds, range 0.01–120 |
 | `ROUNDTABLE_TUNNEL_AUTH_HEADER` | Gateway fixed-member identity guard; securely inject the complete Bearer header |
 | `ROUNDTABLE_TUNNEL_PROFILE_FILE` / `ROUNDTABLE_TUNNEL_PROFILE` | Reviewed file path or local profile name for `start-local.sh tunnel` |
-| `ROUNDTABLE_EVIDENCE` | Local client's default roundtrip evidence path; defaults to `data/roundtrip.json`, overridden by `--evidence` |
+| `ROUNDTABLE_EVIDENCE` | Local client's default roundtrip evidence path; defaults to `<STATE_DIRECTORY>/roundtrip.json`, overridden by `--evidence` |
 | `ROUNDTABLE_TERMINAL_NOTIFICATIONS` | Only `1` enables the server terminal worker; disabled by default |
 | `ROUNDTABLE_TERMINAL_ROOM` / `ROUNDTABLE_TERMINAL_ORIGIN` | Room and current origin member covered by the terminal worker |
-| `ROUNDTABLE_TERMINAL_LEDGER` | Shared durable ledger for manual and automatic receipts; default `data/terminal-receipts.db` |
+| `ROUNDTABLE_TERMINAL_LEDGER` | Shared durable ledger for manual and automatic receipts; default `<STATE_DIRECTORY>/terminal-receipts.db` |
 | `GROK_ROUTINE_URL` / `GROK_ROUTINE_KEY` / `GROK_ALLOWED_HOST` | Authorized routine HTTPS URL, secret, and exact hostname allowlist; see [terminal receipts](TERMINAL_RECEIPTS.en.md) |
 
 Events database and approved hosts are CLI arguments, `--events-db` / `--event-host`, not environment variables. Declare a nondefault external HTTPS URL with `--public-url`; the listener remains loopback-only.
@@ -211,3 +211,5 @@ Back up task/Events databases, necessary configuration, and secret-manager recov
 To remove this integration, first cancel its product event automation/subscription and confirm renewal stops, then disconnect/uninstall the target ChatGPT plugin. Verify ownership before stopping its dedicated Tunnel/MCP processes. Revoke only its dedicated runtime key and target Tunnel/workspace access, without affecting shared resources used by other applications. To revoke local member access too, remove that member through the administrator UI and update gateway grants; merely stopping the Tunnel does not revoke a leaked member token. Keep protected backups; decide permanent data deletion separately. Do not delete all of `data/`, global keys, or the organization. Leave a shared server running for other members.
 
 Managed `up` defaults to temporary macOS sleep assertions tied to this server instance, with `--no-caffeinate` opt-out and verified process status. Manual `start-local.sh` is unchanged. Read the [AC/lid/network limitations](SETUP_AUTOMATION.en.md); no persistent power setting is changed.
+
+Choose PRIVATE_STATE_DIRECTORY using the [platform location table](STORAGE.en.md). Code stays in ROUNDTABLE_HOME; state, logs and evidence no longer default to the checkout. For an existing managed data/local installation, stop it with its original manager and follow the manual STORAGE checklist before cleaning the old checkout.

@@ -95,7 +95,7 @@ class Clients:
 
 
 def main():
-    store = Store()
+    store = Store(demo=True)
     ids = ["entry-demo", "research-demo", "review-demo"]
     for aid, name in zip(ids, ["Demo Entry", "Demo Research", "Demo Review"]):
         store.register_bot(aid, name, "mailbox", "Synthetic MCP protocol test")
@@ -113,7 +113,7 @@ def main():
     try:
         with sync_playwright() as pw:
             browser = pw.chromium.launch(
-                executable_path=os.environ.get("CHROMIUM_PATH", "/usr/bin/chromium"),
+                executable_path=os.environ.get("CHROMIUM_PATH") or None,
                 args=["--no-sandbox"],
             )
             context = browser.new_context(viewport={"width": 1280, "height": 900}, locale="en-US")

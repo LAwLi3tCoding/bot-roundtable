@@ -59,6 +59,9 @@ class SetupTests(unittest.TestCase):
         )
         for name in before:
             self.assertEqual((self.state / name).stat().st_mode & 0o777, 0o600)
+        room = runtime.env_read(self.state / "room.env")
+        self.assertEqual(room["ROUNDTABLE_ROOM"], config["room"])
+        self.assertGreaterEqual(len(room["ROUNDTABLE_ROOM_TOKEN"]), 32)
         origin = runtime.env_read(self.state / "test-origin.env")
         worker = runtime.env_read(self.state / "test-worker.env")
         self.assertNotEqual(origin["ROUNDTABLE_TOKEN"], worker["ROUNDTABLE_TOKEN"])
@@ -92,12 +95,12 @@ class SetupTests(unittest.TestCase):
         runtime.save(target, "synthetic-secret")
         link = self.state / "link"
         link.symlink_to(target)
-        with self.assertRaises(OSError):
+        with self.assertRaises(runtime.CredentialError):
             runtime.save(link, "replacement", True)
         target.chmod(0o644)
-        with self.assertRaises(runtime.Failure):
+        with self.assertRaises(runtime.CredentialError):
             runtime.private_read(target)
-        with self.assertRaises(runtime.Failure):
+        with self.assertRaises(runtime.CredentialError):
             runtime.private_dir(link)
 
     def test_hidden_key_and_routine_no_echo_or_overwrite(self):
@@ -328,10 +331,11 @@ class SetupTests(unittest.TestCase):
         with runtime.locked(self.state), self.assertRaises(BlockingIOError):
             runtime.setup(self.state, self.args)
         config = self.setup_instance()
-        log = self.state / "server.log"
+        runtime.private_dir(self.state / "logs")
+        log = self.state / "logs/server.log"
         log.write_text("existing")
         log.chmod(0o644)
-        with self.assertRaises(runtime.Failure):
+        with self.assertRaises(runtime.CredentialError):
             runtime.supervise(self.state, config, "server", config["identity"])
 
     def test_fake_tunnel_real_process_fifo_health_and_stop(self):
@@ -369,9 +373,9 @@ s.serve_forever()
         self.assertTrue(runtime.ready(self.state, config, "tunnel"))
         runtime.stop_component(self.state, config, "tunnel")
         self.assertFalse((self.state / "tunnel-log.pipe").exists())
-        text = (self.state / "tunnel.log").read_text()
+        text = (self.state / "logs/tunnel.log").read_text()
         self.assertNotIn("synthetic-not-for-logs", text)
-        self.assertEqual((self.state / "tunnel.log").stat().st_mode & 0o777, 0o600)
+        self.assertEqual((self.state / "logs/tunnel.log").stat().st_mode & 0o777, 0o600)
 
     def test_started_marker_without_pid_blocks_restart_and_false_stop(self):
         config = self.setup_instance()

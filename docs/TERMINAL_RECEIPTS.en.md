@@ -14,7 +14,7 @@ secrets in command arguments, source control, or chat.
 ```sh
 "${ROUNDTABLE_HOME}/.venv/bin/python" "${ROUNDTABLE_HOME}/terminal_receipts.py" \
   TASK_ID --dispatch-terminal --wait 600 \
-  --ledger "${ROUNDTABLE_HOME}/data/terminal-receipts.db"
+  --ledger "<STATE_DIRECTORY>/terminal-receipts.db"
 ```
 
 `--wait` defaults to zero and is bounded to 86400 seconds. It polls only the
@@ -49,7 +49,7 @@ operator configuration. Do not reload or change an existing server implicitly:
 export ROUNDTABLE_TERMINAL_NOTIFICATIONS=1
 export ROUNDTABLE_TERMINAL_ROOM=YOUR_TEST_ROOM_ID
 export ROUNDTABLE_TERMINAL_ORIGIN=grok-origin
-export ROUNDTABLE_TERMINAL_LEDGER="${ROUNDTABLE_HOME}/data/terminal-receipts.db"
+export ROUNDTABLE_TERMINAL_LEDGER="<STATE_DIRECTORY>/terminal-receipts.db"
 # GROK_ROUTINE_URL / GROK_ROUTINE_KEY / GROK_ALLOWED_HOST: secret-manager references
 "${ROUNDTABLE_HOME}/.venv/bin/python" "${ROUNDTABLE_HOME}/server.py"
 ```
@@ -78,9 +78,11 @@ Set the enable flag to `0` for the next process start to disable the hook. With 
 flag absent, no worker starts and no routine configuration is parsed.
 
 Both modes honor `ROUNDTABLE_TERMINAL_LEDGER` and default to
-`data/terminal-receipts.db` relative to the working directory. Use the same
+`<STATE_DIRECTORY>/terminal-receipts.db`, independent of the working directory. Use the same
 absolute ledger path for automatic and manual delivery.
 
 Configuration preflight runs before a receipt reservation: missing explicit proxy in a proxy environment or invalid proxy configuration is `definitely_not_sent`, does not consume an attempt, and leaves the worker cursor pending. Uncertain network sends retain their reservation and are never replayed. Transient worker failures recover with stop-aware exponential backoff from 0.1 to 30 seconds; authenticated doctor capabilities expose `terminal_worker` state/reason/retry_seconds and `outbound_backend` mode without URLs or secrets. Ledger creation uses exclusive mode-0600 files and mode-0700 new directories, without changing process-global umask or existing permissions/data.
 
 For managed instances, `sh scripts/set-grok-routine.sh` uses hidden URL/key input and a private explicit opt-in file. Only the next server start enables the worker; it does not restart the server. The exact host is derived from the validated HTTPS URL. Sample files never enable sends. See [official routines](https://cursor.com/help/grok-bot/routines), [current usage/pricing](https://x.ai/bot) and [safe receipt prompts](PROMPTS.en.md).
+
+Resolve STATE_DIRECTORY with the [platform storage guide](STORAGE.en.md); retain the same ledger during migration and backups.

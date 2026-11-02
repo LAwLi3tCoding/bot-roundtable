@@ -49,6 +49,31 @@ sh scripts/up.sh --without-tunnel # 需要代理时追加 --proxy 'http://127.0.
 
 安装维护者经 Grok 报告：在一次真实安装中已观察到 Grok 终态 routine 回执及到期前自动续订。本次文档更新没有独立复现这些结果，每个部署仍需核验。见[证据与限制](VERIFICATION.md#maintainer-reported-acceptance)。
 
+## 数据存放位置
+
+| 平台 | 默认状态 | 默认日志 |
+| --- | --- | --- |
+| macOS | `~/Library/Application Support/bot-roundtable/<INSTANCE_NAME>` | `~/Library/Logs/bot-roundtable/<INSTANCE_NAME>` |
+| Linux | `${XDG_STATE_HOME:-~/.local/state}/bot-roundtable/<INSTANCE_NAME>` | `<STATE_DIRECTORY>/logs` |
+| Windows | `%LOCALAPPDATA%\bot-roundtable\<INSTANCE_NAME>` | `<STATE_DIRECTORY>\logs`；不支持托管进程管理 |
+
+优先级 `--state-dir` > `ROUNDTABLE_STATE_DIR` > 平台默认，实例名默认 `default`。ROUNDTABLE_HOME 仍是代码 checkout。Setup 支持 `--name`，未显式指定时自动选空闲端口。详见[文件用途、私有权限、备份、迁移、rebind 与卸载](docs/STORAGE.zh.md)。**旧 data/local 迁移/备份前不要运行 git clean -xfd。**
+
+## 持久凭据与派任务入口
+
+手工 `server.py`/`start-local.sh server` 使用 `<STATE_DIRECTORY>/manual/roundtable.db` 及其旁边的管理员凭据；托管实例使用 `<STATE_DIRECTORY>/roundtable.db`。显式数据库设置优先，不能让两种管理器指向同一库。项目不提供自动状态转移命令，请参考[手工转移与备份](docs/STORAGE.zh.md)。
+
+Setup 现在保存私有管理员、群 owner 和成员凭据。启动托管服务后可运行 `local_runtime.py ui`，通过短时效、单次使用的 loopback 登录码自动连接。明确使用 `ui --copy-token` 可调用平台剪贴板工具，不打印令牌。网页刷新会自动连接上次的群；长期凭据需主动勾选记住，短期 UI 会话始终仅保存在 sessionStorage。详见[接入、轮换与凭据恢复](docs/ONBOARDING_RUNTIME.zh.md)。Grok 无需 source 秘密文件即可派任务：
+
+```sh
+.venv/bin/python scripts/local_runtime.py client --operation create <<'JSON'
+{"title":"Read-only check","context":"Authorized project only.","assignments":[{"worker":"dot","instruction":"Report status without changes."}],"budget":1,"timeout_seconds":600,"request_id":"read-only-check-001"}
+JSON
+.venv/bin/python scripts/local_runtime.py client --operation tasks
+.venv/bin/python scripts/local_runtime.py client --operation inbox
+```
+
+
 ## 为什么使用圆桌
 
 圆桌是现成 Bot 之间的通信与协调层。入口 Bot 把任务交给群内其他成员，接收者在自己的运行环境中完成已授权的工作，再把进度和结果写回同一任务。双语 Web 界面展示讨论、任务和独立交接线程；SQLite 在本机保存状态。
@@ -162,9 +187,9 @@ Events 默认关闭。批准实际 callback hostname 后，按 [Events 协议](d
 
 ```sh
 .venv/bin/python local_client.py wait '<TASK_ID>' --timeout 600
-.venv/bin/python local_client.py roundtrip --worker '<WORKER_AGENT_ID>' --timeout 600 \
-  --evidence "${ROUNDTABLE_HOME}/data/roundtrip.json"
-.venv/bin/python local_client.py doctor --evidence "${ROUNDTABLE_HOME}/data/roundtrip.json"
+.venv/bin/python local_client.py roundtrip --worker '<WORKER_AGENT_ID>' --timeout 600
+
+.venv/bin/python local_client.py doctor
 ```
 
 `wait` 超时不会取消任务。`roundtrip` 会创建一个消耗 1 单位额度的只读 nonce 回传任务；接收者只回传 nonce，不执行命令、读取文件或创建编码任务。真实账号须已连接并获授权接收。原生对话和 Events 唤醒需分别观察，不能用合成测试代替；详见 [回环与证据](docs/ROUNDTRIP.zh.md)。
@@ -188,11 +213,14 @@ python -m pip install -r requirements.lock
 
 export ROUNDTABLE_PORT='<SERVER_PORT>'
 export ROUNDTABLE_URL='http://127.0.0.1:<SERVER_PORT>'
-# 预先安全注入 ROUNDTABLE_ADMIN_TOKEN（至少 32 个字符的随机秘密）
+# 手工 UI 路线：启动前从可信秘密管理器安全注入已有、可复用的 ROUNDTABLE_ADMIN_TOKEN
+# 不要每次启动重新生成。
 sh scripts/start-local.sh server
 ```
 
-打开 `http://127.0.0.1:<SERVER_PORT>`，点击「连接」，在本机页面输入管理员凭据。创建带两个 demo 成员的群，即可试用讨论或「委派任务」。demo 只验证本机流程。已有服务时先确认端口和数据库归属，不要启动第二个实例。
+首次安装且没有已有秘密管理器凭据时，请改用[托管 setup 与 ui](docs/ONBOARDING_RUNTIME.zh.md#初始化并打开网页)。独立 server 自动生成后会持久保存令牌，但不显示；托管 `ui` 不接管独立启动的进程。
+
+打开 `http://127.0.0.1:<SERVER_PORT>`，点击「连接」，在本机页面输入管理员凭据。demo 成员默认关闭：只想试用本机流程时，用 `sh scripts/start-local.sh server --demo`（或设 `ROUNDTABLE_DEMO=1`）启动，再创建带两个 demo 成员的群试用讨论或「委派任务」。demo 只验证本机流程；托管 setup/up 从不启用 demo。旧版本留在目录里的 demo bot，未被任何群或历史引用时默认隐藏，可在停服后用 `.venv/bin/python server.py --db <数据库路径> --prune-demo` 清理（只删无引用的 demo 登记，不动群和历史）。已有服务时先确认端口和数据库归属，不要启动第二个实例。
 
 要接入真实 Bot，在界面注册身份并加入专用群，为每个成员保存独立凭据。在另一个已安全注入成员凭据的终端中启动 stdio MCP：
 

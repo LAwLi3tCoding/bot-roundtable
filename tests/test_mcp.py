@@ -29,7 +29,7 @@ def unpack(result):
 
 class MCPProtocolTests(unittest.IsolatedAsyncioTestCase):
     async def test_real_client_initialize_tools_send_poll_stop(self):
-        store = Store()
+        store = Store(demo=True)
         room = store.room("MCP spike")
         store.settings(room["id"], "MCP spike", "demo-planner")
         server = make_server(store, secrets.token_urlsafe(32), port=0)
@@ -105,7 +105,7 @@ class MCPProtocolTests(unittest.IsolatedAsyncioTestCase):
             store.db.close()
 
     async def test_agent_receivers_identity_allowance_replay_and_revocation(self):
-        store = Store()
+        store = Store(demo=True)
         room = store.room("Agent MCP")
         other = store.room("Private other room")
         caller = store.add_agent(room["id"], "initiator")

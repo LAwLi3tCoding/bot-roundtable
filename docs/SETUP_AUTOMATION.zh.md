@@ -1,6 +1,8 @@
 # 本地实例自动配置
 
-这些脚本自动完成本地身份、私有文件和进程管理，**不会**创建厂商账号、安装 Tunnel、订阅 Events、给 bot 电脑权限或加载 launchd。支持 Python 3.12/3.13 的 macOS/Linux；尚未实现 Windows 进程管理。使用独立 checkout。macOS 上不要放在 `~/Documents`、`~/Desktop`、`~/Downloads` 等受隐私保护的目录（推荐如 `~/code/bot-roundtable`）：Tunnel client 在项目目录中运行并读取其中的 profile，可能触发、之后又收回 macOS 文件访问授权并导致 Tunnel 中断。不得指向手工管理的数据库或 `data/local-runtime`。
+这些脚本自动完成本地身份、私有文件和进程管理，**不会**创建厂商账号、安装 Tunnel、订阅 Events、给 bot 电脑权限或加载 launchd。支持 Python 3.12/3.13 的 macOS/Linux；尚未实现 Windows 进程管理。使用独立 checkout。macOS 上不要放在 `~/Documents`、`~/Desktop`、`~/Downloads` 等受隐私保护的目录（推荐如 `~/code/bot-roundtable`）：Tunnel client 在项目目录中运行并读取其中的 profile，可能触发、之后又收回 macOS 文件访问授权并导致 Tunnel 中断。不得指向手工管理的数据库，旧数据转移需遵循 STORAGE 的手工审核清单，项目不提供自动迁移命令。
+
+持久管理员凭据、room.env、安全 UI 连接、create/tasks/inbox、明确启动诊断和手工状态转移说明，详见[本机接入与凭据恢复](ONBOARDING_RUNTIME.zh.md)。Windows 凭据持久化与尚不支持的 Windows 进程管理是两回事。
 
 ## 1. 前置条件与必须手动的账号步骤
 
@@ -33,7 +35,7 @@ python3.12 -m venv .venv   # 或 python3.13；macOS 都没有时：brew install 
   --server-port '<SERVER_PORT>' --mcp-port '<MCP_PORT>'
 ```
 
-默认状态目录 `data/local` 为 0700。初始化生成私有管理员凭据，通过 OS 分配端口的临时 loopback 服务注册两 bot、创建一个群、保存各自独立的 `grok.env`/`dot.env`（0600），随后关闭临时服务，不向外发送请求。origin allowance 默认 20，最小验收可用 `--allowance 1`。worker allowance 保持零，收件、领取和回报不需要发起额度。
+默认状态目录位于仓库外，按平台选择，权限 0700，详见[位置与迁移](STORAGE.zh.md)。命名实例每条命令保持相同 `--name <INSTANCE_NAME>`；省略端口参数会自动选择不同可用 loopback 端口，显式端口参数优先。初始化生成私有管理员凭据，通过 OS 分配端口的临时 loopback 服务注册两 bot、创建一个群、保存各自独立的 `grok.env`/`dot.env`（0600），随后关闭临时服务，不向外发送请求。origin allowance 默认 20，最小验收可用 `--allowance 1`。worker allowance 保持零，收件、领取和回报不需要发起额度。
 
 重复 setup 检查完整实例后跳过，不覆盖凭据、不修改已有端口/身份/额度。中途失败会保留私有恢复文件并拒绝自动重建；离线检查恢复，或明确用 `--state-dir '<PRIVATE_INSTANCE_DIRECTORY>'` 选择新的空目录。不要为了配置错误删除活跃实例。后续每条命令都要带相同自定义 `--state-dir`，实例间不能共用数据库。
 
@@ -41,7 +43,7 @@ python3.12 -m venv .venv   # 或 python3.13；macOS 都没有时：brew install 
 
 ## 3. Profile、隐藏保存 runtime key 与启动
 
-只编辑 `data/local/tunnel.yaml` 的非秘密 Tunnel ID；setup 已复制 `server_urls` 列表、`channel: main` 和所选 MCP 端口，不要改回旧的单数 `server_url`。保持 `api_key` 和 `Authorization` 字段指向模板中的环境变量引用，参见模板，绝不粘贴真实值。管理器只向 gateway/Tunnel 子进程注入完整凭据。
+只编辑 `<STATE_DIRECTORY>/tunnel.yaml` 的非秘密 Tunnel ID；setup 已复制 `server_urls` 列表、`channel: main` 和所选 MCP 端口，不要改回旧的单数 `server_url`。保持 `api_key` 和 `Authorization` 字段指向模板中的环境变量引用，参见模板，绝不粘贴真实值。管理器只向 gateway/Tunnel 子进程注入完整凭据。
 
 ```sh
 sh scripts/save-runtime-key.sh
@@ -106,7 +108,7 @@ sh scripts/status.sh
 
 本机 owner doctor 报告组件运行/就绪、Events 开启和批准域名数量、本 worker 有效订阅数/最早刷新时间、Tunnel readyz、origin 额度/低额度提示、ambient proxy 存在状态和限定范围的回环证据，不输出 callback URL/key。这是文件系统 owner 命令，**不是 MCP 成员工具**；原有成员 `local_client.py doctor` 仍只通过 scoped HTTP 和证据文件检查，不读 admin DB。
 
-roundtrip 消耗一个 origin budget 单位，只创建一个只读 nonce 任务；等待和任务截止都使用指定 timeout（整数 30–86400）。证据保存在 `data/local/roundtrip.json`，不能手改为成功。配置、HTTP 传输、原生工具、手动请求 nonce、webhook 唤醒 nonce 是不同验收层级。一次真实安装已观察到原生工具/手动 nonce/webhook 领取回报；**该测试没有证明 Codex 执行或 Grok 终态 routine 验收**。合成测试不证明厂商原生身份或唤醒。详见[回环证据](ROUNDTRIP.zh.md)。
+roundtrip 消耗一个 origin budget 单位，只创建一个只读 nonce 任务；等待和任务截止都使用指定 timeout（整数 30–86400）。证据保存在 `<STATE_DIRECTORY>/roundtrip.json`，不能手改为成功。配置、HTTP 传输、原生工具、手动请求 nonce、webhook 唤醒 nonce 是不同验收层级。一次真实安装已观察到原生工具/手动 nonce/webhook 领取回报；**该测试没有证明 Codex 执行或 Grok 终态 routine 验收**。合成测试不证明厂商原生身份或唤醒。详见[回环证据](ROUNDTRIP.zh.md)。
 
 已继承成员环境时，`local_client.py task <TASK_ID>` 和 `context <TASK_ID> --body '<CONTEXT>'` 不等 stdin。无位置 task ID 时保留 JSON stdin，输入总限时两秒；冲突输入拒绝。
 
@@ -143,3 +145,7 @@ macOS 上，包含 server 的托管 `up` 默认启动本实例的 `caffeinate -i
 开发测试**只运行假的 caffeinate 可执行文件**，验证参数、自有生命周期、server 退出、关闭、平台/程序缺失及外来 PID 拒杀，不产生真实防睡眠断言或电源修改。渲染的 server launchd 项调用同一 `up --component server` 默认行为；另行授权加载前应审阅，或添加 `--no-caffeinate`。渲染器不会加载 plist。
 
 可选持久电源设置属于另行决定的操作者操作，不是默认建议。`man pmset` 说明 `-c` 仅作用于 AC/充电器供电，修改需要管理员权限。持久变更影响其他应用，圆桌停止后仍生效，可能增加耗电和发热。另行批准任何变更前应记录每个设置原有的 AC 值，之后逐项恢复原值，不重置无关设置。本文不提供修改命令，脚本从不执行 pmset 设置。
+
+日志保存在单独的[日志目录](STORAGE.zh.md)，默认 10 MiB 轮转、三个备份。Plist 使用 shell 包装入口而不固定 venv 解释器，同路径重建 venv 不需重新渲染。
+
+未配置时，`up`、`down`、`ui`、`client` 返回 `not_configured_run_setup` 和完整 setup 命令，不创建半成品实例。非法实例名、相对 XDG_STATE_HOME、缺少 LOCALAPPDATA 会返回具体安全原因码及 `StatePathError`，不回显原始环境值。
