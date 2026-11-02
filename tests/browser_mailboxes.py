@@ -157,6 +157,18 @@ def main():
             page.locator(".mailbox-message").last.focus()
             expect(page.locator(".mailbox-message").last).to_be_focused()
             expect(page.locator(".message-meta time").last).to_have_css("opacity", "1")
+            # Room polling re-renders the surrounding UI; keyboard focus must survive.
+            focused_message = page.locator(".mailbox-message").last.get_attribute("data-message-id")
+            page.evaluate("async () => { await refresh(true); }")
+            expect(
+                page.locator(f'.mailbox-message[data-message-id="{focused_message}"]')
+            ).to_be_focused()
+            expect(
+                page.locator(
+                    f'.mailbox-message[data-message-id="{focused_message}"] .message-meta time'
+                )
+            ).to_have_css("opacity", "1")
+
             assert all(t["unread"] == 0 for t in store.mailboxes.topics(rid, "user"))
             page.wait_for_function("() => motionEvidence.some(e => e.after > e.before)")
             assert page.locator(".character-eyes").first.evaluate(
