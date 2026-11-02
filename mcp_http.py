@@ -8,6 +8,7 @@ import hashlib
 import hmac
 import http.client
 import json
+import logging
 import os
 import re
 from dataclasses import dataclass
@@ -79,7 +80,7 @@ class ScopedVerifier(TokenVerifier):
     def grant_for(self, token: str) -> Grant | None:
         return self.grants.get(hashlib.sha256(token.encode()).hexdigest())
 
-    def still_authorized(self, grant: Grant) -> bool:
+    def still_authorized(self, grant: Grant) -> bool | None:
         connection = http.client.HTTPConnection(self.host, self.port, timeout=5)
         try:
             connection.request(
@@ -88,10 +89,26 @@ class ScopedVerifier(TokenVerifier):
                 headers={"Authorization": "Bearer " + grant.token},
             )
             response = connection.getresponse()
-            # Do not read or log room contents to validate the credential.
-            return response.status == 200
-        except (OSError, http.client.HTTPException):
-            return False
+            if response.status in (401, 403):
+                return False
+            if response.status != 200:
+                return None
+            raw = response.read(4097)
+            if len(raw) > 4096:
+                return None
+            body = json.loads(raw)
+            return (
+                True
+                if (
+                    isinstance(body, dict)
+                    and body.get("authorized") is True
+                    and body.get("room") == grant.room
+                    and body.get("agent") == grant.agent
+                )
+                else None
+            )
+        except (OSError, http.client.HTTPException, ValueError):
+            return None
         finally:
             connection.close()
 
@@ -229,6 +246,7 @@ def build_http_app(
 
 
 def main():
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     parser = argparse.ArgumentParser(description="Authenticated local MCP HTTP gateway")
     parser.add_argument("--port", type=int, default=8766)
     parser.add_argument(

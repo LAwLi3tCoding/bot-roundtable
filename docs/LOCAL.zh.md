@@ -1,19 +1,22 @@
 # 本机 Bot 接入：先验证，再启用交接
 
+隔离托管实例请见[自动配置](SETUP_AUTOMATION.zh.md)：setup-local 创建独立 origin/worker 凭据，up/down/status 核验进程归属，owner doctor 不向成员暴露跨群数据。下述手工环境方式仍支持。
+
+
 [English](LOCAL.en.md) · [任务协议](HANDOFFS.zh.md)
 
 目标是用户电脑上的通信服务，由现成 Bot 自己的授权工具访问。这里没有 computer use 接入、厂商编码 CLI 控制或模型 API 替身。**本版尚未达到 Grok＋dot 安装即用的真实验收**；已完成本机协议和事件契约，真实账号步骤如下。
 
-## 能力与证据矩阵（2026-10-31）
+## 能力与证据矩阵（含受控真实接入验收）
 
 | 路径 | 官方能力 | 本项目状态 | 真实账号 |
 |---|---|---|---|
 | Grok → 本机 HTTP client | 授权本机执行可运行脚本/API calls | 固定 loopback/群/身份的 local_client.py，探针与任务收发已测 | 未验证 |
 | Grok → MCP | custom URL / local command；运行位置需确认 | 原有 stdio/认证 HTTP，正式 SDK 测试 | 未验证 |
 | 本机 → Grok routine | 用户创建 routine webhook；200 仅 accepted | 显式 job/assignment 适配器，mock 契约通过；不自动发送 | 未验证 |
-| dot → 本机 MCP（私有） | Secure MCP Tunnel，需要 org/workspace 权限 | 提供固定成员配置检查路线；未安装或运行 tunnel | 未验证 |
+| dot → 本机 MCP（私有） | Secure MCP Tunnel，需要 org/workspace 权限 | 固定成员私有 Tunnel 已完成受控实测 | 已验证指定身份工具调用；非通用身份认证 |
 | dot → 本机工具 | 已连接电脑是否可调用此服务需在实际 dot 中验证 | 可复用窄 client；不假定桌面 local thread 就是 cloud dot | 未验证 |
-| 本机事件 → dot | 用户先订阅，MCP Events 签名 callback | 默认关闭的 Events 扩展、持久订阅/outbox，SDK HTTP＋mock callback 已测 | 未验证 |
+| 本机事件 → dot | 用户先订阅，MCP Events 签名 callback | 默认关闭的 Events 扩展、持久订阅/outbox，另有真实 webhook → Dot → 领取/回报实测 | 只读 nonce 回传已验证；不含编码执行 |
 | 公共 dot 插件 | HTTPS＋兼容认证；静态 API key 不是 OAuth | OAuth 未实现；不以私有 tunnel 冒充公共插件分发 | 未支持 |
 | DS Bot | 作者文档中的 MCP 配置 | 保留既有指南，本轮不要求安装 | 未验证 |
 
@@ -40,11 +43,13 @@ python local_client.py probe
 
 先确认目标 Platform organization、ChatGPT workspace、Tunnel 权限与该 dot 能用的插件。创建/修改 tunnel 需要 Read＋Manage，运行/选择需要 Read＋Use；必须关联正确 workspace。只从官方页面取得客户端，未授权时本项目不安装、不创建 tunnel 或 key。
 
-[官方配置参考](https://github.com/openai/tunnel-client/blob/master/docs/configuration.md)支持本地目标专属 `mcp.extra_headers`，值可用环境引用。可审核如下配置片段（不是完整 profile，也未做真实联调）：
+[官方配置参考](https://github.com/openai/tunnel-client/blob/master/docs/configuration.md)支持本地目标专属 `mcp.extra_headers`，值可用环境引用。可审核如下配置片段（不是完整 profile）；完整实测配置及首次 Events 发现限制见 [Dot 接入指南](DOT_SETUP.zh.md)：
 
 ```yaml
 mcp:
-  server_url: http://127.0.0.1:8766/mcp
+  server_urls:
+    - channel: main
+      url: http://127.0.0.1:8766/mcp
   extra_headers:
     Authorization: env:ROUNDTABLE_TUNNEL_AUTH_HEADER
 ```
@@ -69,7 +74,7 @@ Grok 的 `grok_adapter.py --dispatch --assignment` 可显式发送一份刚读�
 
 ## 当前阻塞与完成标准
 
-本轮执行环境不是用户电脑，未绑定 Grok/dot 账号、tunnel/runtime key、真实 callback 或 routine，因此未尝试真实外发，没有账号成功的证据。需要的最小用户动作是：选择运行电脑；安全配置两个群成员身份；批准 Grok 本机 probe；确认 dot 私有连接/电脑路径与权限；再明确批准一个测试交接。若某 gate 不通过，保留本机诊断和错误阶段，不换成 computer use、编码 CLI 或模型替身。
+受控真实接入已验证私有 Tunnel 的 Dot 工具调用，以及真实 webhook 触发 Dot 领取并原样回报只读 nonce；不含 Grok 原生入口、Codex 执行或 Grok routine 验收。新安装仍需按 [完整配置指南](DOT_SETUP.zh.md)配置各自账号并独立验收，不能继承他人的结果。若某 gate 不通过，保留本机诊断和错误阶段，不换成 computer use、编码 CLI 或模型替身。
 
 `doctor` is read-only and reports separate configured, transport_verified, native_roundtrip_verified and wake_verified evidence. The last two remain false without real product acceptance. It prints no tokens, leases, callback URLs or secrets.
 
@@ -78,3 +83,5 @@ Grok 的 `grok_adapter.py --dispatch --assignment` 可显式发送一份刚读�
 探针 nonce 会保存在当前成员身份的观测中，并在 Web 连接证据显示，供与原生 Bot 返回值逐字核对；它不是凭据。成员重新加入不会继承旧 nonce。doctor 安全错误码：`configuration_missing` / `configuration_invalid`、`backend_unreachable`、`authorization_rejected`、`protocol_mismatch`。
 
 领取返回的 lease 仅供本机程序使用。可在权限受限的本机目录（Unix `umask 077`，Windows 使用仅当前用户 ACL）通过 stdin/stdout 管道或私有临时文件连接 claim 与 report；完成后删除临时文件。不要把 claim 输出粘贴到聊天、共享日志或截图；需要返回给原生会话的仅是非秘密任务 ID、进度和结果。
+
+托管 `up` 默认提供绑定本实例的临时 macOS 防睡眠，支持 `--no-caffeinate` 关闭和经核验的进程状态。手工 `start-local.sh` 不变；请阅读[AC/合盖/网络限制](SETUP_AUTOMATION.zh.md)，不修改持久电源设置。

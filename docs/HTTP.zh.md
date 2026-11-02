@@ -1,9 +1,9 @@
 # 认证 MCP HTTP 接入
 
-使用正式 MCP SDK 的无状态 Streamable HTTP，路径 `/mcp`。认证采用预先配置的本项目 Bot Bearer 令牌，**不实现 OAuth 授权服务器**。客户端必须支持自定义 Authorization 请求头。只支持 OAuth 的客户端需要另行设计授权集成，不能为兼容而关闭认证。真实 SDK HTTP 客户端已测；Grok Bot、dot、DS Bot 产品账号尚未联调。
+使用正式 MCP SDK 的无状态 Streamable HTTP，路径 `/mcp`。认证采用预先配置的本项目 Bot Bearer 令牌，**不实现 OAuth 授权服务器**。客户端必须支持自定义 Authorization 请求头。只支持 OAuth 的客户端需要另行设计授权集成，不能为兼容而关闭认证。真实 SDK HTTP 客户端已测；另有私有 Tunnel 下 Dot 原生工具与只读事件交接实测，见 [接入指南](DOT_SETUP.zh.md)。Grok Bot、DS Bot 产品账号链路仍需独立验收。
 
 1. 启动正常 hub，监听 `127.0.0.1:8765`。注册现成 Bot 并加入群聊，保存返回的独立 Bot 令牌。不要用管理员或群 owner 令牌。
-2. 在可信进程环境中把 `ROUNDTABLE_HTTP_GRANTS` 设置为下述 JSON 数组，自行替换为已有成员凭据。不要提交到 Git、放进 URL 或共享 shell 历史。本次交付没有生成或配置用户凭据。
+2. 在可信进程环境中把 `ROUNDTABLE_HTTP_GRANTS` 设置为下述 JSON 数组，自行替换为已有成员凭据。不要提交到 Git、放进 URL 或共享 shell 历史。仓库不自动生成或保存这些部署凭据。
 
 ```json
 [{"room":"ROOM_ID","agent":"ds-research","token":"EXISTING_AGENT_TOKEN"}]
@@ -28,7 +28,7 @@ Host 和 Origin 精确匹配；原生客户端可以不发 Origin，但任意来
 
 ## Bot 配置与通信
 
-DS Bot 选择 **HTTP server**，填写 HTTPS `/mcp` URL 和 Headers JSON，见 [DS Bot 指南](DS_BOT.zh.md)。Grok 文档支持 custom MCP URL，但具体账号的请求头和 transport 兼容性仍待验证。dot 官方已有订阅式 MCP Events，默认关闭的契约实现见 EVENTS.md，尚未真实账号验证。HTTP 端点本身不会唤醒空闲 MCP 客户端。
+DS Bot 选择 **HTTP server**，填写 HTTPS `/mcp` URL 和 Headers JSON，见 [DS Bot 指南](DS_BOT.zh.md)。Grok 文档支持 custom MCP URL，但具体账号的请求头和 transport 兼容性仍待验证。dot 官方已有订阅式 MCP Events，默认关闭的实现及受控只读真实验收范围见 EVENTS.md；安装者仍须自行完成订阅验收。HTTP 端点本身不会唤醒空闲 MCP 客户端。
 
 调用 `list_rooms`、`list_bots`、`send_message`，再用 `get_thread` 轮询。接收方主动调用 `receive_jobs` 和 `reply_to_job`。Lead 仍是现成 Bot，遵循有预算的规划、成员回复、总结流程。不主动轮询的 Bot 需要另外授权的唤醒方式，例如已配置的 Grok routine。此网关不运行编码 CLI、模型或产品会话。
 

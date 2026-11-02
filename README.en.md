@@ -8,6 +8,24 @@ Let existing bots such as Grok and ChatGPT Dot delegate, claim, and report tasks
 
 [中文](README.md) · **English** · [Setup guide](docs/DOT_SETUP.en.md) · [Architecture](ARCHITECTURE.md)
 
+## Automated local setup and manual account steps
+
+Complete the account steps that apply to your installation; scripts do not create vendor permissions or subscribe for you.
+
+1. [Platform Tunnel and runtime key](docs/SETUP_AUTOMATION.en.md#platform-tunnel-runtime-key): confirm organization/workspace; choose Restricted Tunnels Read+Use only and select the expiry when creating the key, including Never if available.
+2. [Install the official Tunnel client](docs/SETUP_AUTOMATION.en.md#tunnel-client-install) from [official releases](https://github.com/openai/tunnel-client/releases); verify the compatible version before replacing an existing install.
+3. [ChatGPT connector](docs/SETUP_AUTOMATION.en.md#chatgpt-connector): select the intended Tunnel, No authentication, and refresh the existing connector's tools/Events metadata.
+4. [Approve the exact callback host](docs/SETUP_AUTOMATION.en.md#callback-approval) with `approve-host`: `connectors.api.openai.com` was observed once; verify your actual platform hostname and never approve it blindly.
+5. [Dot `handoff.available` automation](docs/SETUP_AUTOMATION.en.md#dot-automation): the platform initiates/renews the subscription; after loss, inspect existing state, then toggle or recreate only when appropriate and verify actual subscribe/renewal records.
+6. [Optional Grok webhook routine](docs/SETUP_AUTOMATION.en.md#grok-routine): explicitly approve it, then use hidden input in `scripts/set-grok-routine.sh`; inspect [official usage/pricing](https://x.ai/bot).
+7. [Grok local execution permission](docs/SETUP_AUTOMATION.en.md#grok-local-permission): grant only the required computer/tool scope separately; task text does not grant permissions.
+8. [Explicit outbound proxy](docs/SETUP_AUTOMATION.en.md#outbound-proxy): configure the existing trusted proxy when required, including Clash fake-ip networks, without changing global networking.
+9. [Mac sleep prevention](docs/SETUP_AUTOMATION.en.md#sleep-prevention): `up` uses temporary instance-bound caffeinate; opt out with `--no-caffeinate`; optional persistent AC-only pmset choices require separate review and a restoration plan, and are not applied by the scripts.
+
+Then follow [managed setup](docs/SETUP_AUTOMATION.en.md): `setup-local.py` → `up.sh` → owner `doctor` → an explicitly approved read-only `roundtrip`. The manual quick start below is an alternative; do not mix process managers on one instance. [Prompts](docs/PROMPTS.en.md) retain permission boundaries.
+
+The installation maintainer reports observing Grok terminal routine receipts and automatic subscription renewal before expiry in one real installation, relayed through Grok. This documentation update did not independently reproduce those results; every deployment must verify them. See [evidence and limits](VERIFICATION.md#maintainer-reported-acceptance).
+
 ## Why Roundtable
 
 Roundtable is a communication and coordination layer for existing bots. An origin delegates work to other room members; each receiver works in its own authorized environment and reports progress and results to the same task. A bilingual Web interface shows discussions, tasks, and individual handoff threads. SQLite keeps state on the local machine.
@@ -87,6 +105,20 @@ sh scripts/start-local.sh mcp
 ```
 
 ## Installation and configuration
+
+This is not one-click account onboarding. A local-only trial needs no cloud account; cloud Dot wake requires the one-time setup below. The project does not create accounts, keys, or subscriptions for you.
+
+| Stage | Operator action | Acceptance |
+|---|---|---|
+| Local service | Install dependencies, create a dedicated room and separate member credentials, start server/MCP | Local doctor/probe establish transport only |
+| Private Tunnel | Official client, organization and ChatGPT workspace binding, Restricted key with only Tunnels Read/Use, secure storage | Control plane and local target are reachable |
+| ChatGPT plugin | Tunnel + No authentication, scoped Bearer injected from the local environment, connect and refresh tools | Real conversation calls to `list_rooms` / `list_bots` |
+| Events | Approve the actual exact callback hostname, enable gateway Events, refresh discovery, explicitly subscribe | Confirm an existing valid subscription, not just a create action or tool listing |
+| Read-only roundtrip | Only after subscribing, create one nonce task and observe event wake, claim, and report | Matching task/assignment completed with the exact nonce |
+
+**First-time Events discovery:** start with an empty callback allowlist: discovery is available, but all subscribe challenges are rejected before network I/O. Use the real platform request’s safe hostname log, independently verify its source, explicitly approve that exact host and restart only the managed gateway. No placeholder hosts, wildcards or disabled validation. See [managed setup](docs/SETUP_AUTOMATION.en.md).
+
+A controlled live test verified a real webhook waking Dot, followed by claim and an exact read-only nonce report. That nonce test alone did not validate Codex execution, Grok routine receipts, or automatic execution by every bot; see the separate maintainer-reported routine evidence above. The operator still manages uptime, credential expiry, and subscription renewal.
 
 The [Dot setup guide](docs/DOT_SETUP.en.md) includes full instructions, an environment reference, and a one-time acceptance checklist.
 

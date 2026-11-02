@@ -1,5 +1,8 @@
 # Optional terminal receipt to Grok
 
+For managed isolated instances, see [setup automation](SETUP_AUTOMATION.en.md). `setup-local.py` creates separate origin/worker credentials, `up/down/status` verify ownership, and the owner doctor never exposes cross-room member data. The manual environment route below is still supported.
+
+
 The automatic server hook is disabled by default. The explicit operator command below is also available. It does not create a
 routine or subscription. Configure a routine yourself and explicitly authorize
 its use before running this command. Inherit `ROUNDTABLE_URL`,
@@ -79,3 +82,5 @@ Both modes honor `ROUNDTABLE_TERMINAL_LEDGER` and default to
 absolute ledger path for automatic and manual delivery.
 
 Configuration preflight runs before a receipt reservation: missing explicit proxy in a proxy environment or invalid proxy configuration is `definitely_not_sent`, does not consume an attempt, and leaves the worker cursor pending. Uncertain network sends retain their reservation and are never replayed. Transient worker failures recover with stop-aware exponential backoff from 0.1 to 30 seconds; authenticated doctor capabilities expose `terminal_worker` state/reason/retry_seconds and `outbound_backend` mode without URLs or secrets. Ledger creation uses exclusive mode-0600 files and mode-0700 new directories, without changing process-global umask or existing permissions/data.
+
+For managed instances, `sh scripts/set-grok-routine.sh` uses hidden URL/key input and a private explicit opt-in file. Only the next server start enables the worker; it does not restart the server. The exact host is derived from the validated HTTPS URL. Sample files never enable sends. See [official routines](https://cursor.com/help/grok-bot/routines), [current usage/pricing](https://x.ai/bot) and [safe receipt prompts](PROMPTS.en.md).

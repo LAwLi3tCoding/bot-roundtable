@@ -119,8 +119,6 @@ class CallbackTransport:
         self.proxy = proxy_config(proxy_url)
         self.slots = threading.BoundedSemaphore(4)
         self.allowed_hosts = {canonical_host(host) for host in allowed_hosts}
-        if not self.allowed_hosts:
-            raise ValueError("Explicit callback host allowlist required")
 
     def validate(self, url):
         if not isinstance(url, str) or len(url) > 2048 or any(ord(c) < 32 for c in url):

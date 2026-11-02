@@ -1,9 +1,9 @@
 # Authenticated MCP over HTTP
 
-The official MCP SDK provides stateless Streamable HTTP at `/mcp`. This uses explicitly provisioned first-party bearer credentials, **not an OAuth authorization server**. Clients must support a configured Authorization header. OAuth-only clients need a separately designed authorization integration; do not disable authentication. SDK HTTP client interoperability is tested; Grok Bot, dot and DS Bot account interoperability is not.
+The official MCP SDK provides stateless Streamable HTTP at `/mcp`. This uses explicitly provisioned first-party bearer credentials, **not an OAuth authorization server**. Clients must support a configured Authorization header. OAuth-only clients need a separately designed authorization integration; do not disable authentication. SDK HTTP client interoperability is tested. A controlled private Tunnel test also verified native Dot tools and read-only event handoff; see [setup](DOT_SETUP.en.md). Grok Bot and DS Bot account paths still require separate acceptance.
 
 1. Start the normal hub on `127.0.0.1:8765`. Register an existing bot and add it to a room. Keep its returned agent token private. Never use the administrator or owner token here.
-2. In a trusted process environment set `ROUNDTABLE_HTTP_GRANTS` to a JSON array, replacing the placeholders below with existing room membership credentials. Do not commit this value, put it in a URL, or expose it in shared shell history. No user credentials are generated/configured by this repository delivery.
+2. In a trusted process environment set `ROUNDTABLE_HTTP_GRANTS` to a JSON array, replacing the placeholders below with existing room membership credentials. Do not commit this value, put it in a URL, or expose it in shared shell history. The repository does not automatically generate or save deployment credentials.
 
 ```json
 [{"room":"ROOM_ID","agent":"ds-research","token":"EXISTING_AGENT_TOKEN"}]
@@ -28,7 +28,7 @@ Host and Origin are exact allowlists; a missing Origin is allowed for native MCP
 
 ## Bot configuration and communication
 
-For DS Bot, choose **HTTP server**, enter the HTTPS `/mcp` URL and Headers JSON (see [DS Bot guide](DS_BOT.en.md)). Grok documents custom MCP URL support, but account-specific header/transport compatibility still requires verification. dot has an official subscription-based MCP Events route; see EVENTS.md for the opt-in contract implementation, still not account-verified. An HTTP endpoint cannot itself wake an idle MCP consumer.
+For DS Bot, choose **HTTP server**, enter the HTTPS `/mcp` URL and Headers JSON (see [DS Bot guide](DS_BOT.en.md)). Grok documents custom MCP URL support, but account-specific header/transport compatibility still requires verification. dot has an official subscription-based MCP Events route; see EVENTS.md for the opt-in implementation and the scope of its controlled read-only live test; each installer must still validate their own subscription. An HTTP endpoint cannot itself wake an idle MCP consumer.
 
 Call `list_rooms`, `list_bots`, `send_message`, then poll `get_thread`. Receiving bots call `receive_jobs` and `reply_to_job`. The Lead remains an existing bot with the same bounded plan/peer/summary protocol. A bot that is not actively polling needs an independently authorized wake path, such as a configured Grok routine. This gateway does not run coding CLIs, models, or provider sessions.
 

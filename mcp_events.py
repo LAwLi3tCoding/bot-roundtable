@@ -9,6 +9,7 @@ import hashlib
 import hmac
 import http.client
 import json
+import logging
 import os
 import secrets
 import sqlite3
@@ -67,6 +68,7 @@ class EventBroker:
         self.lock = threading.RLock()
         self.generations = {}
         self.pending_generations = set()
+        self.unavailable_until = {}
         self.scanning = threading.Lock()
         self.subscribing = threading.BoundedSemaphore(4)
         if path != ":memory:":
@@ -102,6 +104,8 @@ class EventBroker:
             )
             response = conn.getresponse()
             raw = response.read(262145)
+            if response.status >= 500:
+                raise EventError(-32015, "backend_unavailable")
             if response.status != 200 or len(raw) > 262144:
                 raise EventError(-32602, "event_scope_denied")
             return json.loads(raw)
@@ -170,6 +174,8 @@ class EventBroker:
                 )
                 self.db.commit()
                 self.generations.pop(sid, None)
+                self.unavailable_until.pop(sid, None)
+                logging.info("event_subscription_cancelled")
                 return {}
         if not self.subscribing.acquire(blocking=False):
             with self.lock:
@@ -243,11 +249,14 @@ class EventBroker:
                     raise ValueError("challenge_failed")
             except Exception:
                 raise EventError(-32015, "challenge_failed") from None
-            if time.time() - now > 15 or not self.verifier.still_authorized(grant):
-                raise EventError(-32015, "verification_expired_or_access_revoked")
+            if time.time() - now > 15:
+                raise EventError(-32015, "verification_expired")
             verified = time.time()
-        if not self.verifier.still_authorized(grant):
-            raise EventError(-32015, "access_revoked")
+        authorized = self.verifier.still_authorized(grant)
+        if authorized is not True:
+            raise EventError(
+                -32015, "access_revoked" if authorized is False else "backend_unavailable"
+            )
         with self.lock:
             if self.generations.get(sid) != generation:
                 raise EventError(-32015, "subscription_changed")
@@ -283,6 +292,7 @@ class EventBroker:
                 ),
             )
             self.db.commit()
+            logging.info("event_subscription_renewed" if old else "event_subscription_created")
             return {
                 "id": sid,
                 "refreshBefore": datetime.fromtimestamp(expiry, timezone.utc).isoformat(),
@@ -294,6 +304,8 @@ class EventBroker:
         for row in self.db.execute(
             "SELECT id FROM subscriptions WHERE expires<=?", (now,)
         ).fetchall():
+            self.unavailable_until.pop(row["id"], None)
+            logging.info("event_subscription_expired")
             if self.generations.get(row["id"]) not in self.pending_generations:
                 self.generations.pop(row["id"], None)
         self.db.execute(
@@ -334,14 +346,17 @@ class EventBroker:
         with self.lock:
             if not self.current(sub, generation):
                 return
+            if self.unavailable_until.get(sid, 0) > time.monotonic():
+                return
             pending = self.db.execute(
                 "SELECT 1 FROM deliveries WHERE subscription=?", (sid,)
             ).fetchone()
         grant = self.verifier.grants.get(sub["principal"])
         error = ""
         try:
-            if not grant or not self.verifier.still_authorized(grant):
-                error = "access_revoked"
+            authorized = self.verifier.still_authorized(grant) if grant else False
+            if authorized is not True:
+                error = "access_revoked" if authorized is False else "backend_unavailable"
                 raise ValueError()
             feed = self.feed(
                 grant,
@@ -354,10 +369,13 @@ class EventBroker:
                 if self.current(sub, generation):
                     self.db.execute(
                         "UPDATE subscriptions SET last_error=? WHERE id=?",
-                        (error or "backend_unavailable_or_scope_denied", sid),
+                        (error or "backend_unavailable", sid),
                     )
-                    if error:
+                    if error == "access_revoked":
                         self.db.execute("UPDATE subscriptions SET expires=0 WHERE id=?", (sid,))
+                        logging.info("event_subscription_revoked")
+                    else:
+                        self.unavailable_until[sid] = time.monotonic() + 5
                     self.db.commit()
             return
         with self.lock:
@@ -395,7 +413,8 @@ class EventBroker:
         with self.lock:
             if not self.current(sub, generation):
                 return
-            if not authorized:
+            if authorized is False:
+                logging.info("event_subscription_revoked")
                 self.db.execute(
                     "UPDATE subscriptions SET expires=0,last_error='access_revoked' WHERE id=?",
                     (sid,),
@@ -415,6 +434,9 @@ class EventBroker:
                     (sid, row["event_id"]),
                 )
             error = "" if 200 <= status < 300 else "delivery_rejected_or_exhausted"
+            if authorized is None:
+                error = "backend_unavailable"
+                self.unavailable_until[sid] = time.monotonic() + 5
             self.db.execute("UPDATE subscriptions SET last_error=? WHERE id=?", (error, sid))
             if status == 410:
                 self.db.execute("UPDATE subscriptions SET expires=0 WHERE id=?", (sid,))
