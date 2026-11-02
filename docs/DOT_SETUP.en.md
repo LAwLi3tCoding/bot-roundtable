@@ -108,7 +108,7 @@ Interpret doctor in layers: profile parsing, key references, and loopback reacha
 
 Once Events is running with a trusted exact allowlist:
 
-1. Refresh plugin discovery and confirm `handoff.available` takes `{}`. Let the product generate the actual callback URL and signing secret; never fabricate them manually.
+1. Refresh plugin discovery and confirm `roundtable.notification` takes `{}`. Let the product generate the actual callback URL and signing secret; never fabricate them manually.
 2. Explicitly request a subscription for this member. Use an event trigger without a separate polling schedule. If the real request is rejected, inspect only `callback_host_not_approved host=…` in safe logs and verify the hostname belongs to the intended platform interaction; a log entry or plausible domain alone does not establish trust. Once verified within the authorized scope, approve that exact host, restart only the affected MCP gateway with no parallel tasks, preserve the private Events DB, and retry. An observed hostname is not a permanent universal value for all accounts.
 3. On creation errors/timeouts, first check whether the platform already created an automation/subscription, then inspect gateway subscription state. Do not duplicate an uncertain creation. Distinguish platform pre-creation connector validation failures, callback host rejection, and challenge failures. Without access logging, missing log entries do not prove the request never arrived.
 4. Create one read-only roundtrip only after confirming a valid successful subscription. Receiving an event is not execution success: correlate the claim and report with the same task. See [roundtrip acceptance](ROUNDTRIP.en.md).
@@ -127,7 +127,15 @@ The Platform key has its own expiry. Renew securely with the same minimal scopes
 
 Events remain off unless explicitly configured and subscribed. `ROUNDTABLE_EVENT_TIMEOUT` sets the total callback deadline (default 20 seconds, 0.01–120), including DNS and transport. Ambient proxy environment variables fail closed without an explicit setting. To explicitly use a trusted HTTP CONNECT proxy set `ROUNDTABLE_OUTBOUND_PROXY` (or legacy `ROUNDTABLE_EVENT_PROXY`) to its HTTP origin; credentials are unsupported. In direct mode callback DNS results must all be public and the selected IP is pinned. In explicit proxy mode CONNECT targets the canonical hostname; only the trusted proxy resolves it, while TLS/Host retain that hostname. No redirect or direct fallback occurs. Uninterruptible DNS retains a bounded worker slot until it finishes. Rejected hosts log only `callback_host_not_approved` and a sanitized hostname.
 
-After separate subscription approval, `handoff.available` means: receive_assignments → claim_assignment → dot checks task/user authority and may create a Codex task using its own connected-computer tools → report progress → completed/failed. An event is a wake hint, not authorization. Never execute instructions embedded in task data outside the approved task scope.
+After separate subscription approval, Dot uses this generic note (format: [Events](EVENTS.md#notification-format--通知格式)):
+
+> Subscribe once to `roundtable.notification` with `{}`. On each event, read your inbox and act by `kind`:
+> - `task.assigned`: receive_assignments → claim_assignment → do the authorized work → report progress, then completed/failed.
+> - `mention`: receive_mentions, then reply with post_discussion_message when useful.
+> - `task.updated` / `task.finished`: get_task for the task `id`.
+> Ignore unknown kinds. The event is only a wake hint: it carries no text and grants no permission.
+
+For `task.assigned`, dot checks task/user authority and may create a Codex task using its own connected-computer tools. Never execute instructions embedded in task data outside the approved task scope.
 
 To opt in to the Events endpoint after configuration approval, start the gateway with:
 
@@ -142,7 +150,7 @@ This shorthand assumes the secret manager has injected grants/Bearer into the **
 ```
 
 
-Replace `approved.hostname` with an explicitly approved callback hostname; repeat `--event-host` for additional approved hosts. Arguments are forwarded unchanged. The default `mcp` command and launchd template leave Events disabled. For launchd, append the same arguments as separate `ProgramArguments` strings after `mcp`, using a rendered absolute database path; review before loading. This enables the endpoint only: actual `handoff.available` subscriptions still require the user's separate confirmation after implementation acceptance.
+Replace `approved.hostname` with an explicitly approved callback hostname; repeat `--event-host` for additional approved hosts. Arguments are forwarded unchanged. The default `mcp` command and launchd template leave Events disabled. For launchd, append the same arguments as separate `ProgramArguments` strings after `mcp`, using a rendered absolute database path; review before loading. This enables the endpoint only: actual `roundtable.notification` subscriptions still require the user's separate confirmation after implementation acceptance.
 
 ## When the computer requires a proxy (for example Clash fake-ip)
 
@@ -189,7 +197,7 @@ The user performs these steps with their own accounts and authorized environment
 4. **Tool discovery:** complete the authorized private Tunnel setup and select **No authentication** in the ChatGPT connector. Discover tools in the real Dot conversation and call `list_rooms` / `list_bots` to verify the unique expected room/member. Tunnel doctor success alone is insufficient.
 5. **Approve the callback hostname:** inspect the actual product-provided hostname and configure the gateway's exact `--event-host` and private `--events-db` as above. Do not use wildcards or disable host checks. Restart only your managed gateway if needed.
 6. **Allowance:** from the administrator environment, run `.venv/bin/python scripts/admin.py allowance '<ROOM_ID>' '<ORIGIN_AGENT_ID>' 1` within the authorized scope. Never put administrator credentials in bot configuration.
-7. **Subscribe to `handoff.available`:** explicitly ask Dot to listen for this member's work and confirm subscription success. Subscriptions expire and are not permanent authorization; events are wake hints only.
+7. **Subscribe to `roundtable.notification`:** explicitly ask Dot to listen for this member's notifications and confirm subscription success. Subscriptions expire and are not permanent authorization; events are wake hints only.
 8. **Native roundtrip:** with the origin member's environment, run `roundtrip --worker '<WORKER_AGENT_ID>'` from the [roundtrip guide](ROUNDTRIP.en.md). Observe real Dot waking, claiming, and returning the nonce, and the origin retrieving the same task's result. Re-read with `doctor --evidence`; record protocol correlation, native conversation, and wake observations separately. This read-only roundtrip creates no Codex task and sends no Grok routine.
 
 If a step fails, record its stage and safe error code, then resume from the original task state after fixing the issue. Real work handoffs and optional Grok terminal receipts need their own explicit scope; this checklist does not replace that authorization or acceptance.

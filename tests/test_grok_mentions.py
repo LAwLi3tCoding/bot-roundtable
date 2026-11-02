@@ -13,18 +13,18 @@ class GrokMentions(unittest.TestCase):
             second = ledger.send_mention("synthetic", 12, adapter)
             self.assertTrue(first["attempted"])
             self.assertFalse(second["attempted"])
-            adapter.dispatch_mention.assert_called_once()
-            self.assertEqual(adapter.dispatch_mention.call_args.args, (12,))
+            adapter.notify.assert_called_once()
+            self.assertEqual(adapter.notify.call_args.args, ("mention", "12"))
         finally:
             ledger.close()
 
     def test_uncertain_is_not_replayed(self):
         adapter = Mock(spec=GrokWebhook)
-        adapter.dispatch_mention.side_effect = TimeoutError()
+        adapter.notify.side_effect = TimeoutError()
         ledger = TerminalReceipts(":memory:")
         try:
             self.assertEqual(ledger.send_mention("synthetic", 13, adapter)["outcome"], "uncertain")
             self.assertFalse(ledger.send_mention("synthetic", 13, adapter)["attempted"])
-            adapter.dispatch_mention.assert_called_once()
+            adapter.notify.assert_called_once()
         finally:
             ledger.close()

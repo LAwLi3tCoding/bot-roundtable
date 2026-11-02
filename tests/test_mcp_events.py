@@ -45,7 +45,7 @@ class Receiver(CallbackTransport):
         return self.status, b"{}"
 
 
-def subscription(name="handoff.available", arguments=None, secret=SECRET):
+def subscription(name="roundtable.notification", arguments=None, secret=SECRET):
     return {
         "name": name,
         "arguments": arguments or {},
@@ -115,7 +115,9 @@ class EventsFixture(unittest.TestCase):
         self.create()
         self.broker.dispatch_once()
         event, headers, body = self.receiver.records[-1]
-        self.assertEqual(event["name"], "handoff.available")
+        self.assertEqual(event["name"], "roundtable.notification")
+        self.assertEqual(event["data"]["kind"], "task.assigned")
+        self.assertEqual(set(event["data"]), {"kind", "id"})
         self.assertNotIn(b"PRIVATE", body)
         self.assertEqual(headers["webhook-id"], event["eventId"])
         signed = (headers["webhook-id"] + "." + headers["webhook-timestamp"] + ".").encode() + body
@@ -191,8 +193,11 @@ class EventsFixture(unittest.TestCase):
         task = self.create()
         with self.assertRaises(EventError):
             self.broker.rpc(
-                "events/subscribe", subscription("task.updated", {"task_id": task["task_id"]})
+                "events/subscribe", subscription(arguments={"task_id": task["task_id"]})
             )
+        for legacy in ("handoff.available", "task.updated", "message.mentioned"):
+            with self.assertRaises(EventError):
+                self.broker.rpc("events/subscribe", subscription(legacy))
 
     def test_restart_retry_stable_ids_rotation_expiry_and_revocation(self):
         params = subscription()
@@ -241,9 +246,7 @@ class EventsFixture(unittest.TestCase):
     def test_origin_updates_do_not_self_trigger_or_leak_to_workers(self):
         task = self.create()
         self.current = self.origin
-        self.broker.rpc(
-            "events/subscribe", subscription("task.updated", {"task_id": task["task_id"]})
-        )
+        self.broker.rpc("events/subscribe", subscription())
         self.store.handoffs.operate(
             self.room["id"],
             "bot:event-origin",
@@ -271,7 +274,17 @@ class EventsFixture(unittest.TestCase):
             {**claim, "kind": "completed", "body": "private result", "request_id": "result"},
         )
         self.broker.dispatch_once()
-        self.assertEqual(self.receiver.records[-1][0]["name"], "task.updated")
+        for _ in range(5):
+            self.broker.dispatch_once()
+        finished = [
+            r[0]["data"]
+            for r in self.receiver.records
+            if r[0].get("name") == "roundtable.notification"
+        ]
+        self.assertIn(
+            {"kind": "task.finished", "id": task["task_id"], "status": "completed"}, finished
+        )
+        self.assertNotIn(b"private result", b"".join(r[2] for r in self.receiver.records))
 
     @patch.dict("os.environ", {}, clear=True)
     @patch("event_delivery.DirectHTTPSConnection")
@@ -454,7 +467,7 @@ class EventsFixture(unittest.TestCase):
                 )
                 self.assertEqual(
                     {event["name"] for event in result.json()["result"]["events"]},
-                    {"handoff.available", "task.updated", "message.mentioned"},
+                    {"roundtable.notification"},
                 )
                 result = await client.post(
                     url,
@@ -475,11 +488,15 @@ class EventsFixture(unittest.TestCase):
                 self.assertEqual(denied.status_code, 401)
                 self.create("http-event")
                 for _ in range(300):
-                    if any(r[0].get("name") == "handoff.available" for r in self.receiver.records):
+                    if any(
+                        r[0].get("name") == "roundtable.notification" for r in self.receiver.records
+                    ):
                         break
                     await asyncio.sleep(0.01)
                 self.assertTrue(
-                    any(r[0].get("name") == "handoff.available" for r in self.receiver.records)
+                    any(
+                        r[0].get("name") == "roundtable.notification" for r in self.receiver.records
+                    )
                 )
 
         try:

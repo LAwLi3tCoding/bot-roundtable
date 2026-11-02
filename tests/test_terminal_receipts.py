@@ -14,8 +14,33 @@ class TerminalReceiptTests(unittest.TestCase):
         with patch.object(adapter, "_post") as post:
             adapter.dispatch_terminal("a" * 24, "completed")
         self.assertEqual(
-            json.loads(post.call_args.args[0]), {"task_id": "a" * 24, "status": "completed"}
+            json.loads(post.call_args.args[0]),
+            {"kind": "task.finished", "id": "a" * 24, "status": "completed"},
         )
+        with patch.object(adapter, "_post") as post:
+            adapter.notify("mention", "42")
+        self.assertEqual(json.loads(post.call_args.args[0]), {"kind": "mention", "id": "42"})
+
+    def test_notification_body_validation(self):
+        adapter = GrokWebhook("https://approved.example/routine", "test-secret", "approved.example")
+        invalid = [
+            ("handoff.available", "a" * 24, None),
+            ("message.mentioned", "1", None),
+            ("task.finished", "a" * 24, None),
+            ("task.finished", "a" * 24, "running"),
+            ("task.finished", "A" * 24, "completed"),
+            ("task.assigned", "a" * 24, "queued"),
+            ("mention", "0", None),
+            ("mention", "-1", None),
+            ("mention", "a" * 24, None),
+            ("mention", "1", "completed"),
+            ("mention", 1, None),
+        ]
+        with patch.object(adapter, "_post") as post:
+            for kind, item, status in invalid:
+                with self.assertRaises(ValueError):
+                    adapter.notify(kind, item, status)
+        post.assert_not_called()
 
     def test_terminal_private_dns_never_connects(self):
         adapter = GrokWebhook("https://approved.example/routine", "test-secret", "approved.example")

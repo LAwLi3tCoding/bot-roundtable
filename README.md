@@ -39,7 +39,7 @@ sh scripts/up.sh --without-tunnel # 需要代理时追加 --proxy 'http://127.0.
 2. [安装官方 Tunnel client](docs/SETUP_AUTOMATION.zh.md#tunnel-client-install)：从[官方发行页](https://github.com/openai/tunnel-client/releases)取得兼容版本，先核对已有安装。
 3. [ChatGPT connector](docs/SETUP_AUTOMATION.zh.md#chatgpt-connector)：选择目标 Tunnel、No authentication，并刷新已有连接的工具/Events metadata。
 4. [精确批准 callback host](docs/SETUP_AUTOMATION.zh.md#callback-approval)：使用 `approve-host`；`connectors.api.openai.com` 只是一次实测值，必须核实本次平台实际 hostname，不能盲批。
-5. [Dot `handoff.available` automation](docs/SETUP_AUTOMATION.zh.md#dot-automation)：由平台发起/续订；丢失后先查已有状态，再视情况关开或重建，并核实实际 subscribe/续订记录。
+5. [Dot `roundtable.notification` automation](docs/SETUP_AUTOMATION.zh.md#dot-automation)：由平台发起/续订；丢失后先查已有状态，再视情况关开或重建，并核实实际 subscribe/续订记录。
 6. [可选 Grok webhook routine](docs/SETUP_AUTOMATION.zh.md#grok-routine)：明确批准后用 `scripts/set-grok-routine.sh` 隐藏输入，参考[官方用量/价格](https://x.ai/bot)。
 7. [Grok 本机执行许可](docs/SETUP_AUTOMATION.zh.md#grok-local-permission)：另行授予必要电脑/工具范围，任务文本不产生权限。
 8. [显式出站代理](docs/SETUP_AUTOMATION.zh.md#outbound-proxy)：有需要时配置已有可信代理，包括 Clash fake-ip 网络，不改全局网络。
@@ -87,7 +87,7 @@ JSON
 - **MCP stdio / Streamable HTTP**：使用官方 Python SDK；连接绑定群和成员身份，HTTP 网关验证 Bearer 凭据。
 - **任务交接（handoffs）**：独立成员指令、共享上下文、进度、结果、重试和递归取消；保留有限轮次的 Lead 讨论模式。
 - **租约与持久化**：claim 默认租约 60 秒，可设 30–1800 秒；进度续租不超过任务截止时间，旧租约不能继续报告。
-- **Events 与 Tunnel 模板**：显式启用 HTTP Events，订阅 `handoff.available`；提供私有 Tunnel 和未启用的 launchd 模板。
+- **Events 与 Tunnel 模板**：显式启用 HTTP Events，订阅 `roundtable.notification`；提供私有 Tunnel 和未启用的 launchd 模板。
 - **有界等待与诊断**：`wait` 等待终态，`roundtrip` 创建只读回环任务，`doctor` 区分配置、传输和原生验收证据。
 - **终态回执**：可选手动命令或 server 后台工作器，持久记录每个任务的单次发送尝试；不重放不确定结果。
 - **显式出站代理**：`ROUNDTABLE_OUTBOUND_PROXY` 支持可信 HTTP CONNECT 代理及代理侧 DNS，兼容 Clash fake-ip 环境。
@@ -149,7 +149,7 @@ export ROUNDTABLE_OUTBOUND_PROXY='http://127.0.0.1:<PORT>'
 
 私有 Tunnel 路线在 ChatGPT connector 选择 **No authentication**，由 Tunnel 注入固定成员的本地 Bearer；本机网关认证仍然开启。此路线不是公开插件 OAuth 实现。模板不会安装 Tunnel 客户端、创建 key 或加载 launchd。真实连接必须核对工具发现与唯一群/成员身份。
 
-Events 默认关闭。批准实际 callback hostname 后，按 [Events 协议](docs/EVENTS.md) 为网关添加 `--events-db` 和 `--event-host`，再由用户在 Dot 明确订阅 `handoff.available`。启用入口不会自动订阅，也不会授权任务执行。
+Events 默认关闭。批准实际 callback hostname 后，按 [Events 协议](docs/EVENTS.md) 为网关添加 `--events-db` 和 `--event-host`，再由用户在 Dot 明确订阅 `roundtable.notification`。启用入口不会自动订阅，也不会授权任务执行。
 
 ## 使用方法
 

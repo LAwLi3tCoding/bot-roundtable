@@ -9,6 +9,28 @@ from roundtable import Problem, digest, text
 TERMINAL = {"completed", "failed", "cancelled", "timeout", "revoked"}
 
 
+NOTIFICATION_EVENT = "roundtable.notification"
+NOTIFICATION_KINDS = ("task.assigned", "task.updated", "task.finished", "mention")
+TASK_FINISHED = {
+    "task_completed": "completed",
+    "task_failed": "failed",
+    "task_timeout": "timeout",
+    "cancelled": "cancelled",
+}
+_CURSOR_SHIFT = 2**31
+
+
+def pack_cursor(task_position, message_position):
+    """One opaque integer cursor for the broker; both positions stay below 2**31."""
+    if not (0 <= task_position < _CURSOR_SHIFT and 0 <= message_position < _CURSOR_SHIFT):
+        raise Problem(500, "Event cursor overflow")
+    return task_position * _CURSOR_SHIFT + message_position
+
+
+def unpack_cursor(cursor):
+    return divmod(cursor, _CURSOR_SHIFT)
+
+
 class Handoffs:
     def __init__(self, store):
         self.store, self.db = store, store.db
@@ -389,42 +411,17 @@ class Handoffs:
             return result
 
     def event_feed(self, room, actor, data):
-        """Internal cursor feed for signed webhook delivery; not MCP event polling."""
+        """Internal cursor feed for signed webhook delivery; not MCP event polling.
+
+        One generic event, roundtable.notification. Payloads carry only kind, id and
+        an optional status; bodies stay in the scoped inbox. The cursor packs the task
+        event and discussion message positions into one opaque integer.
+        """
         from datetime import datetime, timezone
 
         name, arguments, after = data.get("name"), data.get("arguments"), data.get("after")
-        if name == "message.mentioned":
-            if arguments != {} or (after is not None and (type(after) is not int or after < 0)):
-                raise Problem(400, "Invalid mention event subscription")
-            with self.store.lock:
-                self.member(room, actor)
-                if actor == "user":
-                    raise Problem(403, "Worker identity required")
-                if after is None:
-                    latest = self.db.execute(
-                        "SELECT COALESCE(MAX(id),0) FROM discussion_messages"
-                    ).fetchone()[0]
-                    return {"cursor": latest, "events": []}
-                page = self.store.discussions.inbox(room, actor, {"after": after})
-                return {
-                    "cursor": page["next_cursor"],
-                    "events": [
-                        {
-                            "eventId": f"mention_{self.event_namespace}_{message['id']}",
-                            "name": name,
-                            "timestamp": datetime.fromtimestamp(
-                                message["created"], timezone.utc
-                            ).isoformat(),
-                            "data": {"message_id": message["id"]},
-                        }
-                        for message in page["messages"]
-                    ],
-                }
-
-        if name not in ("handoff.available", "task.updated") or not isinstance(arguments, dict):
+        if name != NOTIFICATION_EVENT or arguments != {}:
             raise Problem(400, "Invalid event subscription")
-        if set(arguments) != ({"task_id"} if name == "task.updated" else set()):
-            raise Problem(400, "Invalid event filters")
         if after is not None and (type(after) is not int or after < 0):
             raise Problem(400, "Invalid event cursor")
         self.expire()
@@ -432,26 +429,30 @@ class Handoffs:
             epoch = self.member(room, actor)
             if actor == "user":
                 raise Problem(403, "Worker identity required")
-            if name == "task.updated":
-                if not isinstance(arguments["task_id"], str):
-                    raise Problem(400, "Invalid task ID")
-                subscribed_task = self.task(room, actor, arguments["task_id"])
-                if subscribed_task["origin"] != actor:
-                    raise Problem(403, "Only task origin may subscribe to task updates")
             if after is None:
-                latest = self.db.execute("SELECT COALESCE(MAX(id),0) FROM task_events").fetchone()[
-                    0
-                ]
-                return {"cursor": latest, "events": []}
+                task_latest = self.db.execute(
+                    "SELECT COALESCE(MAX(id),0) FROM task_events"
+                ).fetchone()[0]
+                message_latest = (
+                    self.db.execute(
+                        "SELECT COALESCE(MAX(id),0) FROM discussion_messages"
+                    ).fetchone()[0]
+                    if getattr(self.store, "discussions", None) is not None
+                    else 0
+                )
+                return {"cursor": pack_cursor(task_latest, message_latest), "events": []}
+            task_after, message_after = unpack_cursor(after)
+
+            def stamp(created):
+                return datetime.fromtimestamp(created, timezone.utc).isoformat()
+
             rows = self.db.execute(
                 "SELECT e.* FROM task_events e JOIN tasks t ON t.id=e.task "
                 "WHERE t.room=? AND e.id>? ORDER BY e.id LIMIT 100",
-                (room, after),
+                (room, task_after),
             ).fetchall()
             result = []
             for row in rows:
-                if name == "task.updated" and row["task"] != arguments["task_id"]:
-                    continue
                 try:
                     task = self.task(room, actor, row["task"])
                 except Problem as exc:
@@ -467,36 +468,58 @@ class Handoffs:
                     and assignment["worker"] == actor[4:]
                     and assignment["epoch"] == epoch
                 )
-                if name == "handoff.available":
-                    if not (
-                        own
-                        and row["kind"] in ("delegated", "retry_requested", "lease_expired")
-                        and assignment["status"] == "queued"
-                        and task["status"] == "running"
-                    ):
-                        continue
-                elif row["actor"] == actor or row["kind"] in (
-                    "task_created",
-                    "delegated",
-                    "task_running",
+                payload = None
+                if (
+                    own
+                    and row["kind"] in ("delegated", "retry_requested", "lease_expired")
+                    and assignment["status"] == "queued"
+                    and task["status"] == "running"
                 ):
+                    payload = {"kind": "task.assigned", "id": row["task"]}
+                elif (
+                    task["origin"] == actor
+                    and row["actor"] != actor
+                    and row["kind"] not in ("task_created", "delegated", "task_running")
+                ):
+                    if row["kind"] in TASK_FINISHED:
+                        payload = {
+                            "kind": "task.finished",
+                            "id": row["task"],
+                            "status": TASK_FINISHED[row["kind"]],
+                        }
+                    else:
+                        payload = {"kind": "task.updated", "id": row["task"], "status": row["kind"]}
+                if payload is None:
                     continue
                 result.append(
                     {
                         "eventId": f"evt_{self.event_namespace}_{row['id']}",
-                        "name": name,
-                        "timestamp": datetime.fromtimestamp(
-                            row["created"], timezone.utc
-                        ).isoformat(),
-                        "data": {
-                            "task_id": row["task"],
-                            "assignment_id": row["assignment"],
-                            "kind": row["kind"],
-                        },
+                        "name": NOTIFICATION_EVENT,
+                        "timestamp": stamp(row["created"]),
+                        "data": payload,
                         "cursor": None,
                     }
                 )
-            return {"cursor": rows[-1]["id"] if rows else after, "events": result}
+            discussions = getattr(self.store, "discussions", None)
+            page = (
+                discussions.inbox(room, actor, {"after": message_after})
+                if discussions is not None
+                else {"messages": [], "next_cursor": message_after}
+            )
+            for message in page["messages"]:
+                result.append(
+                    {
+                        "eventId": f"mention_{self.event_namespace}_{message['id']}",
+                        "name": NOTIFICATION_EVENT,
+                        "timestamp": stamp(message["created"]),
+                        "data": {"kind": "mention", "id": str(message["id"])},
+                        "cursor": None,
+                    }
+                )
+            return {
+                "cursor": pack_cursor(rows[-1]["id"] if rows else task_after, page["next_cursor"]),
+                "events": result,
+            }
 
     def inbox(self, room, actor):
         if actor == "user":

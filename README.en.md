@@ -39,7 +39,7 @@ Complete the account steps that apply to your installation; scripts do not creat
 2. [Install the official Tunnel client](docs/SETUP_AUTOMATION.en.md#tunnel-client-install) from [official releases](https://github.com/openai/tunnel-client/releases); verify the compatible version before replacing an existing install.
 3. [ChatGPT connector](docs/SETUP_AUTOMATION.en.md#chatgpt-connector): select the intended Tunnel, No authentication, and refresh the existing connector's tools/Events metadata.
 4. [Approve the exact callback host](docs/SETUP_AUTOMATION.en.md#callback-approval) with `approve-host`: `connectors.api.openai.com` was observed once; verify your actual platform hostname and never approve it blindly.
-5. [Dot `handoff.available` automation](docs/SETUP_AUTOMATION.en.md#dot-automation): the platform initiates/renews the subscription; after loss, inspect existing state, then toggle or recreate only when appropriate and verify actual subscribe/renewal records.
+5. [Dot `roundtable.notification` automation](docs/SETUP_AUTOMATION.en.md#dot-automation): the platform initiates/renews the subscription; after loss, inspect existing state, then toggle or recreate only when appropriate and verify actual subscribe/renewal records.
 6. [Optional Grok webhook routine](docs/SETUP_AUTOMATION.en.md#grok-routine): explicitly approve it, then use hidden input in `scripts/set-grok-routine.sh`; inspect [official usage/pricing](https://x.ai/bot).
 7. [Grok local execution permission](docs/SETUP_AUTOMATION.en.md#grok-local-permission): grant only the required computer/tool scope separately; task text does not grant permissions.
 8. [Explicit outbound proxy](docs/SETUP_AUTOMATION.en.md#outbound-proxy): configure the existing trusted proxy when required, including Clash fake-ip networks, without changing global networking.
@@ -87,7 +87,7 @@ This is not a model API wrapper or a coding CLI runner. It does not choose model
 - **MCP stdio / Streamable HTTP:** official Python SDK transports, room/member-bound connections, and Bearer authentication at the HTTP gateway.
 - **Handoffs:** separate worker instructions, shared context, progress, results, retries, and recursive cancellation; bounded Lead discussions remain available.
 - **Leases and persistence:** claims default to 60 seconds, configurable from 30–1800; progress renews within the task deadline, and stale leases cannot report.
-- **Events and Tunnel templates:** opt-in HTTP Events with `handoff.available`, private Tunnel configuration, and inactive launchd templates.
+- **Events and Tunnel templates:** opt-in HTTP Events with `roundtable.notification`, private Tunnel configuration, and inactive launchd templates.
 - **Bounded waits and diagnostics:** `wait` observes terminal state, `roundtrip` creates a read-only correlation task, and `doctor` distinguishes configuration, transport, and native acceptance evidence.
 - **Terminal receipts:** optional manual delivery or a server worker, with a durable single-attempt record per task and no replay of uncertain outcomes.
 - **Explicit outbound proxy:** `ROUNDTABLE_OUTBOUND_PROXY` supports a trusted HTTP CONNECT proxy with proxy-side DNS, including Clash fake-ip environments.
@@ -149,7 +149,7 @@ With Clash fake-ip, CONNECT carries the destination hostname and the trusted pro
 
 For the private Tunnel route, choose **No authentication** in the ChatGPT connector. The Tunnel injects a fixed member's local Bearer header; local gateway authentication remains enabled. This is not a public-plugin OAuth implementation. Templates do not install a Tunnel client, create keys, or load launchd. Verify tool discovery and the unique expected room/member through the real connection.
 
-Events are disabled by default. Approve the actual callback hostname, add `--events-db` and `--event-host` to the gateway as described in the [Events contract](docs/EVENTS.md), then explicitly request a `handoff.available` subscription in Dot. Enabling the endpoint neither subscribes nor authorizes task execution.
+Events are disabled by default. Approve the actual callback hostname, add `--events-db` and `--event-host` to the gateway as described in the [Events contract](docs/EVENTS.md), then explicitly request a `roundtable.notification` subscription in Dot. Enabling the endpoint neither subscribes nor authorizes task execution.
 
 ## Usage
 

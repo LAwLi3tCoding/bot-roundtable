@@ -217,11 +217,11 @@ class RoundtripTests(unittest.TestCase):
                     asyncio.to_thread(self.origin.roundtrip, "dot", self.path, 30, True)
                 )
                 for _ in range(500):
-                    if any(r[0].get("name") == "handoff.available" for r in receiver.records):
+                    if any(r[0].get("name") == "roundtable.notification" for r in receiver.records):
                         break
                     await asyncio.sleep(0.01)
                 self.assertTrue(
-                    any(r[0].get("name") == "handoff.available" for r in receiver.records)
+                    any(r[0].get("name") == "roundtable.notification" for r in receiver.records)
                 )
                 jobs = unpack(await session.call_tool("receive_assignments"))
                 job = jobs[0]
