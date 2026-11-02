@@ -88,6 +88,20 @@ sh scripts/start-local.sh mcp
 
 ## Installation and configuration
 
+This is not one-click account onboarding. A local-only trial needs no cloud account; cloud Dot wake requires the one-time setup below. The project does not create accounts, keys, or subscriptions for you.
+
+| Stage | Operator action | Acceptance |
+|---|---|---|
+| Local service | Install dependencies, create a dedicated room and separate member credentials, start server/MCP | Local doctor/probe establish transport only |
+| Private Tunnel | Official client, organization and ChatGPT workspace binding, Restricted key with only Tunnels Read/Use, secure storage | Control plane and local target are reachable |
+| ChatGPT plugin | Tunnel + No authentication, scoped Bearer injected from the local environment, connect and refresh tools | Real conversation calls to `list_rooms` / `list_bots` |
+| Events | Approve the actual exact callback hostname, enable gateway Events, refresh discovery, explicitly subscribe | Confirm an existing valid subscription, not just a create action or tool listing |
+| Read-only roundtrip | Only after subscribing, create one nonce task and observe event wake, claim, and report | Matching task/assignment completed with the exact nonce |
+
+**Known first-time Events discovery limitation:** the gateway requires a nonempty callback allowlist to start Events, but some platforms provide the callback hostname only in a subscription request. This repository has no discovery-only/deny-all startup mode yet. If the actual hostname cannot be obtained beforehand from trusted platform information, first-time setup is blocked here. Do not use placeholder hosts, wildcards, or disabled validation as a workaround; see the [setup guide](docs/DOT_SETUP.en.md).
+
+A controlled live test verified a real webhook waking Dot, followed by claim and an exact read-only nonce report. It did not validate Codex execution, Grok routine receipts, or automatic execution by every bot. The operator still manages uptime, credential expiry, and subscription renewal.
+
 The [Dot setup guide](docs/DOT_SETUP.en.md) includes full instructions, an environment reference, and a one-time acceptance checklist.
 
 | Setting | Purpose |

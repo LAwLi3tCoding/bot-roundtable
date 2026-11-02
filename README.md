@@ -88,6 +88,20 @@ sh scripts/start-local.sh mcp
 
 ## 安装与配置
 
+这不是一键账号接入。仅试用本地圆桌不需要云端账号；要让云端 Dot 自动接收任务，还需完成以下一次性配置。项目不会替你创建账号、密钥或订阅。
+
+| 阶段 | 操作者需要完成 | 验收 |
+|---|---|---|
+| 本机 | 安装依赖，创建专用群及独立成员凭据，启动 server/MCP | 本机 doctor/probe；仍只证明传输 |
+| 私有 Tunnel | 官方客户端、组织与 ChatGPT workspace 绑定、仅 Tunnels Read/Use 的 Restricted key、安全保存 | Tunnel 控制面与本机目标均可达 |
+| ChatGPT 插件 | Tunnel + No authentication，本地环境注入 scoped Bearer，连接并刷新工具 | 真实会话的 `list_rooms` / `list_bots` |
+| Events | 精确批准真实 callback hostname，启用网关、刷新发现、明确订阅 | 订阅确实存在且有效；不能只看创建按钮或工具列表 |
+| 只读回环 | 订阅成功后再创建一次 nonce 任务，观察事件唤醒、领取、回报 | 同一 task/assignment 的 completed 与原样 nonce |
+
+**首次 Events 发现的已知限制：** 当前网关要求非空 callback 白名单才能启动 Events，但某些平台只在订阅请求中提供 callback hostname。仓库尚无 discovery-only/deny-all 启动模式；若无法事先从平台可信信息取得真实域名，首次接入会在此阻塞。不要填占位域名、通配符或关闭验证来绕过；见[接入指南](docs/DOT_SETUP.zh.md)。
+
+受控实测已验证真实 webhook 触发 Dot、领取并原样回报只读 nonce。它不代表 Codex 执行、Grok routine 回执或所有 Bot 的自动执行均已验证。常驻运行、凭据续期及订阅续期仍由操作者管理。
+
 完整步骤见 [Dot 接入指南](docs/DOT_SETUP.zh.md)，其中包含环境变量清单和一次性验收清单。
 
 | 配置 | 用途 |

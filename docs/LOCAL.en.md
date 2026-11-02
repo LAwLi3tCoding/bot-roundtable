@@ -9,9 +9,9 @@ Run the communication service on the user's computer; existing bots use their ow
 | Grok local API | Official authorized local execution supports API calls; fixed loopback client and probe tested | Unverified |
 | Grok MCP | Official custom URL/local command; actual execution location must be checked; existing SDK transports tested | Unverified |
 | Grok routine wake | Official owner-created webhook; explicit job/assignment adapter mock-tested; 200 means accepted | Unverified |
-| dot private MCP | Official Secure MCP Tunnel with organization/workspace access; configuration route documented | Unverified; no tunnel installed |
+| dot private MCP | Official Secure MCP Tunnel with organization/workspace access; fixed-identity route exercised in a controlled live test | Scoped native tool calls verified; not universal identity proof |
 | dot local tools | Whether the actual dot can access the connected local computer must be demonstrated | Unverified |
-| dot event wake | Official user subscription and signed callback; opt-in extension and durable outbox tested with a mock receiver | Unverified |
+| dot event wake | Official user subscription and signed callback; opt-in extension/durable outbox plus a controlled real webhook → Dot → claim/report test | Read-only nonce verified; coding execution excluded |
 | Public dot plugin | Compatible HTTPS/OAuth required; private tunnels are not public distribution | OAuth not implemented |
 | DS Bot | Existing author-documented MCP guide retained | Unverified; not required this round |
 
@@ -34,11 +34,13 @@ In the actual Grok native conversation, explicitly request only the local probe 
 
 Identify the intended Platform organization and ChatGPT workspace. Tunnel creation/edit requires Read + Manage; runtime/selection requires Read + Use, and the correct workspace association. Obtain the official client only after authorization; this project installs nothing and creates no keys/tunnels automatically.
 
-The [official configuration reference](https://github.com/openai/tunnel-client/blob/master/docs/configuration.md) supports target-only static headers using environment references. Candidate fragment, not a complete or account-verified profile:
+The [official configuration reference](https://github.com/openai/tunnel-client/blob/master/docs/configuration.md) supports target-only static headers using environment references. This is a fragment, not a complete profile; see the [verified setup guide](DOT_SETUP.en.md) for full commands and the first-time Events discovery limitation:
 
 ```yaml
 mcp:
-  server_url: http://127.0.0.1:8766/mcp
+  server_urls:
+    - channel: main
+      url: http://127.0.0.1:8766/mcp
   extra_headers:
     Authorization: env:ROUNDTABLE_TUNNEL_AUTH_HEADER
 ```
@@ -59,7 +61,7 @@ See [Events configuration](EVENTS.md). The user explicitly asks dot to subscribe
 
 `grok_adapter.py --dispatch --assignment` explicitly sends a freshly read queued assignment plus its room, preserving HTTPS/host/public-address checks. In the routine payload, run is task_id, id is assignment_id, phase is assignment. The routine must reread its authorized inbox before claiming/reporting. No automatic routine creation or outbound retry is added.
 
-Current gates: this executor is not the user's computer and has no Grok/dot authorization, tunnel/runtime key, callback or routine. The smallest user steps are choosing the computer, securely configuring two scoped identities, approving Grok's probe, confirming dot's permitted connection path, then approving one test handoff. Failed gates remain explicit; no UI automation, coding CLI or model substitute hides them.
+Current evidence: a controlled live private Tunnel test verified native Dot tools and a real webhook triggering Dot to claim and return the exact read-only nonce. It did not verify native Grok initiation, Codex execution, or Grok routines. New installations must configure their own accounts using the [complete setup guide](DOT_SETUP.en.md) and independently verify their route; another installation's result is not inherited. Failed gates remain explicit; no UI automation, coding CLI or model substitute hides them.
 
 `doctor` is read-only and reports separate configured, transport_verified, native_roundtrip_verified and wake_verified evidence. The last two remain false without real product acceptance. It prints no tokens, leases, callback URLs or secrets.
 

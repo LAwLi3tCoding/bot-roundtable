@@ -4,6 +4,8 @@ control_plane:
   tunnel_id: <TUNNEL_ID>
   api_key: env:CONTROL_PLANE_API_KEY
 mcp:
-  server_url: http://127.0.0.1:8766/mcp
+  server_urls:
+    - channel: main
+      url: http://127.0.0.1:8766/mcp
   extra_headers:
     Authorization: env:ROUNDTABLE_TUNNEL_AUTH_HEADER
