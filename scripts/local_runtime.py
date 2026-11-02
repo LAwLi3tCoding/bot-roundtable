@@ -36,7 +36,7 @@ from admin_credentials import (  # noqa: E402
     save_private as credential_save,
 )
 
-from state_paths import state_dir, log_dir, instance_name, path_warnings  # noqa: E402
+from state_paths import StatePathError, state_dir, log_dir, instance_name, path_warnings  # noqa: E402
 from private_logs import RotatingLog  # noqa: E402
 
 AMBIENT = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy")
@@ -1096,7 +1096,7 @@ def repair_room_env(state, config, rotate=False):
             "ok": False,
             "reason": "room_token_hash_not_reversible_use_repair_room_env_rotate_room_token",
         }
-    from state_migration import require_stopped
+    from runtime_lifecycle import require_stopped
 
     require_stopped(state, config, sys.modules[__name__])
     if not pending.exists():
@@ -1114,7 +1114,7 @@ def repair_room_env(state, config, rotate=False):
 def approve_routine(state, config):
     if (state / "routine.json").exists():
         raise Failure("routine_already_configured")
-    from state_migration import require_stopped
+    from runtime_lifecycle import require_stopped
     from grok_adapter import GrokWebhook
 
     require_stopped(state, config, sys.modules[__name__])
@@ -1144,8 +1144,6 @@ def main():
             "client",
             "ui",
             "rotate-admin-token",
-            "import-legacy",
-            "migrate-state",
             "rebind",
             "paths",
             "approve-routine",
@@ -1194,7 +1192,6 @@ def main():
     parser.add_argument("--timeout", type=float, default=600)
     parser.add_argument("--body")
     parser.add_argument("--keyring", action="store_true")
-    parser.add_argument("--from", dest="legacy_source")
     args = parser.parse_args()
     try:
         os.umask(0o077)
@@ -1208,19 +1205,6 @@ def main():
         if args.action == "paths":
             print(json.dumps({"state_dir": str(selected), "log_dir": str(args.resolved_log_dir)}))
             return 0
-        if args.action == "migrate-state":
-            if not args.legacy_source:
-                raise Failure("migration_explicit_source_required")
-            from state_migration import migrate_state
-
-            result = migrate_state(
-                Path(args.legacy_source),
-                selected,
-                args,
-                sys.modules[__name__],
-            )
-            print(json.dumps(result))
-            return 0
         if (
             args.action == "setup"
             and not (
@@ -1229,27 +1213,32 @@ def main():
             and not selected.exists()
             and (HOME / "data/local").exists()
         ):
-            raise Failure("legacy_state_detected_use_migrate_state_or_explicit_new_instance")
-        if args.action in ("status", "doctor") and not selected.exists():
+            raise Failure("legacy_state_detected_manual_transfer_see_STORAGE")
+        if args.action != "setup" and not (selected / "instance.json").exists():
+            import shlex
+
             print(
                 json.dumps(
                     {
                         "ok": False,
                         "configured": False,
+                        "reason": "not_configured_run_setup",
+                        "setup_command": shlex.join(
+                            [
+                                sys.executable,
+                                str(HOME / "scripts/setup-local.py"),
+                                "--state-dir",
+                                str(selected),
+                            ]
+                        ),
                         "path_warnings": path_warnings(selected, HOME),
                     }
                 )
             )
-            return 0
+            return 0 if args.action in ("status", "doctor") else 1
         state = private_dir(selected)
         if args.action == "setup":
             result = setup(state, args)
-        elif args.action == "import-legacy":
-            args.server_port = args.server_port or 8765
-            args.mcp_port = args.mcp_port or 8766
-            from legacy_import import import_legacy
-
-            result = import_legacy(args.legacy_source, state, args, sys.modules[__name__])
         else:
             config = load(state)
             if args.action == "_serve":
@@ -1278,7 +1267,7 @@ def main():
                         )
                     write_json(state / "instance.json", config, replace=True)
                 if args.action == "rebind":
-                    from state_migration import require_stopped
+                    from runtime_lifecycle import require_stopped
 
                     require_stopped(state, config, sys.modules[__name__])
                     config["home"] = str(HOME)
@@ -1327,8 +1316,8 @@ def main():
                         if component == "server":
                             stop_component(state, config, "caffeinate")
                         stop_component(state, config, component)
-                    from state_migration import require_stopped
-                    from sqlite_snapshot import checkpoint_state
+                    from runtime_lifecycle import require_stopped
+                    from sqlite_maintenance import checkpoint_state
 
                     checkpointed = 0
                     if args.component is None:
@@ -1365,7 +1354,7 @@ def main():
                 {
                     "ok": False,
                     "reason": str(exc)
-                    if isinstance(exc, (Failure, CredentialError))
+                    if isinstance(exc, (Failure, CredentialError, StatePathError))
                     else "local_operation_failed",
                     "error_type": type(exc).__name__,
                     "secrets_included": False,

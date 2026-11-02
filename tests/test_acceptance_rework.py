@@ -1,6 +1,9 @@
 """Synthetic old layouts and explicit maintenance operations, no live accounts."""
 
 import argparse
+import contextlib
+import io
+import subprocess
 import hashlib
 import json
 import os
@@ -14,13 +17,12 @@ import unittest
 from unittest.mock import Mock, patch
 
 import admin_credentials as credentials
-from roundtable import Store, digest
+from roundtable import digest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import local_runtime as runtime  # noqa: E402
-from legacy_import import import_legacy  # noqa: E402
-from sqlite_snapshot import backup_readonly, checkpoint_state  # noqa: E402
+from sqlite_maintenance import checkpoint_state  # noqa: E402
 
 
 def hashes(root):
@@ -49,57 +51,6 @@ class Rework(unittest.TestCase):
 
     def tearDown(self):
         self.temp.cleanup()
-
-    def test_combined_admin_named_members_and_wal_snapshot_unchanged(self):
-        old = runtime.private_dir(self.root / "old")
-        live = runtime.private_dir(self.root / "fixture")
-        runtime.save(live / "roundtable.db", "")
-        db = Store(str(live / "roundtable.db"))
-        for name in ("grok-local-test", "dot-local-test"):
-            db.register_bot(name, name, "mailbox")
-        room = db.create_group("Synthetic", ["grok-local-test", "dot-local-test"])
-        runtime.write_json(
-            old / "admin.json",
-            {"ROUNDTABLE_ADMIN_TOKEN": "a" * 48, "room": room["id"], "room_token": room["token"]},
-        )
-        for agent in room["agent_tokens"]:
-            runtime.write_json(
-                old / (agent["id"] + ".json"),
-                {
-                    "ROUNDTABLE_AGENT": agent["id"],
-                    "ROUNDTABLE_ROOM": room["id"],
-                    "ROUNDTABLE_TOKEN": agent["token"],
-                },
-            )
-        for path in live.glob("roundtable.db*"):
-            shutil.copy2(path, old / path.name)
-        db.db.close()
-        self.assertTrue((old / "roundtable.db-wal").exists())
-        before = hashes(old)
-        args = argparse.Namespace(
-            origin="grok",
-            worker="dot",
-            server_port=self.config["server_port"],
-            mcp_port=self.config["mcp_port"],
-            proxy=None,
-        )
-        target = runtime.private_dir(self.root / "imported")
-        result = import_legacy(str(old), target, args, runtime)
-        self.assertTrue(result["history_imported"])
-        self.assertEqual(before, hashes(old))
-        imported = runtime.load(target)
-        self.assertEqual(imported["origin"], "grok-local-test")
-        self.assertEqual(imported["worker"], "dot-local-test")
-
-    def test_open_source_database_refused(self):
-        store = Store(str(self.state / "roundtable.db"))
-        destination = self.root / "backup.db"
-        try:
-            with self.assertRaisesRegex(runtime.Failure, "database_in_use"):
-                backup_readonly(self.state / "roundtable.db", destination)
-        finally:
-            store.db.close()
-        self.assertFalse(destination.exists())
 
     def test_checkpoint_closed_copy_leaves_no_wal(self):
         live = runtime.private_dir(self.root / "writer")
@@ -145,6 +96,163 @@ class Rework(unittest.TestCase):
             replace=True,
         )
         self.assertTrue(runtime.repair_room_env(self.state, self.config)["recovered"])
+
+    def test_up_write_down_checkpoints_all_managed_databases(self):
+        def command(action, *extra):
+            output = io.StringIO()
+            with (
+                patch.object(
+                    sys,
+                    "argv",
+                    ["local_runtime.py", action, "--state-dir", str(self.state), *extra],
+                ),
+                contextlib.redirect_stdout(output),
+            ):
+                status = runtime.main()
+            self.assertEqual(status, 0, output.getvalue())
+            return json.loads(output.getvalue())
+
+        with patch.dict(os.environ, {key: "" for key in runtime.AMBIENT}):
+            try:
+                command("up", "--without-tunnel", "--no-caffeinate")
+                runtime.request(
+                    self.config["server_port"],
+                    "/api/bots",
+                    credentials.get_admin_token(self.state, environ={}),
+                    {"id": "written-bot", "name": "Written", "kind": "mailbox"},
+                )
+                # Synthetic abrupt writer leaves WAL on a separate managed ledger.
+                for name in ("terminal.db", "terminal-receipts.db"):
+                    subprocess.run(
+                        [
+                            sys.executable,
+                            "-c",
+                            "import sqlite3,os,sys; os.umask(0o077); db=sqlite3.connect(sys.argv[1]); db.execute('PRAGMA journal_mode=WAL'); db.execute('CREATE TABLE marker(value)'); db.execute('INSERT INTO marker VALUES(1)'); db.commit(); os._exit(0)",
+                            str(self.state / name),
+                        ],
+                        check=True,
+                    )
+                self.assertTrue(list(self.state.glob("*-wal")))
+                result = command("down")
+                self.assertGreaterEqual(result["checkpointed_databases"], 3)
+                self.assertFalse(list(self.state.glob("*-wal")))
+            finally:
+                for component in ("tunnel", "mcp", "server"):
+                    runtime.stop_component(self.state, self.config, component)
+
+    def test_missing_configuration_has_complete_setup_hint(self):
+        selected = self.root / "not-configured"
+        for action in ("up", "down", "ui", "client", "status", "doctor"):
+            output = io.StringIO()
+            with (
+                patch.object(
+                    sys, "argv", ["local_runtime.py", action, "--state-dir", str(selected)]
+                ),
+                contextlib.redirect_stdout(output),
+            ):
+                status = runtime.main()
+            result = json.loads(output.getvalue())
+            self.assertEqual(status, 0 if action in ("status", "doctor") else 1)
+            self.assertEqual(result["reason"], "not_configured_run_setup")
+            self.assertIn(
+                str(ROOT / "scripts/setup-local.py"), shlex.split(result["setup_command"])
+            )
+            self.assertIn(str(selected), shlex.split(result["setup_command"]))
+            self.assertFalse(selected.exists())
+
+    def test_path_error_reason_is_safe_and_specific(self):
+        cases = [
+            ("invalid_instance_name", ["--name", "../secret"], None),
+            ("xdg_state_home_must_be_absolute", [], "linux"),
+            ("localappdata_required", [], "win32"),
+        ]
+        for reason, args, platform in cases:
+            output = io.StringIO()
+            with (
+                patch.dict(os.environ, {"XDG_STATE_HOME": "relative-sensitive-value"}, clear=True),
+                patch.object(sys, "argv", ["local_runtime.py", "paths", *args]),
+                patch("state_paths.sys.platform", platform or "darwin"),
+                contextlib.redirect_stdout(output),
+            ):
+                self.assertEqual(runtime.main(), 1)
+            result = json.loads(output.getvalue())
+            self.assertEqual(result["reason"], reason)
+            self.assertEqual(result["error_type"], "StatePathError")
+            self.assertNotIn("relative-sensitive-value", output.getvalue())
+            self.assertNotIn("../secret", output.getvalue())
+
+    def test_manual_database_default_is_separate_even_with_state_override(self):
+        from state_paths import state_dir, manual_state_dir
+
+        for platform in ("darwin", "linux", "win32"):
+            env = {"ROUNDTABLE_STATE_DIR": str(self.root / "shared-root")}
+            managed = state_dir(environ=env, platform=platform)
+            manual = manual_state_dir(environ=env, platform=platform)
+            self.assertEqual(manual, managed / "manual")
+            self.assertNotEqual(managed / "roundtable.db", manual / "roundtable.db")
+        import server
+
+        selected = self.root / "manual-cli-root"
+        env = {"ROUNDTABLE_STATE_DIR": str(selected)}
+        for explicit in (False, True):
+            database = selected / ("custom.db" if explicit else "manual/roundtable.db")
+            argv = ["server.py", *(["--db", str(database)] if explicit else [])]
+            with (
+                patch.dict(os.environ, env, clear=True),
+                patch.object(sys, "argv", argv),
+                patch.object(
+                    server, "Store", side_effect=RuntimeError("test-stop-before-server")
+                ) as store,
+                patch.object(
+                    credentials, "get_admin_token", return_value="synthetic"
+                ) as credential,
+            ):
+                with self.assertRaisesRegex(RuntimeError, "test-stop-before-server"):
+                    server.main()
+                store.assert_called_once_with(str(database), demo=False)
+                self.assertEqual(
+                    Path(credential.call_args.args[0]), database.parent / "admin-credentials"
+                )
+        output = io.StringIO()
+        with (
+            patch.dict(os.environ, env, clear=True),
+            patch.object(sys, "argv", ["admin_credentials.py", "rotate-admin-token"]),
+            patch.object(credentials, "rotate_admin_token", return_value={"ok": True}) as rotate,
+            contextlib.redirect_stdout(output),
+        ):
+            credentials.main()
+            self.assertEqual(Path(rotate.call_args.args[0]), selected / "manual/admin-credentials")
+        self.assertIn("manual_state_dir()", (ROOT / "scripts/start-local.sh").read_text())
+
+    def test_detected_legacy_directory_points_to_manual_storage_guide(self):
+        checkout = self.root / "synthetic-checkout"
+        (checkout / "data/local").mkdir(parents=True)
+        selected = self.root / "new-default"
+        output = io.StringIO()
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch.object(runtime, "HOME", checkout),
+            patch.object(runtime, "state_dir", return_value=selected),
+            patch.object(sys, "argv", ["local_runtime.py", "setup"]),
+            contextlib.redirect_stdout(output),
+        ):
+            self.assertEqual(runtime.main(), 1)
+        self.assertEqual(
+            json.loads(output.getvalue())["reason"],
+            "legacy_state_detected_manual_transfer_see_STORAGE",
+        )
+        self.assertFalse(selected.exists())
+
+    def test_checkpoint_refuses_open_database_without_mutating_it(self):
+        db = sqlite3.connect(self.state / "roundtable.db")
+        try:
+            db.execute("SELECT id FROM rooms").fetchall()
+            before = (self.state / "roundtable.db").read_bytes()
+            with self.assertRaisesRegex(runtime.Failure, "database_in_use_stop_instance"):
+                checkpoint_state(self.state)
+            self.assertEqual(before, (self.state / "roundtable.db").read_bytes())
+        finally:
+            db.close()
 
     def test_pending_room_token_wrong_binding_refused_without_mutation(self):
         (self.state / "room.env").unlink()

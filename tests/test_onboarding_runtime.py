@@ -18,7 +18,6 @@ import admin_credentials as credentials
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import local_runtime as runtime  # noqa: E402
-from legacy_import import import_legacy, parse_env  # noqa: E402
 
 
 class CredentialTests(unittest.TestCase):
@@ -308,6 +307,7 @@ class RuntimeContracts(unittest.TestCase):
             self.assertNotIn("TOKEN", path.read_text())
 
     def test_unknown_exception_class_without_message(self):
+        runtime.write_json(self.state / "instance.json", {})
         output = io.StringIO()
         with (
             patch.object(
@@ -339,104 +339,6 @@ class RuntimeContracts(unittest.TestCase):
         args.task_id = "b" * 24
         with self.assertRaisesRegex(runtime.Failure, "argument_conflict"):
             runtime.run_client(self.state, config, args)
-
-
-class LegacyTests(unittest.TestCase):
-    def setUp(self):
-        self.temp = tempfile.TemporaryDirectory()
-        self.source = runtime.private_dir(Path(self.temp.name).resolve() / "old")
-        self.target = runtime.private_dir(Path(self.temp.name).resolve() / "new")
-        self.args = argparse.Namespace(
-            origin="grok", worker="dot", server_port=12345, mcp_port=12346, proxy=None
-        )
-        runtime.write_json(self.source / "admin.json", {"token": "a" * 48})
-        runtime.write_json(self.source / "room.json", {"id": "a" * 24, "token": "b" * 48})
-        for agent in ("grok", "dot"):
-            runtime.save(
-                self.source / (agent + ".env"),
-                f"export ROUNDTABLE_AGENT={agent}\nexport ROUNDTABLE_ROOM={'a' * 24}\nexport ROUNDTABLE_TOKEN={agent * 16}\n",
-            )
-        runtime.save(
-            self.source / "runtime-key.env", "export CONTROL_PLANE_API_KEY=sk-synthetic-test-only\n"
-        )
-        runtime.write_json(
-            self.source / "grok-routine.json",
-            {"url": "https://routine.example.com/hook", "key": "synthetic"},
-        )
-
-    def tearDown(self):
-        self.temp.cleanup()
-
-    def test_import_readonly_private_pending_and_no_overwrite(self):
-        before = {p.name: p.read_bytes() for p in self.source.iterdir()}
-        result = import_legacy(str(self.source), self.target, self.args, runtime)
-        self.assertEqual(before, {p.name: p.read_bytes() for p in self.source.iterdir()})
-        self.assertEqual(result["imported_members"], 2)
-        self.assertTrue(result["routine_pending_approval"])
-        self.assertFalse((self.target / "routine.json").exists())
-        runtime.load(self.target)
-        for p in self.target.iterdir():
-            self.assertEqual(p.stat().st_mode & 0o777, 0o600)
-        self.assertNotIn("synthetic", json.dumps(result))
-        with self.assertRaisesRegex(runtime.Failure, "target_not_empty"):
-            import_legacy(str(self.source), self.target, self.args, runtime)
-
-    def test_mismatch_leaves_target_empty(self):
-        runtime.save(
-            self.source / "dot.env",
-            f"ROUNDTABLE_AGENT=dot\nROUNDTABLE_ROOM={'c' * 24}\nROUNDTABLE_TOKEN={'d' * 48}\n",
-            True,
-        )
-        with self.assertRaisesRegex(runtime.Failure, "scope_mismatch"):
-            import_legacy(str(self.source), self.target, self.args, runtime)
-        self.assertEqual(list(self.target.iterdir()), [])
-
-    def test_database_snapshot_receipts_suppressed_with_leftover_wal(self):
-        from roundtable import Store, digest
-        from terminal_receipts import TerminalReceipts
-
-        runtime.save(self.source / "roundtable.db", "")
-        store = Store(str(self.source / "roundtable.db"))
-        with store.db:
-            store.db.execute(
-                "INSERT INTO rooms(id,token,name) VALUES(?,?,?)",
-                ("a" * 24, digest("b" * 48), "Synthetic"),
-            )
-            for agent in ("grok", "dot"):
-                store.register_bot(agent, agent, "mailbox")
-                store.db.execute(
-                    "INSERT INTO agents(room,id,kind,token) VALUES(?,?,?,?)",
-                    ("a" * 24, agent, "mailbox", digest(agent * 16)),
-                )
-        task = store.handoffs.create(
-            "a" * 24,
-            "user",
-            {
-                "title": "Imported task",
-                "context": "Synthetic",
-                "assignments": [{"worker": "dot", "instruction": "Read only"}],
-                "budget": 1,
-                "request_id": "imported",
-            },
-        )
-        store.db.close()
-        runtime.save(Path(str(self.source / "roundtable.db") + "-wal"), "")
-        result = import_legacy(str(self.source), self.target, self.args, runtime)
-        self.assertTrue(result["history_imported"])
-        adapter = Mock()
-        ledger = TerminalReceipts(self.target / "terminal.db")
-        try:
-            outcome = ledger.send("a" * 24, {"id": task["task_id"], "status": "completed"}, adapter)
-            self.assertEqual(outcome["reason"], "already_reserved")
-            adapter.dispatch_terminal.assert_not_called()
-        finally:
-            ledger.close()
-
-    def test_env_no_execution_or_duplicate(self):
-        self.assertEqual(parse_env('export KEY="synthetic value"\n'), {"KEY": "synthetic value"})
-        for text in ("KEY=$(anything)", "KEY=`anything`", "KEY=x\nKEY=y"):
-            with self.assertRaises(runtime.Failure):
-                parse_env(text)
 
 
 if __name__ == "__main__":

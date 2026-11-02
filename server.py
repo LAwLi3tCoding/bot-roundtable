@@ -293,10 +293,10 @@ def run_ticks(store, stop, interval=0.5):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=8765)
-    from state_paths import state_dir
+    from state_paths import manual_state_dir
 
     parser.add_argument(
-        "--db", default=os.environ.get("ROUNDTABLE_DB", str(state_dir() / "roundtable.db"))
+        "--db", default=os.environ.get("ROUNDTABLE_DB", str(manual_state_dir() / "roundtable.db"))
     )
     parser.add_argument(
         "--admin-state", help="Private persistent administrator credential directory"

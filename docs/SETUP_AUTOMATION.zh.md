@@ -1,8 +1,8 @@
 # 本地实例自动配置
 
-这些脚本自动完成本地身份、私有文件和进程管理，**不会**创建厂商账号、安装 Tunnel、订阅 Events、给 bot 电脑权限或加载 launchd。支持 Python 3.12/3.13 的 macOS/Linux；尚未实现 Windows 进程管理。使用独立 checkout，不得指向手工管理的数据库，需要迁移时使用明确迁移命令。
+这些脚本自动完成本地身份、私有文件和进程管理，**不会**创建厂商账号、安装 Tunnel、订阅 Events、给 bot 电脑权限或加载 launchd。支持 Python 3.12/3.13 的 macOS/Linux；尚未实现 Windows 进程管理。使用独立 checkout，不得指向手工管理的数据库，旧数据转移需遵循 STORAGE 的手工审核清单，项目不提供自动迁移命令。
 
-持久管理员凭据、room.env、安全 UI 连接、create/tasks/inbox、明确启动诊断和只读旧实例导入，详见[本机接入与凭据恢复](ONBOARDING_RUNTIME.zh.md)。Windows 凭据持久化与尚不支持的 Windows 进程管理是两回事。
+持久管理员凭据、room.env、安全 UI 连接、create/tasks/inbox、明确启动诊断和手工状态转移说明，详见[本机接入与凭据恢复](ONBOARDING_RUNTIME.zh.md)。Windows 凭据持久化与尚不支持的 Windows 进程管理是两回事。
 
 ## 1. 前置条件与必须手动的账号步骤
 
@@ -147,3 +147,5 @@ macOS 上，包含 server 的托管 `up` 默认启动本实例的 `caffeinate -i
 可选持久电源设置属于另行决定的操作者操作，不是默认建议。`man pmset` 说明 `-c` 仅作用于 AC/充电器供电，修改需要管理员权限。持久变更影响其他应用，圆桌停止后仍生效，可能增加耗电和发热。另行批准任何变更前应记录每个设置原有的 AC 值，之后逐项恢复原值，不重置无关设置。本文不提供修改命令，脚本从不执行 pmset 设置。
 
 日志保存在单独的[日志目录](STORAGE.zh.md)，默认 10 MiB 轮转、三个备份。Plist 使用 shell 包装入口而不固定 venv 解释器，同路径重建 venv 不需重新渲染。
+
+未配置时，`up`、`down`、`ui`、`client` 返回 `not_configured_run_setup` 和完整 setup 命令，不创建半成品实例。非法实例名、相对 XDG_STATE_HOME、缺少 LOCALAPPDATA 会返回具体安全原因码及 `StatePathError`，不回显原始环境值。

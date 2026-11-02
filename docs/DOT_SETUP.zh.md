@@ -31,7 +31,7 @@ export ROUNDTABLE_PORT='<SERVER_PORT>'
 export ROUNDTABLE_URL='http://127.0.0.1:<SERVER_PORT>'
 export ROUNDTABLE_STATE_DIR='<PRIVATE_STATE_DIRECTORY>'
 .venv/bin/python -c 'import os; from admin_credentials import private_directory; private_directory(os.environ["ROUNDTABLE_STATE_DIR"])'
-export ROUNDTABLE_DB="${ROUNDTABLE_STATE_DIR}/roundtable.db"
+export ROUNDTABLE_DB="${ROUNDTABLE_STATE_DIR}/manual/roundtable.db"
 ```
 
 把 checkout 占位符换成绝对路径，两个 server 端口保持一致；所有后续终端都需设置相同的非秘密路径/端口。已有 checkout 或环境无需重复 clone/创建。使用已有代理联网安装依赖时保留必要代理，不修改全局网络。Tunnel 客户端从[官方发行页](https://github.com/openai/tunnel-client/releases)按系统/架构取得，按官方说明核验来源后安装到 PATH；先运行 `tunnel-client --version`，已有兼容版本不必重装。以下 Tunnel 步骤以 0.0.19 为实测基准。
@@ -159,7 +159,7 @@ sh scripts/start-local.sh mcp --events-db "${ROUNDTABLE_STATE_DIR}/events.db" --
 | 变量 | 使用方与配置 |
 |---|---|
 | `ROUNDTABLE_HOME` | 启动脚本必需；checkout 的绝对路径 |
-| `ROUNDTABLE_PORT` / `ROUNDTABLE_DB` | 脚本传给 server 的端口与数据库；默认 8765 / `<STATE_DIRECTORY>/roundtable.db` |
+| `ROUNDTABLE_PORT` / `ROUNDTABLE_DB` | 脚本传给 server 的端口与数据库；默认 8765 / `<STATE_DIRECTORY>/manual/roundtable.db` |
 | `ROUNDTABLE_ADMIN_TOKEN` | server 和 allowance 命令；通过安全环境注入至少 32 字符的随机秘密 |
 | `ROUNDTABLE_URL` | bridge、HTTP 网关、本机客户端和 allowance；默认 `http://127.0.0.1:8765` |
 | `ROUNDTABLE_ROOM` / `ROUNDTABLE_AGENT` / `ROUNDTABLE_TOKEN` | stdio bridge 与本机客户端的群、成员和独立成员凭据 |
@@ -212,4 +212,4 @@ launchd 模板只含 `ROUNDTABLE_HOME`，不继承终端的 `export`。使用前
 
 托管 `up` 默认提供绑定本实例的临时 macOS 防睡眠，支持 `--no-caffeinate` 关闭和经核验的进程状态。手工 `start-local.sh` 不变；请阅读[AC/合盖/网络限制](SETUP_AUTOMATION.zh.md)，不修改持久电源设置。
 
-PRIVATE_STATE_DIRECTORY 参照[平台位置表](STORAGE.zh.md)选择。ROUNDTABLE_HOME 仍是代码位置，状态、日志和证据默认不再放在仓库内。已有托管 data/local 实例应先用原管理器停机，明确运行 migrate-state 后再清理旧 checkout。
+PRIVATE_STATE_DIRECTORY 参照[平台位置表](STORAGE.zh.md)选择。ROUNDTABLE_HOME 仍是代码位置，状态、日志和证据默认不再放在仓库内。已有托管 data/local 实例应先用原管理器停机，按 STORAGE 手工转移并校验后再清理旧 checkout。

@@ -32,13 +32,15 @@
 | --- | --- | --- |
 | macOS | `~/Library/Application Support/bot-roundtable/<INSTANCE_NAME>` | `~/Library/Logs/bot-roundtable/<INSTANCE_NAME>` |
 | Linux | `${XDG_STATE_HOME:-~/.local/state}/bot-roundtable/<INSTANCE_NAME>` | `<STATE_DIRECTORY>/logs` |
-| Windows | `%LOCALAPPDATA%\bot-roundtable\<INSTANCE_NAME>` | `<STATE_DIRECTORY>\logs`；不支持托管进程管理/迁移 |
+| Windows | `%LOCALAPPDATA%\bot-roundtable\<INSTANCE_NAME>` | `<STATE_DIRECTORY>\logs`；不支持托管进程管理 |
 
 优先级 `--state-dir` > `ROUNDTABLE_STATE_DIR` > 平台默认，实例名默认 `default`。ROUNDTABLE_HOME 仍是代码 checkout。Setup 支持 `--name`，未显式指定时自动选空闲端口。详见[文件用途、私有权限、备份、迁移、rebind 与卸载](docs/STORAGE.zh.md)。**旧 data/local 迁移/备份前不要运行 git clean -xfd。**
 
 ## 持久凭据与派任务入口
 
-Setup 现在保存私有管理员、群 owner 和成员凭据。启动托管服务后可运行 `local_runtime.py ui`，通过短时效、单次使用的 loopback 登录码自动连接。明确使用 `ui --copy-token` 可调用平台剪贴板工具，不打印令牌。网页刷新会自动连接上次的群；长期凭据需主动勾选记住，短期 UI 会话始终仅保存在 sessionStorage。详见[接入、轮换与旧实例导入](docs/ONBOARDING_RUNTIME.zh.md)。Grok 无需 source 秘密文件即可派任务：
+手工 `server.py`/`start-local.sh server` 使用 `<STATE_DIRECTORY>/manual/roundtable.db` 及其旁边的管理员凭据；托管实例使用 `<STATE_DIRECTORY>/roundtable.db`。显式数据库设置优先，不能让两种管理器指向同一库。项目不提供自动状态转移命令，请参考[手工转移与备份](docs/STORAGE.zh.md)。
+
+Setup 现在保存私有管理员、群 owner 和成员凭据。启动托管服务后可运行 `local_runtime.py ui`，通过短时效、单次使用的 loopback 登录码自动连接。明确使用 `ui --copy-token` 可调用平台剪贴板工具，不打印令牌。网页刷新会自动连接上次的群；长期凭据需主动勾选记住，短期 UI 会话始终仅保存在 sessionStorage。详见[接入、轮换与凭据恢复](docs/ONBOARDING_RUNTIME.zh.md)。Grok 无需 source 秘密文件即可派任务：
 
 ```sh
 .venv/bin/python scripts/local_runtime.py client --operation create <<'JSON'

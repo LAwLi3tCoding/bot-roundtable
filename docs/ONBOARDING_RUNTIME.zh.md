@@ -21,9 +21,9 @@ Setup 持久保存管理员、群 owner（`room.env`）及独立成员凭据，�
 
 ## 持久管理员凭据
 
-单独运行 `server.py` 时，会在数据库旁的 `admin-credentials/admin.json` 创建并复用私有凭据；可用 `--admin-state '<PRIVATE_DIRECTORY>'` 指定位置。托管实例保存在自身状态目录。不要每次启动重新生成环境令牌。显式提供的 `ROUNDTABLE_ADMIN_TOKEN` 仅覆盖当前进程使用值，不会改写持久值。Doctor 以 `admin_environment_override_active` 提示覆盖状态，不显示值。
+单独运行 `server.py` 时，会在数据库旁的 `admin-credentials/admin.json`（默认数据库为 `<STATE_DIRECTORY>/manual/roundtable.db`，与托管状态分开） 创建并复用私有凭据；可用 `--admin-state '<PRIVATE_DIRECTORY>'` 指定位置。托管实例保存在自身状态目录。不要每次启动重新生成环境令牌。显式提供的 `ROUNDTABLE_ADMIN_TOKEN` 仅覆盖当前进程使用值，不会改写持久值。Doctor 以 `admin_environment_override_active` 提示覆盖状态，不显示值。
 
-默认使用 POSIX 0700 目录、0600 文件。Windows 管理员凭据持久化使用仅当前用户 ACL，写入前检查，无法保护或权限不安全时拒绝落盘；Windows 托管进程管理尚不支持。Setup 的 `--keyring` 或独立 server 的 `--admin-keyring` 可选优先使用已安装的系统后端（macOS Keychain、Linux Secret Service、Windows Credential Manager）。如需使用，请自行安装配置可选 `keyring` 包，参阅[官方文档](https://keyring.readthedocs.io/en/latest/)。未知或明文后端不受信任。首次创建找不到支持的后端时退回安全文件；已有 keyring 身份无法读取时拒绝继续，不会静默重新生成。Keyring 写入失败也不会静默降级。Keyring 元数据初始绑定状态路径，托管实例可使用 [migrate-state](STORAGE.zh.md) 保留对原系统条目的验证后引用；独立 server 应保留原 --admin-state 路径，或另行明确迁移凭据，不应手工移动元数据。
+默认使用 POSIX 0700 目录、0600 文件。Windows 管理员凭据持久化使用仅当前用户 ACL，写入前检查，无法保护或权限不安全时拒绝落盘；Windows 托管进程管理尚不支持。Setup 的 `--keyring` 或独立 server 的 `--admin-keyring` 可选优先使用已安装的系统后端（macOS Keychain、Linux Secret Service、Windows Credential Manager）。如需使用，请自行安装配置可选 `keyring` 包，参阅[官方文档](https://keyring.readthedocs.io/en/latest/)。未知或明文后端不受信任。首次创建找不到支持的后端时退回安全文件；已有 keyring 身份无法读取时拒绝继续，不会静默重新生成。Keyring 写入失败也不会静默降级。Keyring 元数据绑定状态路径。请保留该路径，或由管理员明确审核系统凭据转移；只复制元数据不是受支持的凭据转移。独立 server 可保留原 --admin-state 路径。
 
 只停止准备轮换的实例，移除环境覆盖后运行：
 
@@ -57,27 +57,11 @@ JSON
 
 Create 要求 JSON stdin，最多 32 KiB、读取总期限两秒；终端或卡住的管道会失败，不无限等待。`create`、`tasks`、`inbox` 拒绝 `--task-id`/`--body`。Inbox 是 origin 自己的收件箱，不是其他成员。相同 request ID 和内容复用已有任务；只有确实新任务才使用新 ID。任务正文不扩权。任务已接受不代表厂商已被唤醒或已完成工作。
 
-## 导入旧实例快照
+## 手工转移状态与待审批 routine
 
-请明确准备**已停止写入、私有、离线的旧实例快照**，不要指向正在运行的服务。导入器只读取已知文件，不执行或 source 文本，不修改源目录，不启动服务，拒绝非空目标。秘密始终保持私有。支持普通 `KEY=VALUE` 和 `export KEY=VALUE`（可带引号）；拒绝 shell 展开、命令替换和重复键。
+项目不再提供自动旧实例导入或状态迁移命令。请遵循[手工存储清单](STORAGE.zh.md)：停机、checkpoint、私有复制、校验并保留原目录。不同旧布局由操作者审核，不自动猜测或替换凭据。
 
-```sh
-.venv/bin/python scripts/local_runtime.py import-legacy \
-  --from '<PRIVATE_OLD_SNAPSHOT>' --state-dir '<NEW_EMPTY_PRIVATE_DIRECTORY>' \
-  --origin grok --worker dot --server-port '<NEW_SERVER_PORT>' --mcp-port '<NEW_MCP_PORT>'
-```
-
-支持的输入清单：
-
-- `admin.json` 的 `token`、`admin_token` 或 `ROUNDTABLE_ADMIN_TOKEN`，或 `admin.env` 的 `ROUNDTABLE_ADMIN_TOKEN`；仅 keyring 元数据不能导出秘密。
-- `room.json` 的 `id`/`room_id` 和 `token`/`room_token`，或 `room.env` 的 `ROUNDTABLE_ROOM`、`ROUNDTABLE_ROOM_TOKEN`。也支持合并在 `admin.json` 的 `room`、`room_token`，无需单独群文件。缺少群 owner 凭据必须由操作者恢复，导入不会编造替代值。
-- 各 `<agent>.json` 的 `id`/`agent_id`、`room`/`room_id`、`token`，或 JSON/env 的 `ROUNDTABLE_AGENT`、`ROUNDTABLE_ROOM`、`ROUNDTABLE_TOKEN`（可选 `ROUNDTABLE_URL`），必须属于同一群。默认文件不存在时，唯一的 `grok*.json` 和 `dot*.json` 会被自动识别；有歧义或自定义名称时使用 `--origin <ORIGIN_FILE_STEM> --worker <WORKER_FILE_STEM>`，省略 `.json`/`.env`。例如 `--origin grok-legacy --worker dot-legacy` 选择对应文件；已有 `instance.json` 则采用其中角色名称。
-- 可选 `runtime-key.env`、`tunnel/runtime-key.env` 或 `tunnel/key.env` 中的 `CONTROL_PLANE_API_KEY`；可选 `tunnel.yaml` 或 `tunnel/roundtable.yaml` 仅提供标量 `control_plane.tunnel_id`。新 profile 使用安全环境引用及新端口重新生成，不解释任意 YAML tag/alias。
-- 可选 `events.env` 的已明确批准 `ROUNDTABLE_EVENT_HOST`、`ROUNDTABLE_OUTBOUND_PROXY`，或托管 `instance.json` 配置。`--proxy` 只覆盖导入实例。这是保留操作者原审批，不推断新域名。
-- 可选 `grok-routine.json` 的 `url`/`endpoint`、`key`，或 `routine.json` 中的 `environment` 对象。验证 HTTPS 与主机规则后保存为 `routine.pending.json`，**不启用**；核实并批准目标后，在实例停止时运行 `.venv/bin/python scripts/local_runtime.py approve-routine --state-dir '<NEW_PRIVATE_DIRECTORY>'`。此命令验证并保存明确批准，不发送请求；下次 `up` 可为新任务启用回执，不覆盖已有活跃 routine 配置。也可用 `set-grok-routine.sh` 重新输入已批准值。
-- 可选已停止的 `roundtable.db` 快照，保留历史并验证群及成员 token hash。支持残留 `-wal`/`-shm`：先验证源文件并复制到私有 staging，再对副本使用 SQLite 只读连接和 backup API。SQLite 不打开或 checkpoint 原目录；导入前后源文件 hash 必须一致。窄范围 `lsof` 检查会拒绝仍被打开的数据库；缺失时需另行安装 `lsof`。务必先停源服务并防止并发重启，这不是系统级写锁。回滚 `-journal` 需操作者恢复。完整托管 `down` 会 checkpoint 已关闭数据库，并在关闭连接后清除 WAL；仅停止单组件不会执行此步骤。没有数据库则只重建身份，额度为零且无历史，所需额度应另行明确授予。
-
-不克隆 Events 订阅或旧回执 ledger。新 ledger 永久禁止所有导入任务的回执（包括仍在进行的任务），因为其旧发送历史未知；只有新任务可产生新回执，请保留此新 ledger，避免不确定发送重放。切换前核对已有平台订阅和旧实例停机；导入不会撤销旧凭据。普通异常会清理私有 staging，目标仍为空；进程突然崩溃可能留下私有 `.import-*`，应离线检查，不发布或自动采用。
+明确准备好的私有 `routine.pending.json` 可在实例停止时通过 `.venv/bin/python scripts/local_runtime.py approve-routine` 批准。文件的 `environment` 对象必须且只能包含 `GROK_ROUTINE_URL`、`GROK_ROUTINE_KEY`、`GROK_ALLOWED_HOST`。先私下核实目标及权限，不将秘密贴入命令或聊天。命令验证 HTTPS 与精确域名，拒绝覆盖已有活跃 routine，保存明确批准但不发送请求。下次 `up` 可启用终态回执，因此切换前必须保留原 receipt ledger 并处理旧的不确定发送历史。新批准配置也可用隐藏输入的 `set-grok-routine.sh`。
 
 生成的 launchd plist 包含 Homebrew 与系统标准 PATH，不含凭据值，也不会自动加载。输出目录必须私有，不会静默放宽权限。原生系统 keyring 与 Windows ACL 仍需各平台验收；合成测试不代表真实厂商或跨平台端到端成功。
 

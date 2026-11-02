@@ -31,7 +31,7 @@ export ROUNDTABLE_PORT='<SERVER_PORT>'
 export ROUNDTABLE_URL='http://127.0.0.1:<SERVER_PORT>'
 export ROUNDTABLE_STATE_DIR='<PRIVATE_STATE_DIRECTORY>'
 .venv/bin/python -c 'import os; from admin_credentials import private_directory; private_directory(os.environ["ROUNDTABLE_STATE_DIR"])'
-export ROUNDTABLE_DB="${ROUNDTABLE_STATE_DIR}/roundtable.db"
+export ROUNDTABLE_DB="${ROUNDTABLE_STATE_DIR}/manual/roundtable.db"
 ```
 
 Use an absolute checkout path and the same server port in both settings. Repeat the non-secret path/port settings in later terminals. Do not clone or recreate an existing environment unnecessarily. Retain any proxy needed to install dependencies without changing global networking. Obtain the Tunnel client for your OS/architecture from [official releases](https://github.com/openai/tunnel-client/releases), verify its source following official instructions, and install it on PATH. Check `tunnel-client --version` first; an existing compatible installation need not be replaced. The Tunnel steps below were exercised with 0.0.19.
@@ -159,7 +159,7 @@ Ambient `HTTPS_PROXY`/`HTTP_PROXY`/`ALL_PROXY` without the explicit setting prod
 | Variable | Consumer and configuration |
 |---|---|
 | `ROUNDTABLE_HOME` | Required by the startup script; absolute checkout path |
-| `ROUNDTABLE_PORT` / `ROUNDTABLE_DB` | Script arguments to the server; defaults 8765 / `<STATE_DIRECTORY>/roundtable.db` |
+| `ROUNDTABLE_PORT` / `ROUNDTABLE_DB` | Script arguments to the server; defaults 8765 / `<STATE_DIRECTORY>/manual/roundtable.db` |
 | `ROUNDTABLE_ADMIN_TOKEN` | Server and allowance command; securely inject a random secret of at least 32 characters |
 | `ROUNDTABLE_URL` | Bridge, HTTP gateway, local client, and allowance; default `http://127.0.0.1:8765` |
 | `ROUNDTABLE_ROOM` / `ROUNDTABLE_AGENT` / `ROUNDTABLE_TOKEN` | Room, member, and independent member credential for stdio bridge and local client |
@@ -212,4 +212,4 @@ To remove this integration, first cancel its product event automation/subscripti
 
 Managed `up` defaults to temporary macOS sleep assertions tied to this server instance, with `--no-caffeinate` opt-out and verified process status. Manual `start-local.sh` is unchanged. Read the [AC/lid/network limitations](SETUP_AUTOMATION.en.md); no persistent power setting is changed.
 
-Choose PRIVATE_STATE_DIRECTORY using the [platform location table](STORAGE.en.md). Code stays in ROUNDTABLE_HOME; state, logs and evidence no longer default to the checkout. For an existing managed data/local installation, stop it with its original manager and explicitly run migrate-state before cleaning the old checkout.
+Choose PRIVATE_STATE_DIRECTORY using the [platform location table](STORAGE.en.md). Code stays in ROUNDTABLE_HOME; state, logs and evidence no longer default to the checkout. For an existing managed data/local installation, stop it with its original manager and follow the manual STORAGE checklist before cleaning the old checkout.

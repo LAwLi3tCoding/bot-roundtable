@@ -32,13 +32,15 @@ The installation maintainer reports observing Grok terminal routine receipts and
 | --- | --- | --- |
 | macOS | `~/Library/Application Support/bot-roundtable/<INSTANCE_NAME>` | `~/Library/Logs/bot-roundtable/<INSTANCE_NAME>` |
 | Linux | `${XDG_STATE_HOME:-~/.local/state}/bot-roundtable/<INSTANCE_NAME>` | `<STATE_DIRECTORY>/logs` |
-| Windows | `%LOCALAPPDATA%\bot-roundtable\<INSTANCE_NAME>` | `<STATE_DIRECTORY>\logs`; managed supervision/migration unsupported |
+| Windows | `%LOCALAPPDATA%\bot-roundtable\<INSTANCE_NAME>` | `<STATE_DIRECTORY>\logs`; managed supervision unsupported |
 
 `--state-dir` > `ROUNDTABLE_STATE_DIR` > platform default; name defaults to `default`. `ROUNDTABLE_HOME` remains the code checkout. Setup supports `--name` and selects free ports unless explicitly supplied. See [file inventory, private permissions, backup, migration, rebind and uninstall](docs/STORAGE.en.md). **Do not run `git clean -xfd` before migrating/backing up old `data/local`.**
 
 ## Persistent credentials and task creation
 
-Setup now saves private admin, room-owner and member credentials. Start the managed server and run `local_runtime.py ui` for a single-use, short-lived loopback login. Explicit `ui --copy-token` supports platform clipboard helpers without printing tokens. Browser access reconnects to the last room after refresh; remembering long-lived credentials is opt-in, while temporary UI sessions remain session-only. See [onboarding, rotation and legacy import](docs/ONBOARDING_RUNTIME.en.md). Grok can create a task without sourcing any secret file:
+Manual `server.py`/`start-local.sh server` use `<STATE_DIRECTORY>/manual/roundtable.db` and its adjacent admin credentials; managed instances use `<STATE_DIRECTORY>/roundtable.db`. Explicit database settings take precedence: do not point both managers at one database. No automatic state-transfer command is provided; follow [manual transfer and backup](docs/STORAGE.en.md).
+
+Setup now saves private admin, room-owner and member credentials. Start the managed server and run `local_runtime.py ui` for a single-use, short-lived loopback login. Explicit `ui --copy-token` supports platform clipboard helpers without printing tokens. Browser access reconnects to the last room after refresh; remembering long-lived credentials is opt-in, while temporary UI sessions remain session-only. See [onboarding, rotation and credential recovery](docs/ONBOARDING_RUNTIME.en.md). Grok can create a task without sourcing any secret file:
 
 ```sh
 .venv/bin/python scripts/local_runtime.py client --operation create <<'JSON'

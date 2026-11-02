@@ -6,11 +6,15 @@ import re
 import sys
 
 
+class StatePathError(ValueError):
+    """Validated path configuration error safe to report without environment values."""
+
+
 def instance_name(name=None, environ=None):
     env = os.environ if environ is None else environ
     value = name or env.get("ROUNDTABLE_INSTANCE_NAME") or "default"
     if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}", value):
-        raise ValueError("invalid_instance_name")
+        raise StatePathError("invalid_instance_name")
     return value
 
 
@@ -26,12 +30,12 @@ def state_dir(explicit=None, name=None, *, environ=None, platform=None, home=Non
         root = home / "Library" / "Application Support"
     elif platform == "win32":
         if not env.get("LOCALAPPDATA"):
-            raise ValueError("localappdata_required")
+            raise StatePathError("localappdata_required")
         root = Path(env["LOCALAPPDATA"])
     else:
         root = Path(env.get("XDG_STATE_HOME") or home / ".local" / "state")
         if not root.is_absolute():
-            raise ValueError("xdg_state_home_must_be_absolute")
+            raise StatePathError("xdg_state_home_must_be_absolute")
     return root / "bot-roundtable" / name
 
 
@@ -60,5 +64,10 @@ def path_warnings(state, checkout, *, platform=None, home=None):
     # Existence only: never inspect the legacy installation or its credentials.
     legacy = checkout / "data" / "local"
     if legacy != state and legacy.exists():
-        warnings.append("legacy_state_detected_use_migrate_state")
+        warnings.append("legacy_state_detected_manual_transfer_see_STORAGE")
     return warnings
+
+
+def manual_state_dir(**kwargs):
+    """Standalone storage never aliases the managed instance database by default."""
+    return state_dir(**kwargs) / "manual"

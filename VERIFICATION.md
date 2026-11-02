@@ -1,3 +1,6 @@
+> Current scope update: automatic state transfer has been removed. Historical migration/import test results below describe earlier commits, not currently available commands. See docs/STORAGE.en.md and docs/STORAGE.zh.md for the manual checklist.
+> 当前范围已移除自动状态转移；下文历史导入/迁移测试描述旧提交，不代表当前提供的命令。手工清单见 STORAGE 中英指南。
+
 # Verification / 验证记录
 
 <a id="maintainer-reported-acceptance"></a>
@@ -77,7 +80,7 @@ Independent review details and reproduced issues are recorded in [SECURITY_REVIE
 
 Review follow-up: persisted membership-bound probe nonce with legacy schema migration; tested cross-room/rejoin isolation and browser display. Added safe local diagnosis stages, bounded callback deadlines, concurrent healthy delivery during slow callbacks, unsubscribe during delivery and verification, and stale receipt rejection. All external callback tests use injected/mocked transport, not vendor accounts.
 
-## Onboarding/runtime acceptance
+## Historical onboarding/runtime acceptance
 
 The onboarding change was checked on macOS with Python 3.12, synthetic temporary credentials, isolated databases, and port-zero servers. No live credential migration, OS keychain write, clipboard copy, provider callback, or running-instance change was performed.
 
@@ -89,13 +92,13 @@ The onboarding change was checked on macOS with Python 3.12, synthetic temporary
 
 Windows ACL and macOS/Linux/Windows keyring paths have mock contract coverage, not native OS acceptance. Linux is also checked by repository CI; inspect the PR's exact commit result. These checks do not establish live vendor wake-up, Grok routine delivery, or Codex execution. Imported tasks are deliberately receipt-suppressed; only new tasks may produce future receipts after an operator explicitly enables a routine.
 
-## External state storage follow-up
+## Historical external state storage follow-up
 
 The same feature branch additionally passed 209 unit tests (0 failures), including 22 new platform-path, stopped-instance migration, parent-permission, PID/cleanup uncertainty, keyring-reference, source-swap/FIFO, partial-copy rollback, rebind, automatic-port and log-rotation contracts. Ambient proxy variables were unset and the default state path was redirected to a temporary directory for the full run; no live state was migrated or inspected.
 
 `ruff check .`, `ruff format --check .` (48 files), and `mypy` (21 source files) passed. All three browser suites above passed again, including nine onboarding scenarios; 72 shell documentation blocks passed `sh -n`. Independent migration/security and bilingual documentation reviews identified issues which were corrected before publication. Linux CI must be checked against the follow-up commit. Windows path resolution and ACL/keyring contracts remain simulated; managed migration/process supervision is POSIX-only. No launchd jobs, system proxy settings, real credentials, or running installation were changed.
 
-## Acceptance rework: legacy recovery and UI login
+## Historical acceptance rework: legacy recovery and UI login
 
 The rework integrates demo opt-in commit `8ee049309a9fb65a923aec041d62a94dc30dbbe6`. The merge conflict in `server.py` retained both external-state/admin credential handling and explicit demo flags; demo-dependent tests now opt in. The six demo contracts passed as part of the full suite.
 
@@ -104,3 +107,13 @@ Local macOS/Python 3.12 checks: 233 unit tests passed (0 failures), with upper/l
 Legacy tests cover combined admin/room records, named member files, leftover WAL snapshots with unchanged source hashes, rejection of open source databases, and checkpoint cleanup. Keyring tests use a fake backend to verify publication before deletion, explicit cleanup failure reporting and retention on publication failure. Independent security review found and corrected session persistence through the room-token form and missing pending-room binding validation. Bilingual review corrected the distinction between attempted and confirmed session revocation. No real migration, clipboard operation, keyring rotation/deletion, routine approval, vendor callback or running-instance change occurred. Linux/Windows clipboard and keyring/ACL paths are contract simulations, not native end-to-end acceptance. `lsof` checks require an offline stopped source and do not provide an OS-wide writer lock. Remote CI remains commit-specific.
 
 返工验证仅使用合成身份、临时目录和随机 loopback 端口：233 项单测、四套真实 Chromium 测试、Ruff、mypy、JavaScript 语法及文档命令检查通过。独立审查发现的短期会话持久化旁路与 pending 群凭据绑定问题已修复。未迁移真实凭据、操作系统钥匙串或剪贴板、批准真实 routine、改变运行服务；跨平台系统集成仍区分模拟覆盖和原生验收。
+
+## Current scope: manual transfer, isolated standalone storage
+
+Automatic import/migration commands, their implementation and dedicated tests have been removed at the operator's request. The remaining stopped-instance checks support rebind, explicit maintenance and shutdown only. STORAGE now documents manual stop, checkpoint, private copy, size/hash verification and retention of the source; no automated credential or log transfer is provided.
+
+Local macOS/Python 3.12 validation: **223 unit tests passed, 0 failures**, with ambient upper/lowercase proxy variables unset. This includes a real synthetic `up` → HTTP write → full `down` test with leftover ledger WAL files: all managed databases checkpoint and no WAL remains. Open databases are refused. Behavioral tests confirm the standalone server and administrator CLI share `<STATE_DIRECTORY>/manual/admin-credentials`, distinct from managed defaults; explicit database overrides are retained. Missing configuration returns a complete setup command without creating state, and path errors expose only approved reason codes. Removing retired migration tests explains the count reduction from the historical 233-test run.
+
+Ruff lint/format (54 files), mypy (23 source files), three JS syntax checks, Python compilation and 71 documentation shell blocks passed. All four real Chromium suites passed, retaining the nine onboarding and nine single-use-login scenarios and explicit demo coverage. Independent code/security and bilingual documentation reviews identified and corrected the credential CLI default and obsolete DB override examples. No live state, OS credential store, clipboard, vendor callback, system setting or running installation was changed. OS keyring/ACL/clipboard integration remains simulated; Linux CI is commit-specific. Optional force-overwrite for launchd rendering was not added: use a fresh private review directory and load nothing automatically.
+
+当前范围：已删除自动迁移实现，保留停机维护与 UI 安全能力。223 项单测、四套浏览器测试及 lint/format/mypy/语法检查通过。合成 up→写入→down 验证所有托管 SQLite 库正常 checkpoint 后无 WAL；手工数据库与管理员 CLI 默认位置一致且与托管实例隔离。缺配置给出完整 setup 提示，路径错误不回显环境值。未操作真实实例或凭据；launchd 重渲染继续使用新私有审阅目录，不提供强制覆盖。

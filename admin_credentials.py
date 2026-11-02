@@ -363,9 +363,9 @@ def rotate_admin_token(state, *, prefer_keyring=False, environ=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=["init", "rotate-admin-token"])
-    from state_paths import state_dir
+    from state_paths import manual_state_dir
 
-    parser.add_argument("--state-dir", default=str(state_dir() / "admin-credentials"))
+    parser.add_argument("--state-dir", default=str(manual_state_dir() / "admin-credentials"))
     parser.add_argument(
         "--keyring", action="store_true", help="Prefer an installed trusted OS keyring"
     )

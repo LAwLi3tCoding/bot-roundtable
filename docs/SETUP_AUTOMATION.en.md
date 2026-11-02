@@ -1,8 +1,8 @@
 # Managed local setup
 
-These scripts automate local identities, private files and process lifecycle. They do **not** create vendor accounts, install Tunnel, subscribe to Events, grant a bot computer permissions, or load launchd. Linux/macOS with Python 3.12/3.13 are supported; Windows process management is not implemented. Use a dedicated checkout. Do not point these scripts at an existing manually managed database without an explicit migration.
+These scripts automate local identities, private files and process lifecycle. They do **not** create vendor accounts, install Tunnel, subscribe to Events, grant a bot computer permissions, or load launchd. Linux/macOS with Python 3.12/3.13 are supported; Windows process management is not implemented. Use a dedicated checkout. Do not point these scripts at an existing manually managed database without an explicitly reviewed manual state transfer.
 
-For persistent administrator credentials, room.env, safe UI access, create/tasks/inbox, explicit startup diagnostics, and read-only legacy import, follow [runtime onboarding](ONBOARDING_RUNTIME.en.md). Windows credential persistence is separate from unsupported Windows process management.
+For persistent administrator credentials, room.env, safe UI access, create/tasks/inbox, explicit startup diagnostics, and manual state-transfer guidance, follow [runtime onboarding](ONBOARDING_RUNTIME.en.md). Windows credential persistence is separate from unsupported Windows process management.
 
 ## 1. Prerequisites and manual account checklist
 
@@ -148,3 +148,5 @@ Development tests use a **fake caffeinate executable only**. They verify argv, o
 Optional persistent power choices are separate operator actions, not the default recommendation. `man pmset` documents `-c` as AC/charger-only and requires administrator privileges for modifications. Persistent changes can affect all applications and continue after Roundtable stops, increasing power use and heat. Before any separately approved change, record the original AC values for each setting; restore those same values afterward, rather than resetting unrelated settings. This guide provides no mutation command and the scripts never apply pmset settings.
 
 Logs are in the separate [log directory](STORAGE.en.md), rotated at 10 MiB with three backups by default. Plists use a shell wrapper rather than a fixed venv interpreter; recreating the venv at the same path does not require re-rendering.
+
+Unconfigured `up`, `down`, `ui` and `client` return `not_configured_run_setup` with a complete setup command, without creating a partial instance. Invalid names, relative XDG_STATE_HOME and missing LOCALAPPDATA report specific safe path reason codes and `StatePathError`; raw environment values are not echoed.
