@@ -22,7 +22,7 @@ class Discussions:
         """)
 
         columns = {row[1] for row in store.db.execute("PRAGMA table_info(discussion_messages)")}
-        for column in ("root", "task_id", "budget", "lead", "sender_epoch", "closed"):
+        for column in ("root", "task_id", "budget", "lead", "sender_epoch", "closed", "notice"):
             if column not in columns:
                 store.db.execute(f"ALTER TABLE discussion_messages ADD COLUMN {column} TEXT")
         store.db.commit()
@@ -48,24 +48,36 @@ class Discussions:
     def system_notice(self, task, assignment, actor, kind, body, event_id):
         if os.environ.get("ROUNDTABLE_TASK_NOTICES", "1") == "0":
             return
-        if kind not in ("delegated", "claimed", "completed", "failed", "cancelled"):
+        if kind not in ("delegated", "claimed", "progress", "completed", "failed", "cancelled"):
             return
         db = self.store.db
         row = db.execute("SELECT room,title FROM tasks WHERE id=?", (task,)).fetchone()
         worker = db.execute("SELECT worker FROM assignments WHERE id=?", (assignment,)).fetchone()
         mentions = [worker[0]] if kind == "delegated" and worker else []
-        summary = "\n".join(str(body).splitlines()[:2])[:400]
-        content = f"{actor}: {kind}: {row['title']}" + ("\n" + summary if summary else "")
+        # Task bodies may contain credentials or private URLs; keep details in the scoped task.
+        summary = ""
+        notice = {
+            "kind": kind,
+            "actor": actor,
+            "task_title": row["title"],
+            "worker": worker[0] if worker else None,
+            "summary": summary,
+        }
+        request = f"task:{event_id}:{task}"
+        if kind == "progress":
+            # Bound discussion noise; full progress remains in the task event log.
+            request = f"progress:{task}:{assignment}:{int(time.time() // 60)}"
         db.execute(
-            "INSERT INTO discussion_messages(room,sender,body,mentions,reply_to,depth,created,request,task_id) VALUES(?,?,?,?,NULL,0,?,?,?)",
+            "INSERT OR IGNORE INTO discussion_messages(room,sender,body,mentions,reply_to,depth,created,request,task_id,notice) VALUES(?,?,?,?,NULL,0,?,?,?,?)",
             (
                 row["room"],
                 "system",
-                content,
+                summary,
                 json.dumps(mentions),
                 time.time(),
-                f"task:{event_id}:{task}",
+                request,
                 task,
+                json.dumps(notice),
             ),
         )
 
@@ -73,6 +85,7 @@ class Discussions:
     def decode(row):
         result = dict(row)
         result["mentions"] = json.loads(result["mentions"])
+        result["notice"] = json.loads(result["notice"]) if result.get("notice") else None
         result.pop("request", None)
         result.pop("sender_epoch", None)
         return result

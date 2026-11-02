@@ -69,7 +69,18 @@ class Connections:
                     for stamp in (value["observed"], last_claim, last_reply)
                     if stamp is not None
                 ]
+                last_activity = max(activity, default=None)
+                expires = last_activity + 120 if last_activity is not None else None
                 value.update(
+                    protocol_state=(
+                        "unknown"
+                        if expires is None
+                        else "recent"
+                        if time.time() <= expires
+                        else "stale"
+                    ),
+                    activity_ttl_seconds=120,
+                    activity_expires_at=expires,
                     vendor_account_verified=False,
                     last_claim=last_claim,
                     last_reply=last_reply,

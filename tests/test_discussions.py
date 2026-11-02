@@ -101,6 +101,60 @@ class DiscussionsTest(unittest.TestCase):
         self.post("bot:alpha", reply_to=root["id"])
         self.store.start(self.room, "run", ["alpha"], 1, "run-one")
 
+    def test_notice_structure_progress_bound_and_replay(self):
+        task = self.store.handoffs.create(
+            self.room,
+            "user",
+            dict(
+                title="Task title",
+                context="context",
+                assignments=[dict(worker="alpha", instruction="instruction")],
+                budget=4,
+                request_id="task",
+            ),
+        )
+        tid = task["task_id"]
+        assignment = self.store.db.execute(
+            "SELECT id FROM assignments WHERE task=?", (tid,)
+        ).fetchone()[0]
+        with patch("discussions.time.time", return_value=120):
+            for event in (50, 50, 51):
+                self.discussions.system_notice(
+                    tid,
+                    assignment,
+                    "bot:alpha",
+                    "progress",
+                    "line one\nline two\nline three",
+                    event,
+                )
+        messages = self.discussions.listing(self.room)
+        progress = [m for m in messages if m["notice"]["kind"] == "progress"]
+        self.assertEqual(len(progress), 1)
+        self.assertEqual(
+            progress[0]["notice"],
+            dict(
+                kind="progress",
+                actor="bot:alpha",
+                task_title="Task title",
+                worker="alpha",
+                summary="",
+            ),
+        )
+        self.assertEqual(self.discussions.inbox(self.room, "bot:alpha", {})["messages"], [])
+
+    def test_connection_ttl_is_protocol_evidence_only(self):
+        before = self.store.connections.status(self.room)[0]
+        self.assertEqual(before["protocol_state"], "unknown")
+        with patch("connections.time.time", return_value=100):
+            self.store.connections.probe(self.room, "alpha", "synthetic-probe-nonce")
+            row = next(r for r in self.store.connections.status(self.room) if r["id"] == "alpha")
+            self.assertEqual(row["protocol_state"], "recent")
+            self.assertEqual(row["activity_expires_at"], 220)
+            self.assertFalse(row["vendor_account_verified"])
+        with patch("connections.time.time", return_value=221):
+            row = next(r for r in self.store.connections.status(self.room) if r["id"] == "alpha")
+            self.assertEqual(row["protocol_state"], "stale")
+
     def test_events_use_scoped_cursor(self):
         feed = self.store.handoffs.event_feed
         cursor = feed(

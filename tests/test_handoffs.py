@@ -81,7 +81,7 @@ class HandoffTests(unittest.TestCase):
         self.assertEqual(len(notices), 3)
         self.assertEqual({row["sender"] for row in notices}, {"system"})
         for kind in ("delegated", "claimed", "completed"):
-            self.assertTrue(any(kind in row["body"] for row in notices))
+            self.assertTrue(any(row["notice"]["kind"] == kind for row in notices))
         self.assertEqual(
             self.store.discussions.inbox(self.rid, "bot:worker-one", {})["messages"], []
         )

@@ -23,11 +23,20 @@ def main():
             page = browser.new_page(locale="en-US")
             page.goto(f"http://127.0.0.1:{server.server_port}/")
             expect(page.locator("#hero-create")).to_have_text("Connect workspace")
+            expect(page.locator("#room-list")).to_contain_text(
+                "Connect to a workspace or room first"
+            )
             page.locator("#hero-create").click()
             page.locator("#admin").fill(admin)
             page.locator("#access-form button[type=submit]").click()
             expect(page.locator("#room-title")).to_have_text(room["name"])
             expect(page.locator(".empty-thread")).to_contain_text("Use Tasks")
+            expect(page.locator("#room-subtitle")).to_contain_text("Connection unknown")
+            store.connections.probe(room["id"], "test-worker", "synthetic-probe-nonce")
+            expect(page.locator("#room-subtitle")).to_contain_text("Connected recently (protocol)")
+            with store.transaction():
+                store.db.execute("UPDATE connection_probes SET observed=observed-121")
+            expect(page.locator("#room-subtitle")).to_contain_text("No recent connection")
             expect(page.locator("#thread-select")).not_to_be_visible()
             expect(page.locator("#room-subtitle")).not_to_contain_text("Lead")
             page.locator("#mcp-open").click()
@@ -45,6 +54,7 @@ def main():
                 page.locator("#send").click()
             assert sent.value.post_data_json["mentions"] == ["test-worker"]
             expect(page.locator(".message-body").last).to_have_text("@test-worker Please reply")
+            expect(page.locator(".message-meta strong").last).to_have_text("Human operator")
             expect(page.locator(".notification-targets").last).to_contain_text("test-worker")
             page.locator(".message-content button").last.click()
             page.locator("#body").fill("Plain reply")
@@ -72,7 +82,7 @@ def main():
                 "No reply arrived before the deadline. Check the bot connection and its event subscription.",
             )
             page.locator("#manage").click()
-            expect(page.locator("#member-list")).to_contain_text("renew it with events/subscribe")
+            expect(page.locator("#member-list")).to_contain_text("No recent connection")
             browser.close()
     finally:
         server.shutdown()

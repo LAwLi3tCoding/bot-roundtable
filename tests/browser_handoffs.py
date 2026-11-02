@@ -171,6 +171,12 @@ def main():
             expect(
                 page.locator(".message-content").get_by_role("button", name="Open task").first
             ).to_be_visible()
+            expect(page.locator(".message-body").first).to_contain_text("delegated")
+            page.locator("#language").select_option("zh")
+            expect(page.locator(".message-body").first).to_contain_text("委派了任务")
+            assert "MCP" not in page.locator(".message-meta").first.inner_text()
+            assert "system" not in page.locator(".message-meta").first.inner_text()
+            page.locator("#language").select_option("en")
             page.locator(".message-content").get_by_role("button", name="Open task").first.click()
             expect(page.locator("#task-header")).to_contain_text(tid)
             inbox = [clients.call(a, "receive_assignments")[0] for a in ids[1:]]
@@ -286,6 +292,13 @@ def main():
             expect(page.locator(f'[data-task-id="{tid}"]')).to_have_count(0)
             expect(page.locator("#task-thread")).not_to_be_visible()
             page.locator("#new-task").click()
+            expect(page.locator("#task-workers input:checked")).to_have_count(0)
+            expect(page.locator("#create-task")).to_be_disabled()
+            for checkbox in page.locator("#task-workers input").all():
+                checkbox.check()
+            expect(page.locator("#task-budget")).to_have_value(
+                str(page.locator("#task-workers input:checked").count())
+            )
             page.locator("#task-title").fill("DEMO · Web-origin task")
             page.locator("#task-context").fill("A local demo, no real bot account connected.")
             for index, field in enumerate(page.locator("#task-workers textarea").all()):

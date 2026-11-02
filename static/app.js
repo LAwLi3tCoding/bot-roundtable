@@ -8,7 +8,11 @@ let adminToken = '', active = null, rooms = [], bots = [], state = null, selecte
 const roomTokens = new Map();
 const roomPreviews = new Map();
 let connectionEvidence = [];
-function memberEvidence(id){const e=connectionEvidence.find(m=>m.id===id);if(!e)return t('activityUnknown');return `${t('recentActivity')}: ${e.last_activity?new Date(e.last_activity*1000).toLocaleString():t('activityUnknown')} · ${t('subscriptionStatus')}: ${e.subscription_state==='unknown'?t('subscriptionUnknown'):(e.subscription_state||t('subscriptionUnknown'))} · ${t('lastClaim')}: ${e.last_claim?new Date(e.last_claim*1000).toLocaleString():t('activityUnknown')} · ${t('lastReply')}: ${e.last_reply?new Date(e.last_reply*1000).toLocaleString():t('activityUnknown')}`;}
+function protocolLabel(id){const e=connectionEvidence.find(m=>m.id===id);return t('protocol_'+(e?.protocol_state||'unknown'));}
+function relativeTime(stamp){if(!stamp)return t('activityUnknown');const minutes=Math.max(0,Math.floor((Date.now()/1000-stamp)/60));return minutes===0?t('justNow'):(language==='zh'?`${minutes} 分钟前`:`${minutes} min ago`);}
+function memberEvidence(id){const e=connectionEvidence.find(m=>m.id===id);return `${protocolLabel(id)} · ${t('recentActivity')}: ${relativeTime(e?.last_activity)}`;}
+function noticeText(notice){const id=String(notice.actor||'').replace(/^bot:/,'');const actor=notice.actor==='user'?t('human'):(state.agents.find(a=>a.id===id)?.name||id);return `${actor} ${t('notice_'+notice.kind)}「${notice.task_title}」${notice.worker?' · @'+(state.agents.find(a=>a.id===notice.worker)?.name||notice.worker):''}${notice.summary?'\n'+notice.summary:''}`;}
+
 const credentialKey = 'roundtable-access-v1';
 const COOKIE_SESSION = 'cookie-session';
 const canStoreCredentials = location.hostname === '127.0.0.1';
@@ -98,7 +102,7 @@ function renderNavigation() {
  $('room-list').dataset.signature=navSignature;
  const focusedRoom=document.activeElement?.dataset.roomId;
  $('room-list').replaceChildren();
- if (!rooms.length) $('room-list').append(element('p', 'nav-empty', t('noRooms')));
+ if (!rooms.length) $('room-list').append(element('p', 'nav-empty', t(adminToken?'noRooms':'needConnection')));
  const query = $('room-search').value.trim().toLocaleLowerCase();
  const matches = rooms.filter(room => room.name.toLocaleLowerCase().includes(query));
  if (rooms.length && !matches.length) $('room-list').append(element('p','nav-empty',t('noMatches')));
@@ -127,7 +131,7 @@ function renderState() {
  const connected = Boolean(active && state); $('welcome').hidden = connected; $('thread-bar').hidden = !connected; $('composer-wrap').classList.toggle('inactive', !connected);
  $('manage').disabled = !connected; $('options-open').disabled = !connected; $('stop').hidden = true; $('send').disabled = !connected; $('stop').disabled = !connected;
  if (!connected) { $('room-title').textContent = t('welcomeTitle'); $('room-subtitle').textContent = t('welcomeSub'); $('status').textContent = t('disconnected'); $('messages').replaceChildren(); $('participants').replaceChildren(); $('member-list').replaceChildren(); $('participant-count').textContent='0'; window.HandoffUI?.render(); return; }
- $('room-title').textContent = state.room.name; $('room-subtitle').textContent = `${state.agents.length} ${t('participants')}${state.room.lead ? ' · '+t('leadBadge') : ''}`;
+ $('room-title').textContent = state.room.name; $('room-subtitle').textContent = `${state.agents.length} ${t('participants')}${state.room.lead ? ' · '+t('leadBadge') : ''} · ${state.agents.map(a=>a.name+': '+protocolLabel(a.id)).join(' · ')}`;
  const currentRun = state.runs.at(-1); const running = currentRun?.status === 'running';
  const displayRun = state.runs.find(r => r.id === threadId) || currentRun; $('status').textContent = displayRun ? `${t('run_' + displayRun.status)} · ${t('replied')} ${displayRun.turn} / ${t('replyBudget')} ${displayRun.budget}` : t('idle'); $('status').classList.toggle('running', running);
  $('send').disabled = false; $('send').hidden = false; $('stop').disabled = !(running || state.discussion_active); $('stop').hidden = !(running || state.discussion_active); $('body').disabled = false; $('budget').disabled = running;
@@ -145,7 +149,7 @@ function renderState() {
   for (const message of messages) {
    const senderId=message.sender.startsWith('bot:')?message.sender.slice(4):message.sender; const agent = state.agents.find(a => a.id === senderId); const human = message.sender === 'user' && message.source === 'human'; const article = element('article', 'message ' + (human ? 'human' : 'bot'));
    const avatar = element('div','avatar' + (message.sender === state.room.lead ? ' lead-avatar' : ''), human ? '↗' : '◈');
-   const content = element('div','message-content'); const meta = element('div','message-meta'); meta.append(element('strong','', human ? t('human') : agent?.name || message.sender), element('span','source',sourceLabel(message.source)));
+   const content = element('div','message-content'); const meta = element('div','message-meta'); if(!message.notice)meta.append(element('strong','', human ? t('human') : agent?.name || (message.sender==='system'?t('taskUpdate'):message.sender)));
    if (message.sender === state.room.lead) meta.append(element('span','lead-badge',t('lead')));
    const time = element('time','',new Date(message.created*1000).toLocaleTimeString(language === 'zh' ? 'zh-CN' : 'en-US',{hour:'2-digit',minute:'2-digit'})); meta.append(time);
    if(message.task_id){const taskLink=element('button','subtle',language==='zh'?'查看任务':'Open task');taskLink.type='button';taskLink.onclick=()=>action(()=>window.HandoffUI.openTask(message.task_id));content.append(taskLink);}
@@ -153,7 +157,7 @@ function renderState() {
    if(message.mentions?.length) meta.append(element('span','mentions',message.mentions.map(id=>'@'+id).join(' ')));
    if(!message.run&&human)meta.append(element('span','notification-targets',t('notificationTargets')+': '+(message.mentions?.length?message.mentions.join(', '):t('allMembers'))));
    const reply=element('button','subtle',language==='zh'?'回复':'Reply');reply.type='button';reply.onclick=()=>{replyTo=message.id;$('body').focus();};
-   content.append(meta,element('p','message-body',message.body));if(!message.run)content.append(reply); article.append(avatar,content); $('messages').append(article);
+   content.append(meta,element('p','message-body',message.notice?noticeText(message.notice):message.body));if(!message.run&&!message.notice)content.append(reply); article.append(avatar,content); $('messages').append(article);
   }
   if (wasNearBottom || !threadId) requestAnimationFrame(() => { $('chat').scrollTop = $('chat').scrollHeight; });
  }
@@ -163,7 +167,7 @@ function renderState() {
  if(updateParticipants){$('participants').dataset.signature=participantSignature;$('participants').replaceChildren();} $('participants').title=t('targetHint'); $('member-list').replaceChildren(); $('participant-count').textContent=state.agents.length;
  for (const agent of state.agents) {
   const chip=element('button','participant-chip'+(selected.has(agent.id)?' selected':''),agent.name); chip.type='button'; chip.dataset.agentId=agent.id; chip.setAttribute('aria-pressed',String(selected.has(agent.id))); chip.disabled=running; if(agent.id===state.room.lead) chip.append(element('span','',` · ${t('lead')}`)); chip.onclick=()=>{if(selected.has(agent.id))selected.delete(agent.id);else selected.add(agent.id);renderState();}; if(updateParticipants){$('participants').append(chip);if(focusedAgent===agent.id)chip.focus();}
-  const row=element('div','member'); row.append(element('div','avatar small-avatar','◈')); const info=element('div','member-info'); info.append(element('strong','',agent.name),element('span','',memberEvidence(agent.id))); row.append(info); if(agent.id===state.room.lead) row.append(element('span','lead-badge',t('lead'))); $('member-list').append(row);
+  const row=element('div','member');const activity=connectionEvidence.find(e=>e.id===agent.id)?.last_activity;row.title=activity?new Date(activity*1000).toLocaleString():t('activityUnknown'); row.append(element('div','avatar small-avatar','◈')); const info=element('div','member-info'); info.append(element('strong','',agent.name),element('span','',memberEvidence(agent.id))); row.append(info); if(agent.id===state.room.lead) row.append(element('span','lead-badge',t('lead'))); $('member-list').append(row);
  }
  if(!state.agents.length)$('member-list').append(element('p','muted',t('noBots')));
  window.HandoffUI?.render();

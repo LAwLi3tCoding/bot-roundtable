@@ -77,11 +77,12 @@ window.HandoffUI = (() => {
   $('task-more').hidden=!snapshot.has_more;
   $('cancel-task').disabled=!['running','failed'].includes(task.status);$('retry-task').hidden=assignment?.status!=='failed'||!['running','failed'].includes(task.status);
  }
+ function syncWorkers(){const count=$('task-workers').querySelectorAll('input:checked').length;$('create-task').disabled=count===0;$('task-budget').value=Math.max(1,count);$('task-budget').min=Math.max(1,count);}
  function createDialog(){
   if(!active||!state)throw new Error('needConnection');
   $('task-create-form').reset();$('task-workers').replaceChildren();
-  for(const agent of state.agents){const row=safeText('label','task-worker-row');const check=document.createElement('input');check.type='checkbox';check.value=agent.id;check.checked=true;const title=safeText('span','',name(agent.id));const input=document.createElement('textarea');input.rows=2;input.maxLength=4000;input.placeholder=t('workerInstruction');input.setAttribute('aria-label',`${name(agent.id)} ${t('workerInstruction')}`);input.dataset.worker=agent.id;row.append(check,title,input);$('task-workers').append(row);}
-  openDialog('task-create-dialog');
+  for(const agent of state.agents){const row=safeText('label','task-worker-row');const check=document.createElement('input');check.type='checkbox';check.value=agent.id;check.checked=false;check.onchange=syncWorkers;const title=safeText('span','',name(agent.id));const input=document.createElement('textarea');input.rows=2;input.maxLength=4000;input.placeholder=t('workerInstruction');input.setAttribute('aria-label',`${name(agent.id)} ${t('workerInstruction')}`);input.dataset.worker=agent.id;row.append(check,title,input);$('task-workers').append(row);}
+  syncWorkers();openDialog('task-create-dialog');
  }
  $('discussion-view').onclick=()=>setMode('discussion');$('task-view').onclick=()=>setMode('tasks');
  $('new-task').onclick=()=>action(createDialog);
