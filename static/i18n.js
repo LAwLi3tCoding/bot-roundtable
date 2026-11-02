@@ -65,3 +65,6 @@ Object.assign(I18N.zh,{activityUnknown:'尚未观察到',recentActivity:'最近�
 
 Object.assign(I18N.en,{recentActivity:'Recent activity',subscriptionUnknown:'Unknown (separate MCP process)'});
 Object.assign(I18N.zh,{recentActivity:'最近活动',subscriptionUnknown:'未知（独立 MCP 进程）'});
+
+Object.assign(I18N.en,{taskWakeHint:'Authorized MCP Events subscriptions or a configured Grok routine can notify bots. Bots must use their scoped tools to claim work and report results; notification is not proof of execution.',mcpBoundary:'MCP tools provide scoped access. Optional authorized Events subscriptions provide notifications; polling remains available.',providerBoundary:'Connection evidence is shown per member. Recent activity is not proof of vendor login or current availability.'});
+Object.assign(I18N.zh,{taskWakeHint:'经授权的 MCP Events 订阅或已配置的 Grok routine 可通知 Bot。Bot 仍须使用限定范围的工具领取任务并汇报；收到通知不代表已经执行。',mcpBoundary:'MCP 工具提供限定范围的访问；可选的已授权 Events 订阅提供通知，也可继续轮询。',providerBoundary:'各成员显示可观察的连接证据；最近活动不代表厂商登录状态或当前可用。'});

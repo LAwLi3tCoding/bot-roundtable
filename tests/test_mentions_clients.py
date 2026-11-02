@@ -1,5 +1,6 @@
 """Synthetic SDK and CLI protocol coverage; no provider accounts."""
 
+import http.client
 import json
 import os
 from pathlib import Path
@@ -72,6 +73,80 @@ class MentionClients(unittest.IsolatedAsyncioTestCase):
                     store.remove_agent(room["id"], bot["id"])
                     with self.assertRaises(ValueError):
                         client.call("mentions", {"after": 0})
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+            store.db.close()
+
+
+class HttpIdentityBoundary(unittest.TestCase):
+    def test_authenticated_identity_overrides_payload(self):
+        store = Store()
+        room = store.room("Synthetic identity")
+        alpha = store.add_agent(room["id"], "alpha")
+        store.add_agent(room["id"], "bravo")
+        store.grant(room["id"], "alpha", 20)
+        server = make_server(store, secrets.token_urlsafe(32), port=0)
+        thread = threading.Thread(target=server.serve_forever)
+        thread.start()
+
+        def post(path, token, payload):
+            conn = http.client.HTTPConnection("127.0.0.1", server.server_port)
+            try:
+                conn.request(
+                    "POST",
+                    path,
+                    json.dumps(payload),
+                    {"Authorization": "Bearer " + token, "Content-Type": "application/json"},
+                )
+                response = conn.getresponse()
+                result = json.loads(response.read())
+                self.assertLess(response.status, 300)
+                return result
+            finally:
+                conn.close()
+
+        try:
+            human = post(
+                f"/api/rooms/{room['id']}/messages",
+                room["token"],
+                {
+                    "body": "human",
+                    "request_id": "human",
+                    "mentions": [],
+                    "actor": "bot:alpha",
+                    "source": "bot",
+                    "sender": "alpha",
+                },
+            )
+            self.assertEqual(human["sender"], "user")
+            for bot in ("alpha", "bravo"):
+                self.assertEqual(
+                    len(store.discussions.inbox(room["id"], "bot:" + bot, {})["messages"]), 1
+                )
+            for forged in ("user", "system"):
+                reply = post(
+                    f"/api/rooms/{room['id']}/agents/alpha/peer/messages",
+                    alpha["token"],
+                    {
+                        "body": "bot",
+                        "request_id": forged,
+                        "mentions": [],
+                        "reply_to": human["id"],
+                        "actor": forged,
+                        "source": forged,
+                        "sender": forged,
+                    },
+                )
+                self.assertEqual(reply["sender"], "bot:alpha")
+                for bot in ("alpha", "bravo"):
+                    self.assertEqual(
+                        store.discussions.inbox(room["id"], "bot:" + bot, {"after": human["id"]})[
+                            "messages"
+                        ],
+                        [],
+                    )
         finally:
             server.shutdown()
             server.server_close()
