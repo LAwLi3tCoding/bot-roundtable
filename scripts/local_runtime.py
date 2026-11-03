@@ -123,6 +123,23 @@ def request(port, path, token="", data=None, method=None):
         conn.close()
 
 
+def instance_bots(config):
+    """Read legacy instances without rewriting their private configuration."""
+    if "bots" in config:
+        return config["bots"]
+    return [
+        {"id": config["origin"], "kind": "grok", "wake": "grok-routine"},
+        {"id": config["worker"], "kind": "dot", "wake": "mcp-events"},
+    ]
+
+
+def selected_bot(config, bot=None):
+    bot = bot or config["origin"]
+    if bot not in [item["id"] for item in instance_bots(config)]:
+        raise Failure("unknown_bot")
+    return bot
+
+
 def load(state):
     config = read_json(state / "instance.json")
     if config.get("version") != 1:
@@ -133,10 +150,24 @@ def load(state):
         r"[a-f0-9]{24}", config.get("room", "")
     ):
         raise Failure("invalid_instance_identity")
-    for role in ("origin", "worker"):
-        if not re.fullmatch(r"[a-z][a-z0-9-]{1,39}", config.get(role, "")):
+    bots = instance_bots(config)
+    if not isinstance(bots, list) or not bots:
+        raise Failure("invalid_instance_bots")
+    seen = set()
+    for bot in bots:
+        if (
+            not isinstance(bot, dict)
+            or not re.fullmatch(r"[a-z][a-z0-9-]{1,39}", bot.get("id", ""))
+            or bot.get("kind") not in ("grok", "dot", "mailbox", "other-bot")
+            or bot.get("wake") not in ("grok-routine", "mcp-events", "poll")
+            or bot["id"] in seen
+        ):
             raise Failure("invalid_instance_agent")
-        check_private(state / (config[role] + ".env"))
+        seen.add(bot["id"])
+        check_private(state / (bot["id"] + ".env"))
+    if any(config.get(role) not in seen for role in ("origin", "worker")):
+        raise Failure("invalid_instance_agent")
+    config["bots"] = bots
     for name in ("roundtable.db", "tunnel.yaml"):
         check_private(state / name)
     if not (state / "admin.json").exists() and not (state / "admin.env").exists():
@@ -235,12 +266,13 @@ def setup(state, args):
                 state / "room.env",
                 {"ROUNDTABLE_ROOM": room["id"], "ROUNDTABLE_ROOM_TOKEN": room["token"]},
             )
-            request(
-                server.server_port,
-                f"/api/rooms/{room['id']}/grant",
-                admin,
-                {"id": args.origin, "allowance": args.allowance},
-            )
+            for bot_id in (args.origin, args.worker):
+                request(
+                    server.server_port,
+                    f"/api/rooms/{room['id']}/grant",
+                    admin,
+                    {"id": bot_id, "allowance": args.allowance},
+                )
             for agent in room["agent_tokens"]:
                 env_save(
                     state / (agent["id"] + ".env"),
@@ -264,6 +296,10 @@ def setup(state, args):
                     "room": room["id"],
                     "origin": args.origin,
                     "worker": args.worker,
+                    "bots": [
+                        {"id": args.origin, "kind": "grok", "wake": "grok-routine"},
+                        {"id": args.worker, "kind": "dot", "wake": "mcp-events"},
+                    ],
                     "server_port": args.server_port,
                     "mcp_port": args.mcp_port,
                     "event_hosts": [],
@@ -307,8 +343,18 @@ def child_env(state, config, component):
         return env  # No administrator, member, runtime or routine credentials.
     if component == "server":
         env["ROUNDTABLE_ADMIN_TOKEN"] = get_admin_token(state)
-        routine = state / "routine.json"
-        if routine.exists():
+        env["ROUNDTABLE_BOT_WAKE_METHODS"] = json.dumps(
+            {bot["id"]: bot["wake"] for bot in instance_bots(config)}
+        )
+        routines = []
+        for bot in instance_bots(config):
+            if bot["wake"] != "grok-routine":
+                continue
+            routine = state / f"routine-{bot['id']}.json"
+            if not routine.exists() and bot["id"] == config["origin"]:
+                routine = state / "routine.json"
+            if not routine.exists():
+                continue
             value = read_json(routine)
             if value.get("explicit_opt_in") is not True:
                 raise Failure("routine_not_explicitly_approved")
@@ -322,25 +368,31 @@ def child_env(state, config, component):
                 routine_env["GROK_ROUTINE_KEY"],
                 routine_env["GROK_ALLOWED_HOST"],
             )
-            env.update(routine_env)
+            routines.append({"bot": bot["id"], "environment": routine_env})
+        if routines:
+            env.update(routines[0]["environment"])
             env.update(
                 ROUNDTABLE_TERMINAL_NOTIFICATIONS="1",
                 ROUNDTABLE_TERMINAL_ROOM=config["room"],
-                ROUNDTABLE_TERMINAL_ORIGIN=config["origin"],
+                ROUNDTABLE_TERMINAL_ORIGIN=routines[0]["bot"],
                 ROUNDTABLE_TERMINAL_LEDGER=str(state / "terminal.db"),
+                ROUNDTABLE_BOT_ROUTINES=json.dumps(routines),
             )
     else:
         member = env_read(state / (config["worker"] + ".env"))
         env["ROUNDTABLE_URL"] = f"http://127.0.0.1:{config['server_port']}"
         env["ROUNDTABLE_TUNNEL_AUTH_HEADER"] = "Bearer " + member["ROUNDTABLE_TOKEN"]
         if component == "mcp":
+            env["ROUNDTABLE_MULTI_BOT_AUTH"] = "1"
             env["ROUNDTABLE_HTTP_GRANTS"] = json.dumps(
                 [
                     {
                         "room": config["room"],
-                        "agent": config["worker"],
-                        "token": member["ROUNDTABLE_TOKEN"],
+                        "agent": bot["id"],
+                        "token": env_read(state / (bot["id"] + ".env"))["ROUNDTABLE_TOKEN"],
                     }
+                    for bot in instance_bots(config)
+                    if bot["wake"] == "mcp-events"
                 ]
             )
         else:
@@ -874,8 +926,84 @@ def hidden(prompt):
         return getpass.getpass(prompt)
 
 
-def configure_secret(state, config, kind, replace):
-    path = state / ("runtime-key.env" if kind == "runtime-key" else "routine.json")
+def add_bot(state, config, args):
+    bot = args.bot
+    if not isinstance(bot, str) or not re.fullmatch(r"[a-z][a-z0-9-]{1,39}", bot):
+        raise Failure("invalid_instance_agent")
+    if type(args.allowance) is not int or not 0 <= args.allowance <= 1000:
+        raise Failure("invalid_allowance")
+    if bot in [item["id"] for item in instance_bots(config)]:
+        raise Failure("bot_already_configured")
+    path = state / (bot + ".env")
+    admin = get_admin_token(state)
+    port, room = config["server_port"], config["room"]
+    registered = next(
+        (item for item in request(port, "/api/bots", admin) if item["id"] == bot), None
+    )
+    if registered and registered["kind"] != args.kind:
+        raise Failure("registered_bot_kind_mismatch")
+    if not registered:
+        request(port, "/api/bots", admin, {"id": bot, "name": bot, "kind": args.kind})
+    if path.exists() or path.is_symlink():
+        member_env = env_read(path)
+        if (
+            member_env.get("ROUNDTABLE_ROOM") != room
+            or member_env.get("ROUNDTABLE_AGENT") != bot
+            or member_env.get("ROUNDTABLE_URL") != f"http://127.0.0.1:{port}"
+        ):
+            raise Failure("existing_secret_not_overwritten")
+        access = request(
+            port, f"/api/rooms/{room}/agents/{bot}/access", member_env["ROUNDTABLE_TOKEN"]
+        )
+        if access.get("authorized") is not True:
+            raise Failure("existing_bot_credential_invalid")
+    else:
+        member = request(port, f"/api/rooms/{room}/join", admin, {"id": bot})
+        # Save the issued credential first; retry can recover after a later disk/API failure.
+        env_save(
+            path,
+            {
+                "ROUNDTABLE_URL": f"http://127.0.0.1:{port}",
+                "ROUNDTABLE_ROOM": room,
+                "ROUNDTABLE_AGENT": bot,
+                "ROUNDTABLE_TOKEN": member["token"],
+            },
+        )
+    request(port, f"/api/rooms/{room}/grant", admin, {"id": bot, "allowance": args.allowance})
+    config["bots"] = instance_bots(config) + [
+        {
+            "id": bot,
+            "kind": args.kind,
+            "wake": args.wake
+            or (
+                "grok-routine"
+                if args.kind == "grok"
+                else "mcp-events"
+                if args.kind == "dot"
+                else "poll"
+            ),
+        }
+    ]
+    write_json(state / "instance.json", config, replace=True)
+    return {"ok": True, "bot": bot, "restart_required": True}
+
+
+def configure_secret(state, config, kind, replace, bot=None):
+    legacy = kind == "routine" and bot is None
+    bot = selected_bot(config, bot) if kind != "runtime-key" else None
+    if (
+        bot
+        and next(item for item in instance_bots(config) if item["id"] == bot)["wake"]
+        != "grok-routine"
+    ):
+        raise Failure("bot_does_not_use_grok_routine")
+    path = state / (
+        "runtime-key.env"
+        if kind == "runtime-key"
+        else "routine.json"
+        if legacy
+        else f"routine-{bot}.json"
+    )
     if path.exists() or path.is_symlink():
         private_read(path)
         if not replace:
@@ -940,11 +1068,12 @@ def run_client(state, config, args):
 
     if args.operation in ("create", "tasks", "inbox") and (args.task_id or args.body is not None):
         raise Failure("client_argument_conflict")
-    member = env_read(state / (config["origin"] + ".env"))
+    bot = selected_bot(config, getattr(args, "bot", None))
+    member = env_read(state / (bot + ".env"))
     client = LocalClient(
         member["ROUNDTABLE_URL"],
         config["room"],
-        config["origin"],
+        bot,
         member["ROUNDTABLE_TOKEN"],
     )
     if args.operation in (
@@ -1170,6 +1299,8 @@ def main():
         "action",
         choices=[
             "setup",
+            "add-bot",
+            "set-grok-routine",
             "up",
             "down",
             "status",
@@ -1193,6 +1324,9 @@ def main():
     parser.add_argument("--name")
     parser.add_argument("--log-max-bytes", type=int, default=10 * 1024 * 1024)
     parser.add_argument("--log-backups", type=int, default=3)
+    parser.add_argument("--bot")
+    parser.add_argument("--kind", choices=("grok", "dot", "mailbox", "other-bot"), default="grok")
+    parser.add_argument("--wake", choices=("grok-routine", "mcp-events", "poll"))
     parser.add_argument("--origin", default="grok")
     parser.add_argument("--worker", default="dot")
     parser.add_argument("--allowance", type=int, default=20)
@@ -1402,8 +1536,10 @@ def main():
                     if any(owned(state, config, c) for c in MANAGED):
                         raise Failure("stop_instance_before_admin_rotation")
                     result = rotate_admin_token(state, prefer_keyring=args.keyring)
-                elif args.action in ("runtime-key", "routine"):
-                    result = configure_secret(state, config, args.action, args.replace)
+                elif args.action == "add-bot":
+                    result = add_bot(state, config, args)
+                elif args.action in ("runtime-key", "routine", "set-grok-routine"):
+                    result = configure_secret(state, config, args.action, args.replace, args.bot)
                 elif args.action == "approve-host":
                     result = {
                         "ok": True,

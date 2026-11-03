@@ -18,6 +18,22 @@ from connections import capabilities
 STATIC = Path(__file__).parent / "static"
 
 
+def bot_wake_methods(store, room):
+    """Expose only local wake-method labels for current members, never private config."""
+    try:
+        configured = json.loads(os.environ.get("ROUNDTABLE_BOT_WAKE_METHODS", "{}"))
+    except ValueError:
+        return {}
+    if not isinstance(configured, dict):
+        return {}
+    members = {row[0] for row in store.db.execute("SELECT id FROM agents WHERE room=?", (room,))}
+    return {
+        bot: wake
+        for bot, wake in configured.items()
+        if bot in members and wake in ("grok-routine", "mcp-events", "poll")
+    }
+
+
 def make_server(store, admin, host="127.0.0.1", port=8765):
     from ui_sessions import UISessions
 
@@ -166,7 +182,8 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
                             cookie="roundtable_ui=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0",
                         )
                     raise Problem(404, "Not found")
-                if sessions.valid(token):
+                temporary_session = sessions.valid(token)
+                if temporary_session:
                     if any(
                         self.headers.get(h)
                         for h in (
@@ -191,6 +208,13 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
                 # membership cannot act with a previously validated token.
                 # Parse input and write responses outside this critical section.
                 with store.lock:
+                    if temporary_session and path.endswith("/settings"):
+                        current = store.db.execute(
+                            "SELECT lead FROM rooms WHERE id=?", (path.split("/")[3],)
+                        ).fetchone()
+                        if current is None:
+                            raise Problem(404, "Room not found")
+                        body = body | {"lead": current["lead"]}
                     status, result = self.dispatch(method, path, token, body)
                 return self.respond(status, result)
             except Problem as exc:
@@ -231,7 +255,11 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
             if method != "POST" or len(tail) != 1:
                 raise Problem(404, "Not found")
             operation = tail[0]
+            if operation == "roundtable":
+                return (200, mailbox.roundtable(room, actor))
             topic = body.get("topic_id")
+            if not topic and operation in ("query", "messages", "read"):
+                topic = mailbox.roundtable(room, actor)["id"]
             if operation == "query":
                 return (200, mailbox.messages(room, actor, topic, body.get("after", 0)))
             if operation == "messages":
@@ -240,6 +268,8 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
                 return (200, mailbox.inbox(room, actor, body.get("after", 0)))
             if operation == "read":
                 return (200, mailbox.read(room, actor, topic, body.get("cursor", 0)))
+            if operation == "update":
+                return (200, mailbox.update(room, actor, topic, body))
             if operation == "stop":
                 return (200, mailbox.stop(room, actor, topic))
             raise Problem(404, "Not found")
@@ -326,6 +356,7 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
                     200,
                     {
                         "members": store.connections.status(room),
+                        "wake_methods": bot_wake_methods(store, room),
                         "capabilities": capabilities(getattr(store, "terminal_worker", None)),
                     },
                 )

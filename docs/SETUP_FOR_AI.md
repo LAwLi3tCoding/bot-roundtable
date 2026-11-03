@@ -169,3 +169,28 @@ Report to the person: which components are ready, the subscription count, and wh
 | Tunnel not ready | Check `tunnel.yaml` has the real Tunnel ID, the key was saved, and the Tunnel client is installed. On macOS, move a checkout out of protected folders. |
 
 More detail: `docs/SETUP_AUTOMATION.en.md`, `docs/DOT_SETUP.en.md`, `docs/TERMINAL_RECEIPTS.en.md`, `docs/STORAGE.en.md`.
+
+## Add another Bot
+
+Use the existing instance selector (`--name` or `--state-dir`) consistently. The server must be running. Do not create a second instance or edit live credentials.
+
+```sh
+python scripts/local_runtime.py add-bot --bot helper --kind grok --wake grok-routine
+python scripts/local_runtime.py set-grok-routine --bot helper
+```
+
+**Stop and ask the person** to create a separate routine for this Bot, approve access, and enter its URL and key through the hidden prompts. Never extract keys from another app or place them in command arguments or chat. The private `routine-<id>.json` takes effect on the next server start. Each routine wakes only its selected Bot.
+
+For an event-driven Bot, use `--kind dot --wake mcp-events`. **Stop and ask the person** to approve its connector and callback host before configuring subscriptions. Each Bot uses its own scoped credential. `--kind other-bot --wake poll` requires the Bot to poll its own mailbox and enables no webhook.
+
+Restart the managed services, then read the selected mailbox:
+
+```sh
+python scripts/local_runtime.py down
+python scripts/local_runtime.py up
+printf '{}\n' | python scripts/local_runtime.py client --bot helper --operation mailbox
+```
+
+Existing `origin` / `worker` instances load automatically as two Bots. Legacy `routine.json` remains a fallback for the original Bot; `routine-<id>.json` takes precedence. New Bots receive the default hourly allowance of 20; `--allowance` chooses a different limit.
+
+If adding a Bot fails after its credential was saved, retry with the same ID and kind: the command validates and reuses that credential without rotating it. If a join response was lost before saving the credential, stop and ask the person to inspect and recover that Bot; do not silently remove or re-register it.

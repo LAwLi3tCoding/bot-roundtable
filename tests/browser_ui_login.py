@@ -14,7 +14,7 @@ from server import make_server
 def main():
     store = Store()
     store.register_bot("test-worker", "Worker", "dot")
-    first = store.create_group("First synthetic room", ["test-worker"])
+    store.create_group("First synthetic room", ["test-worker"])
     second = store.create_group("Last synthetic room", ["test-worker"])
     admin = secrets.token_urlsafe(48)
     server = make_server(store, admin, port=0)
@@ -44,7 +44,7 @@ def main():
             page = context.new_page()
             code = issue()
             page.goto(url + "/#roundtable-login=" + code)
-            expect(page.locator("#room-subtitle")).to_contain_text(second["name"])
+            expect(page.locator("#room-title")).to_contain_text(second["name"])
             assert page.url == url + "/"
             cookies = context.cookies()
             session = next(c for c in cookies if c["name"] == "roundtable_ui")
@@ -52,18 +52,34 @@ def main():
             assert "roundtable_ui" not in page.evaluate("document.cookie")
             for kind in ("localStorage", "sessionStorage"):
                 assert page.evaluate(f"{kind}.getItem('roundtable-access-v1') === null")
+            # Cookie sessions may rename and tune limits, but never mint credentials.
             page.locator("#mailbox-settings > summary").click()
-            page.locator(".workspace-picker summary").click()
-            page.locator(f'[data-room-id="{first["id"]}"]').click()
+            page.locator("#manage").click()
+            page.locator("#edit-name").fill("Renamed synthetic workspace")
+            with page.expect_response("**/settings") as renamed:
+                page.locator("#settings-form button[type=submit]").click()
+            assert renamed.value.status == 200
+            page.locator(".manage-member input").fill("12")
+            with page.expect_response("**/grant") as granted:
+                page.locator(".manage-member button").click()
+            assert granted.value.status == 200
+            expect(page.locator("#manage-dialog .dialog-error")).to_be_empty()
+            expect(
+                page.locator("#create-lead,#join-form,#register,#new-room,#access")
+            ).to_have_count(0)
+            page.locator("#manage-dialog .close").click()
+            page.locator("#directory").click()
+            expect(page.locator("#directory-dialog")).to_be_visible()
+            expect(page.locator("#directory-dialog .dialog-error")).to_be_empty()
+            page.locator("#directory-dialog .close").click()
             page.reload()
-            expect(page.locator("#room-subtitle")).to_contain_text(first["name"])
-            page.locator("#access").click()
-            expect(page.locator("#remember-access")).to_be_disabled()
-            with page.expect_response("**/api/ui-login/revoke") as revoke:
-                page.locator("#forget-access").click()
-            assert revoke.value.status == 200
+            expect(page.locator("#room-title")).to_contain_text("Renamed synthetic workspace")
+            assert "(403)" not in page.locator("body").inner_text()
+            # Service-side invalidation must replace the workspace with login guidance.
+            server.ui_sessions.revoke(session["value"])
+            expect(page.locator("#login-guide")).to_be_visible()
             page.reload()
-            expect(page.locator("#room-title")).to_have_text("Your roundtable")
+            expect(page.locator("#login-guide")).to_be_visible()
             page.goto(url + "/#roundtable-login=" + code)
             expect(page.locator("#error")).not_to_be_empty()
             browser.close()

@@ -147,8 +147,14 @@ class HTTPAuthOnly:
 class OriginGate:
     """Reject host/origin confusion before credentials or backend requests are processed."""
 
-    def __init__(self, app, hosts: list[str], origins: list[str], expected_bearer: str = ""):
-        self.expected_bearer = expected_bearer
+    def __init__(
+        self, app, hosts: list[str], origins: list[str], expected_bearer: str | list[str] = ""
+    ):
+        self.expected_bearers = (
+            ([expected_bearer] if expected_bearer else [])
+            if isinstance(expected_bearer, str)
+            else expected_bearer
+        )
         self.app, self.hosts, self.origins = app, set(hosts), set(origins)
 
     async def __call__(self, scope, receive, send):
@@ -157,9 +163,12 @@ class OriginGate:
             hosts = [v.decode("latin1") for k, v in headers if k.lower() == b"host"]
             origins = [v.decode("latin1") for k, v in headers if k.lower() == b"origin"]
             authorizations = [v for k, v in headers if k.lower() == b"authorization"]
-            if self.expected_bearer and (
+            if self.expected_bearers and (
                 len(authorizations) != 1
-                or not hmac.compare_digest(authorizations[0], self.expected_bearer.encode())
+                or not any(
+                    hmac.compare_digest(authorizations[0], value.encode())
+                    for value in self.expected_bearers
+                )
             ):
                 await JSONResponse(
                     {
@@ -192,6 +201,7 @@ def build_http_app(
     event_hosts: list[str] | None = None,
     event_transport=None,
     expected_bearer: str = "",
+    allow_all_grants: bool = False,
 ):
     grants = parse_grants(grants_json)
     verifier = ScopedVerifier(base, grants)
@@ -242,7 +252,12 @@ def build_http_app(
     secured = AuthenticationMiddleware(
         AuthContextMiddleware(HTTPAuthOnly(protocol_app)), backend=BearerAuthBackend(verifier)
     )
-    return OriginGate(secured, hosts, origins, expected_bearer)
+    allowed_bearers = ["Bearer " + grant.token for grant in grants]
+    if allow_all_grants and expected_bearer not in allowed_bearers:
+        raise ValueError("Tunnel credential must match a configured grant")
+    return OriginGate(
+        secured, hosts, origins, allowed_bearers if allow_all_grants else expected_bearer
+    )
 
 
 def main():
@@ -273,6 +288,7 @@ def main():
             args.events_db,
             args.event_host,
             expected_bearer=os.environ.get("ROUNDTABLE_TUNNEL_AUTH_HEADER", ""),
+            allow_all_grants=os.environ.get("ROUNDTABLE_MULTI_BOT_AUTH") == "1",
         )
     except (KeyError, ValueError):
         parser.error("Invalid or missing gateway configuration; no credentials are printed")

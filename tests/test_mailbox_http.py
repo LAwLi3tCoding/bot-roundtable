@@ -52,6 +52,19 @@ class MailboxHTTPTest(unittest.TestCase):
         finally:
             connection.close()
 
+    def test_omitted_topic_defaults_to_roundtable(self):
+        status, message = self.call(
+            "/messages", {"body": "Shared", "request_id": "shared"}, actor="alpha"
+        )
+        self.assertEqual(status, 201)
+        canonical = self.store.mailboxes.roundtable(self.room)
+        self.assertEqual(message["topic"], canonical["id"])
+        self.assertEqual(canonical["budget"], 4)
+        self.assertEqual(message["mentions"], [])
+        status, result = self.call("/query", {}, actor="bravo")
+        self.assertEqual(status, 200)
+        self.assertEqual(result["messages"][0]["body"], "Shared")
+
     def test_identity_cannot_be_replaced_by_owner_route_or_other_bot(self):
         self.assertEqual(self.call(token=self.tokens["alpha"])[0], 403)
         self.assertEqual(self.call(actor="bravo", token=self.tokens["alpha"])[0], 403)

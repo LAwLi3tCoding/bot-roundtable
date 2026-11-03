@@ -43,6 +43,13 @@ class GroupTests(unittest.TestCase):
 
     def test_agent_cumulative_allowance_self_call_and_identity(self):
         self.store.add_agent(self.rid, "caller")
+        self.assertEqual(
+            next(a for a in self.store.state(self.rid)["agents"] if a["id"] == "caller")[
+                "allowance"
+            ],
+            20,
+        )
+        self.store.grant(self.rid, "caller", 0)
         with self.assertRaises(Problem):
             self.store.start(self.rid, "Topic", ["demo-planner"], 1, "a", actor="bot:caller")
         self.store.grant(self.rid, "caller", 3)
@@ -76,7 +83,6 @@ class GroupTests(unittest.TestCase):
             self.store.stop_peer(self.rid, "caller")
         for change in [
             lambda: self.store.remove_agent(self.rid, "caller"),
-            lambda: self.store.grant(self.rid, "caller", 20),
             lambda: self.store.settings(self.rid, "x", "caller"),
             lambda: self.store.add_agent(self.rid, "new-bot"),
         ]:

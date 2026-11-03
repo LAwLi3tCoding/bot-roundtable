@@ -54,6 +54,8 @@ class Handoffs:
         CREATE INDEX IF NOT EXISTS assignment_worker_idx ON assignments(worker,task);
         CREATE INDEX IF NOT EXISTS task_event_idx ON task_events(task,id);
         """)
+        if "topic_id" not in {row[1] for row in self.db.execute("PRAGMA table_info(tasks)")}:
+            self.db.execute("ALTER TABLE tasks ADD COLUMN topic_id TEXT")
         columns = {row[1] for row in self.db.execute("PRAGMA table_info(assignments)")}
         if "lease_seconds" not in columns:
             self.db.execute(
@@ -183,6 +185,9 @@ class Handoffs:
         title, context = text(data.get("title"), 120), text(data.get("context"))
         specs = data.get("assignments")
         parent = data.get("parent_task_id", "")
+        topic_id = data.get("topic_id", "")
+        if not isinstance(topic_id, str) or len(topic_id) > 40:
+            raise Problem(400, "Invalid topic")
         budget, seconds = data.get("budget", 6), data.get("timeout_seconds", 600)
         if (
             type(budget) is not int
@@ -213,9 +218,16 @@ class Handoffs:
             budget=budget,
             timeout=seconds,
         )
+        if topic_id:
+            payload["topic_id"] = topic_id
         self.expire()
         with self.store.transaction():
             epoch = self.member(room, actor)
+            if topic_id:
+                self.store.mailboxes._topic(room, actor, topic_id)
+                members = self.store.mailboxes._members(topic_id)
+                if actor not in members or any("bot:" + w not in members for w in workers):
+                    raise Problem(400, "Task participants must belong to the conversation")
             if parent:
                 p = self.task(room, actor, parent)
                 self.control(p, actor)
@@ -263,17 +275,9 @@ class Handoffs:
                         raise Problem(403, "Worker is not a room member")
                     epochs[worker] = row["token"]
                 if actor != "user":
-                    row = self.db.execute(
-                        "SELECT allowance FROM agents WHERE room=? AND id=?", (room, actor[4:])
-                    ).fetchone()
-                    if row["allowance"] < len(specs):
-                        raise Problem(403, "Bot initiation allowance exhausted or not granted")
-                    self.db.execute(
-                        "UPDATE agents SET allowance=allowance-? WHERE room=? AND id=?",
-                        (len(specs), room, actor[4:]),
-                    )
+                    self.store.consume_allowance(room, actor[4:], len(specs))
                 self.db.execute(
-                    "INSERT INTO tasks VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "INSERT INTO tasks(id,room,origin,origin_epoch,coordinator,title,context,parent,root,depth,budget,used,status,deadline,created,topic_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (
                         tid,
                         room,
@@ -290,6 +294,7 @@ class Handoffs:
                         "running",
                         deadline,
                         now,
+                        self.task_topic(room, actor, topic_id),
                     ),
                 )
                 if parent:
@@ -323,15 +328,41 @@ class Handoffs:
 
             return self.receipt(room, actor, "create", data.get("request_id"), payload, apply)
 
+    def task_topic(self, room, actor, topic_id):
+        if topic_id:
+            return topic_id
+        return self.store.mailboxes.roundtable(room, actor)["id"]
+
     def snapshot(self, room, actor, tid, after=0):
         if type(after) is not int or after < 0:
             raise Problem(400, "Invalid event cursor")
         self.expire()
-        with self.store.lock:
+        with self.store.transaction():
             task = self.task(room, actor, tid)
             rows = self.db.execute(
                 "SELECT * FROM assignments WHERE task=? ORDER BY rowid", (tid,)
             ).fetchall()
+            if not task["topic_id"]:
+                # Never link old task history to a replacement Bot identity.
+                valid = (
+                    task["origin"] == "user"
+                    or self.db.execute(
+                        "SELECT 1 FROM agents WHERE room=? AND id=? AND token=?",
+                        (room, task["origin"][4:], task["origin_epoch"]),
+                    ).fetchone()
+                )
+                valid = valid and all(
+                    self.db.execute(
+                        "SELECT 1 FROM agents WHERE room=? AND id=? AND token=?",
+                        (room, row["worker"], row["epoch"]),
+                    ).fetchone()
+                    for row in rows
+                )
+                if valid:
+                    task["topic_id"] = self.task_topic(room, task["origin"], "")
+                    self.db.execute(
+                        "UPDATE tasks SET topic_id=? WHERE id=?", (task["topic_id"], tid)
+                    )
             coordinator = actor in ("user", task["origin"])
             permitted = [r for r in rows if coordinator or r["worker"] == actor[4:]]
             assignments = [
@@ -361,6 +392,10 @@ class Handoffs:
             has_more = len(events) > 100
             events = events[:100]
             task.pop("origin_epoch")
+            task["updated"] = self.db.execute(
+                "SELECT COALESCE(MAX(created),?) FROM task_events WHERE task=?",
+                (task["created"], tid),
+            ).fetchone()[0]
             root = self.db.execute(
                 "SELECT budget,used FROM tasks WHERE id=?", (task["root"],)
             ).fetchone()
@@ -400,6 +435,8 @@ class Handoffs:
                         "status",
                         "created",
                         "deadline",
+                        "topic_id",
+                        "updated",
                     )
                 }
                 task["context"] = snap["task"]["context"][:220]
@@ -640,6 +677,7 @@ class Handoffs:
                     if not member or member["token"] != current["epoch"]:
                         raise Problem(403, "Original worker membership is no longer authorized")
                     if task["origin"] != "user":
+                        self.store.refresh_allowances(room)
                         origin = self.db.execute(
                             "SELECT allowance,token FROM agents WHERE room=? AND id=?",
                             (room, task["origin"][4:]),
@@ -676,6 +714,7 @@ class Handoffs:
                         if root["used"] >= root["budget"]:
                             raise Problem(409, "Task dispatch budget exhausted")
                         if task["origin"] != "user":
+                            self.store.refresh_allowances(room)
                             origin = self.db.execute(
                                 "SELECT allowance,token FROM agents WHERE room=? AND id=?",
                                 (room, task["origin"][4:]),
@@ -688,10 +727,7 @@ class Handoffs:
                                 raise Problem(
                                     403, "Bot initiation allowance exhausted or not granted"
                                 )
-                            self.db.execute(
-                                "UPDATE agents SET allowance=allowance-1 WHERE room=? AND id=?",
-                                (room, task["origin"][4:]),
-                            )
+                            self.store.consume_allowance(room, task["origin"][4:], 1)
                         self.db.execute("UPDATE tasks SET used=used+1 WHERE id=?", (task["root"],))
                     lease = secrets.token_urlsafe(32)
                     until = min(now + lease_seconds, task["deadline"])
