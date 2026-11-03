@@ -85,6 +85,20 @@ def main():
             )
             assert page.evaluate("window.pwned") is None
             assert page.locator(".message-arriving").count() == 0
+            # A partial poll failure stays visible despite successful room requests.
+            page.locator("#body").fill("尚未发送的草稿")
+            page.route("**/connections", lambda route: route.abort())
+            expect(page.locator("#poll-error")).to_be_visible(timeout=10000)
+            expect(page.locator("#poll-error")).to_contain_text("正在自动重新连接")
+            page.wait_for_timeout(6500)
+            expect(page.locator("#poll-error")).to_be_visible()
+            assert page.locator("#poll-error").bounding_box()["y"] < 200
+            page.unroute("**/connections")
+            expect(page.locator("#poll-error")).not_to_be_visible(timeout=10000)
+            expect(page.locator("#body")).to_have_value("尚未发送的草稿")
+            assert page.evaluate(
+                "window.originalMessage === document.querySelector('.mailbox-message')"
+            )
             # Filters only change what is shown, never create a private conversation.
             page.locator('[data-bot-filter="bot:grok"]').click()
             expect(page.locator(".mailbox-message:visible")).to_have_count(2)
@@ -117,6 +131,12 @@ def main():
                 expect(page.locator("#body")).to_be_visible()
                 expect(page.locator(".mailbox-message").last).to_be_visible()
                 assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+            assert page.locator("#bot-filters").evaluate("n => n.scrollWidth <= n.clientWidth")
+            for button in page.locator("#bot-filters button").all():
+                bounds = button.bounding_box()
+                assert bounds and bounds["x"] >= 0 and bounds["x"] + bounds["width"] <= 390
+                button.click()
+                expect(button).to_have_attribute("aria-pressed", "true")
             menu.click()
             panel = page.locator(".sidebar-settings-panel").bounding_box()
             assert panel and panel["x"] >= 0 and panel["x"] + panel["width"] <= 390

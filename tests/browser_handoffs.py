@@ -167,6 +167,9 @@ def main():
                 "data-created",
                 str(store.handoffs.snapshot(room["id"], "user", tid)["task"]["created"]),
             )
+            expect(card.locator(".handoff-mini")).to_have_count(2)
+            for worker in card.locator(".handoff-mini").all():
+                expect(worker).to_contain_text(" · Queued")
             actors = json.loads(card.get_attribute("data-actors"))
             assert set(actors) == {"bot:" + aid for aid in ids}
             card.click()
@@ -334,6 +337,20 @@ def main():
             page.locator("#task-note").fill("")
             page.evaluate("document.getElementById('error').textContent = ''")
             assert not errors, errors
+            page.locator("#task-back").click()
+            single = call(
+                "create_task",
+                title="DEMO · One assignment",
+                context="Synthetic single task",
+                assignments=[{"worker": ids[1], "instruction": "Check the layout."}],
+                request_id=secrets.token_hex(12),
+                budget=6,
+            )["task_id"]
+            page.evaluate("room => selectRoom(room)", {"id": room["id"], "name": room["name"]})
+            refresh()
+            single_card = page.locator(f'[data-task-id="{single}"]')
+            expect(single_card.locator(".task-status")).to_have_text("Queued")
+            expect(single_card.locator(".handoff-mini")).to_have_text("Demo Research")
             context.close()
             browser.close()
         print(

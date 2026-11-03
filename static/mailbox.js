@@ -83,7 +83,7 @@ window.MailboxUI = (() => {
  }
  const baseRender=renderState;renderState=function(){baseRender();render();};
  const baseSelect=selectRoom;selectRoom=async function(room){await baseSelect(room);await fetchTimeline();};
- const baseForget=forgetAccess;forgetAccess=function(){baseForget();drafts.clear();reset();render();};$('forget-access').onclick=forgetAccess;
+ const baseForget=forgetAccess;forgetAccess=function(){baseForget();drafts.clear();reset();render();$('poll-error').hidden=true;};$('forget-access').onclick=forgetAccess;
  $('task-filter').onclick=()=>{tasksOnly=!tasksOnly;render();};
  $('delegate-topic').onclick=()=>window.HandoffUI.createDialog(topicId,state?.roundtable?.members);
  $('compose').onsubmit=event=>{event.preventDefault();if(sending||!topicId||!$('body').value.trim())return;const body=$('body').value,current=topicId,room=roomId;
@@ -105,6 +105,6 @@ window.MailboxUI = (() => {
  function theme(){const value=$('mailbox-theme').value;document.documentElement.dataset.theme=value==='system'?(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):value;storage('localStorage','setItem','roundtable-theme',value);}
  $('mailbox-theme').onchange=theme;matchMedia('(prefers-color-scheme: dark)').addEventListener('change',theme);theme();
  let lastRenew=Date.now(),polling=false;
- setInterval(async()=>{if(!active||!state||polling)return;polling=true;try{if(adminToken===COOKIE_SESSION&&Date.now()-lastRenew>240000){await sessionRequest('/api/ui-login/renew');lastRenew=Date.now();}await refresh();await fetchTimeline();}catch(error){if(error.message==='UI session expired')forgetAccess();else setError(error);}finally{polling=false;}},1800);
+ setInterval(async()=>{if(!active||!state||polling)return;polling=true;try{if(adminToken===COOKIE_SESSION&&Date.now()-lastRenew>240000){await sessionRequest('/api/ui-login/renew');lastRenew=Date.now();}await refresh();await fetchTimeline();$('poll-error').hidden=true;}catch(error){if(error.message==='UI session expired'){forgetAccess();$('poll-error').hidden=true;}else $('poll-error').hidden=false;}finally{polling=false;}},1800);
  render();return {render,refresh:fetchTimeline,currentTopicId:()=>topicId};
 })();

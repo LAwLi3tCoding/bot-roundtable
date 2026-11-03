@@ -46,7 +46,7 @@ window.HandoffUI = (() => {
    const signature=JSON.stringify([language,item]);if(card.dataset.signature===signature)continue;card.dataset.signature=signature;
    const displayStatus=task.status==='running'&&item.assignments.every(a=>a.status==='queued')?'queued':task.status;
    const top=safeText('span','task-card-meta');top.append(safeText('span','',name(task.origin)),safeText('span','task-status',status(displayStatus)),safeText('time','',stamp(task.updated||task.created)));
-   const workers=safeText('span','task-card-workers');for(const a of item.assignments)workers.append(safeText('span','handoff-mini',`${name(a.worker)} · ${status(a.status)}`));
+   const workers=safeText('span','task-card-workers');for(const a of item.assignments)workers.append(safeText('span','handoff-mini',item.assignments.length===1?name(a.worker):`${name(a.worker)} · ${status(a.status)}`));
    card.replaceChildren(top,safeText('strong','task-card-title',task.title),workers);
    card.setAttribute('aria-label',`${task.title} · ${item.assignments.map(a=>name(a.worker)).join(', ')} · ${status(displayStatus)}`);
   }
