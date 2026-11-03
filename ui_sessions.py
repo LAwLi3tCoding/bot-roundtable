@@ -17,6 +17,7 @@ class UISessions:
         self.session_seconds = session_seconds
         self.codes = {}
         self.sessions = {}
+        self.cookie_sessions = set()
         self.issues: deque[float] = deque(maxlen=16)
         self.failures: deque[float] = deque(maxlen=20)
         self.lock = threading.Lock()
@@ -25,6 +26,7 @@ class UISessions:
         now = self.clock()
         self.codes = {k: v for k, v in self.codes.items() if v > now}
         self.sessions = {k: v for k, v in self.sessions.items() if v > now}
+        self.cookie_sessions.intersection_update(self.sessions)
         for queue in (self.issues, self.failures):
             while queue and queue[0] <= now - 60:
                 queue.popleft()
@@ -55,7 +57,7 @@ class UISessions:
             self.issues.append(now)
             return {"code": code, "expires_in": self.code_seconds}
 
-    def exchange(self, code):
+    def exchange(self, code, cookie=False):
         with self.lock:
             now = self._cleanup()
             if len(self.failures) >= 20 or len(self.sessions) >= 32:
@@ -70,6 +72,8 @@ class UISessions:
             del self.codes[self.digest(code)]
             token = "ui_" + secrets.token_urlsafe(32)
             self.sessions[self.digest(token)] = now + self.session_seconds
+            if cookie:
+                self.cookie_sessions.add(self.digest(token))
             return {"session_token": token, "expires_in": self.session_seconds, "temporary": True}
 
     def valid(self, token):
@@ -78,6 +82,9 @@ class UISessions:
         with self.lock:
             self._cleanup()
             return self.digest(token) in self.sessions
+
+    def valid_cookie(self, token):
+        return self.valid(token) and self.digest(token) in self.cookie_sessions
 
     def renew(self, token):
         with self.lock:

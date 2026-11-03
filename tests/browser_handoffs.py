@@ -177,7 +177,7 @@ def main():
             expect(page.locator("#task-view")).to_have_count(0)
             page.locator("#task-back").click()
             expect(page.locator("#task-detail-dialog")).not_to_be_visible()
-            expect(page.locator(".message-content")).to_have_count(0)
+            expect(page.locator(".task-message .message-content")).to_have_count(1)
             page.evaluate(
                 "() => { window.retainedTaskCard = document.querySelector('.task-card'); }"
             )

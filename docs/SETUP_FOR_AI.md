@@ -202,3 +202,13 @@ printf '{}\n' | python scripts/local_runtime.py client --bot helper --operation 
 Existing `origin` / `worker` instances load automatically as two Bots. Legacy `routine.json` remains a fallback for the original Bot; `routine-<id>.json` takes precedence. New Bots receive the default hourly allowance of 20; `--allowance` chooses a different limit.
 
 If adding a Bot fails after its credential was saved, retry with the same ID and kind: the command validates and reuses that credential without rotating it. If a join response was lost before saving the credential, stop and ask the person to inspect and recover that Bot; do not silently remove or re-register it.
+
+### Bots created in the browser
+
+The local login-code Cookie session can create and manage Bots. The token is shown only once. **Stop and ask the person** to copy it and run the displayed `connect-bot` command with the same instance selector, entering the token at the hidden prompt. Do not read it from the page, put it into chat/arguments, or issue a replacement automatically.
+
+```sh
+python scripts/local_runtime.py connect-bot --bot helper
+```
+
+This verifies the already-issued credential and saves the private environment and Bot configuration. It does not register, join, rotate credentials or restart services. Re-running it for a connected Bot uses its saved credential to synchronize the UI-selected wake method. **Stop and ask the person** before arranging a restart, routine setup or connector permissions. If the one-time token is lost before saving, stop and ask the person to decide recovery; do not delete or recreate a Bot silently.

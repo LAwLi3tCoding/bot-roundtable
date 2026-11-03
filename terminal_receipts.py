@@ -254,6 +254,16 @@ class TerminalWorker:
                 "SELECT 1 FROM agents WHERE room=? AND id=?", (self.room, self.origin)
             ).fetchone():
                 raise ValueError("Terminal origin is not a current room member")
+
+            def active_origin():
+                return (
+                    source.execute(
+                        "SELECT 1 FROM agents a LEFT JOIN bots b ON b.id=a.id WHERE a.room=? AND a.id=? AND COALESCE(b.disabled,0)=0 AND COALESCE(b.deleted,0)=0",
+                        (self.room, self.origin),
+                    ).fetchone()
+                    is not None
+                )
+
             namespace = source.execute("SELECT value FROM event_namespace WHERE id=1").fetchone()[0]
             key = namespace + ":" + self.room + ":" + self.origin
             ledger = TerminalReceipts(self.ledger, stop=self.stop_event)
@@ -311,7 +321,7 @@ class TerminalWorker:
                     ).fetchone()
                     result = (
                         ledger.send_message(key, mention["message"], self.adapter)
-                        if current_mention
+                        if current_mention and active_origin()
                         else {"attempted": False}
                     )
                     if result.get("outcome") == "definitely_not_sent" and not result["attempted"]:
@@ -341,6 +351,7 @@ class TerminalWorker:
                     ).fetchone()
                     if (
                         current_task is not None
+                        and active_origin()
                         and row["kind"]
                         in ("task_completed", "task_failed", "task_timeout", "cancelled")
                         and current_task["room"] == self.room

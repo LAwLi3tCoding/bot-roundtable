@@ -77,6 +77,7 @@ class Handoffs:
             return ""
         if not isinstance(actor, str) or not actor.startswith("bot:"):
             raise Problem(403, "Task identity required")
+        self.store.require_active_bot(room, actor[4:])
         row = self.db.execute(
             "SELECT token FROM agents WHERE room=? AND id=?", (room, actor[4:])
         ).fetchone()
@@ -268,6 +269,7 @@ class Handoffs:
                     raise Problem(409, "Room active task limit reached")
                 epochs = {}
                 for worker in workers:
+                    self.store.require_active_bot(room, worker)
                     row = self.db.execute(
                         "SELECT token FROM agents WHERE room=? AND id=?", (room, worker)
                     ).fetchone()
@@ -821,10 +823,17 @@ class Handoffs:
         # Explicit deterministic demo members only; never execute tools or external adapters.
         for room in self.store.list_rooms():
             for agent in self.db.execute(
-                "SELECT id FROM agents WHERE room=? AND kind='demo'", (room["id"],)
+                "SELECT a.id FROM agents a LEFT JOIN bots b ON b.id=a.id WHERE a.room=? AND a.kind='demo' AND COALESCE(b.disabled,0)=0 AND COALESCE(b.deleted,0)=0",
+                (room["id"],),
             ).fetchall():
                 actor = "bot:" + agent["id"]
-                for item in self.inbox(room["id"], actor):
+                try:
+                    items = self.inbox(room["id"], actor)
+                except Problem as exc:
+                    if exc.status not in (403, 404):
+                        raise
+                    continue
+                for item in items:
                     if item["status"] != "queued":
                         continue
                     data = dict(

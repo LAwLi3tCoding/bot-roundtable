@@ -112,6 +112,7 @@ function renderState() {
 }
 function wakeLabel(id){const method=wakeMethods[id];const zh={'grok-routine':'定时通知','mcp-events':'消息通知','poll':'定时查看'};const en={'grok-routine':'Routine notifications','mcp-events':'Event notifications','poll':'Polling'};return (language==='zh'?zh:en)[method]||(language==='zh'?'通知方式尚未配置':'Notifications not configured');}
 function renderDirectory() {
+ if(window.BotManagement){window.BotManagement.render();return;}
  $('bot-cards').replaceChildren(); for(const bot of bots){const card=element('div','bot-card');card.append(element('div','avatar',bot.name.slice(0,1)),element('h3','',bot.name),element('span','status-pill',memberEvidence(bot.id)),element('p','muted',bot.description||t('registerHint')),element('code','',bot.id),element('p','member-evidence',wakeLabel(bot.id)));$('bot-cards').append(card);}
 }
 function renderManage() {
@@ -143,7 +144,7 @@ $('body').addEventListener('keydown', event => {
  else if(event.key === 'Enter' || event.key === 'Tab') {event.preventDefault(); chooseMention(mentionIndex);}
  else if(event.key === 'Escape') {event.preventDefault();mentionList.hidden=true;}
 });
-$('directory').onclick=()=>action(async()=>{await reloadWorkspace();renderDirectory();openDialog('directory-dialog');});
+$('directory').onclick=()=>action(async()=>{if(window.BotManagement)return window.BotManagement.open();await reloadWorkspace();renderDirectory();openDialog('directory-dialog');});
 $('manage').onclick=()=>action(()=>{if(!active)throw new Error('needConnection');renderManage();openDialog('manage-dialog');});
 $('settings-form').onsubmit=event=>{event.preventDefault();action(async()=>{await api(roomPath('/settings'),roomAuth(),{name:$('edit-name').value});await refresh(true);renderManage();},$('manage-dialog'));};
 $('mcp-open').onclick=()=>{renderMCP();openDialog('mcp-dialog');};

@@ -93,9 +93,18 @@ class Store:
         self.db.execute(
             "CREATE TABLE IF NOT EXISTS bots(id TEXT PRIMARY KEY, name TEXT, kind TEXT, description TEXT)"
         )
+        bot_columns = {row[1] for row in self.db.execute("PRAGMA table_info(bots)")}
+        for column, definition in {
+            "avatar": "TEXT NOT NULL DEFAULT 'slate'",
+            "wake": "TEXT NOT NULL DEFAULT ''",
+            "disabled": "INTEGER NOT NULL DEFAULT 0",
+            "deleted": "INTEGER NOT NULL DEFAULT 0",
+        }.items():
+            if column not in bot_columns:
+                self.db.execute(f"ALTER TABLE bots ADD COLUMN {column} {definition}")
         for aid, name in DEMO_BOTS if demo else ():
             self.db.execute(
-                "INSERT OR IGNORE INTO bots VALUES (?,?,?,?)",
+                "INSERT OR IGNORE INTO bots(id,name,kind,description) VALUES (?,?,?,?)",
                 (aid, name, "demo", "Deterministic demo / 确定性示例"),
             )
         # Never replay an uncertain external dispatch after a process restart.
@@ -166,6 +175,8 @@ class Store:
 
     def authorize(self, room: str, token: str, agent: str | None = None):
         with self.lock:
+            if agent is not None:
+                self.require_active_bot(room, agent)
             row = (
                 self.db.execute("SELECT token FROM rooms WHERE id=?", (room,)).fetchone()
                 if agent is None
@@ -189,8 +200,12 @@ class Store:
         token = secrets.token_urlsafe(32)
         with self.transaction():
             self.idle(room)
+            self.require_active_bot(room, aid, membership=False)
             if (
-                self.db.execute("SELECT COUNT(*) FROM agents WHERE room=?", (room,)).fetchone()[0]
+                self.db.execute(
+                    "SELECT COUNT(*) FROM agents a LEFT JOIN bots b ON b.id=a.id WHERE a.room=? AND COALESCE(b.deleted,0)=0",
+                    (room,),
+                ).fetchone()[0]
                 >= 6
             ):
                 raise Problem(400, "A room can contain at most 6 bots")
@@ -242,6 +257,7 @@ class Store:
                     409, "Stop the ordinary discussion before starting an orchestrated discussion"
                 )
             for aid in targets:
+                self.require_active_bot(room, aid)
                 if not self.db.execute(
                     "SELECT 1 FROM agents WHERE room=? AND id=?", (room, aid)
                 ).fetchone():
@@ -252,6 +268,7 @@ class Store:
             lead = room_row["lead"]
             if actor != "user":
                 aid = actor.removeprefix("bot:")
+                self.require_active_bot(room, aid)
                 if aid in targets or aid == lead:
                     raise Problem(403, "Self invocation is not allowed")
                 if not self.db.execute(
@@ -307,6 +324,7 @@ class Store:
     def inbox(self, room: str, agent: str) -> list:
         self.expire()
         with self.lock:
+            self.require_active_bot(room, agent)
             rows = self.db.execute(
                 "SELECT * FROM jobs WHERE room=? AND agent=? AND status='pending'", (room, agent)
             ).fetchall()
@@ -333,6 +351,7 @@ class Store:
         if type(failed) is not bool:
             raise Problem(400, "failed must be boolean")
         with self.transaction():
+            self.require_active_bot(room, agent)
             row = self.db.execute(
                 "SELECT * FROM jobs WHERE id=? AND room=? AND agent=?", (job, room, agent)
             ).fetchone()
@@ -399,6 +418,88 @@ class Store:
                 for r in self.db.execute("SELECT id,name,lead FROM rooms ORDER BY rowid DESC")
             ]
 
+    def require_active_bot(self, room, aid, membership=True):
+        row = self.db.execute("SELECT disabled,deleted FROM bots WHERE id=?", (aid,)).fetchone()
+        if row and (row["disabled"] or row["deleted"]):
+            raise Problem(403, "Bot is disabled or deleted")
+        if (
+            membership
+            and not self.db.execute(
+                "SELECT 1 FROM agents WHERE room=? AND id=?", (room, aid)
+            ).fetchone()
+        ):
+            raise Problem(403, "Room membership required")
+
+    def managed_bots(self, room):
+        with self.transaction():
+            self.refresh_allowances(room)
+            if not self.db.execute("SELECT 1 FROM rooms WHERE id=?", (room,)).fetchone():
+                raise Problem(404, "Room not found")
+            return [
+                dict(row)
+                for row in self.db.execute(
+                    "SELECT b.*,a.allowance,a.allowance_limit,a.allowance_reset FROM bots b JOIN agents a ON a.id=b.id WHERE a.room=? ORDER BY b.rowid",
+                    (room,),
+                )
+            ]
+
+    def manage_bot(self, room, operation, data, aid=None):
+        avatars = ("sage", "sand", "rose", "blue", "slate")
+        wakes = ("grok-routine", "mcp-events", "poll")
+        with self.transaction():
+            rows = self.managed_bots(room)
+            if operation == "create":
+                name = text(data.get("name"), 80)
+                avatar, wake = data.get("avatar", "slate"), data.get("wake", "poll")
+                if avatar not in avatars or wake not in wakes:
+                    raise Problem(400, "Invalid avatar or wake method")
+                aid = data.get("id")
+                self.register_bot(aid, name, data.get("kind", "mailbox"))
+                granted = self.join(room, aid)
+                self.db.execute("UPDATE bots SET avatar=?,wake=? WHERE id=?", (avatar, wake, aid))
+                self.grant(room, aid, data.get("allowance_limit", 20))
+                bot = next(b for b in self.managed_bots(room) if b["id"] == aid)
+                return {"bot": bot, "token": granted["token"], "setup_required": True}
+            bot = next((b for b in rows if b["id"] == aid), None)
+            if not bot or bot["deleted"]:
+                raise Problem(404, "Bot not found")
+            setup_required = False
+            if operation == "update":
+                if set(data) - {"name", "avatar", "wake", "allowance_limit"}:
+                    raise Problem(400, "Invalid bot settings")
+                name = text(data.get("name", bot["name"]), 80)
+                avatar, wake = (
+                    data.get("avatar", bot["avatar"]),
+                    data.get("wake", bot["wake"]),
+                )
+                if avatar not in avatars or ("wake" in data and wake not in wakes):
+                    raise Problem(400, "Invalid avatar or wake method")
+                setup_required = wake != bot["wake"]
+                self.db.execute(
+                    "UPDATE bots SET name=?,avatar=?,wake=? WHERE id=?", (name, avatar, wake, aid)
+                )
+                if "allowance_limit" in data:
+                    self.grant(room, aid, data["allowance_limit"])
+            elif operation in ("disable", "restore"):
+                self.db.execute(
+                    "UPDATE bots SET disabled=? WHERE id=?", (int(operation == "disable"), aid)
+                )
+            elif operation == "delete":
+                if data.get("confirm") != bot["name"]:
+                    raise Problem(400, "Type the bot name to confirm deletion")
+                # Retain membership and registry identities for historical attribution.
+                for row in self.db.execute("SELECT room FROM agents WHERE id=?", (aid,)).fetchall():
+                    self.handoffs.revoke(row["room"], aid)
+                self.db.execute("UPDATE bots SET deleted=1,disabled=1 WHERE id=?", (aid,))
+                self.db.execute("UPDATE agents SET token='' WHERE id=?", (aid,))
+                self.db.execute("UPDATE rooms SET lead='' WHERE lead=?", (aid,))
+            else:
+                raise Problem(404, "Not found")
+            return {
+                "bot": next(b for b in self.managed_bots(room) if b["id"] == aid),
+                "setup_required": setup_required,
+            }
+
     def registry(self) -> list:
         with self.lock:
             return [
@@ -431,7 +532,10 @@ class Store:
             raise Problem(400, "Description must be at most 300 characters")
         with self.transaction():
             try:
-                self.db.execute("INSERT INTO bots VALUES (?,?,?,?)", (aid, name, kind, description))
+                self.db.execute(
+                    "INSERT INTO bots(id,name,kind,description) VALUES (?,?,?,?)",
+                    (aid, name, kind, description),
+                )
             except sqlite3.IntegrityError:
                 raise Problem(409, "Bot already registered") from None
         return dict(id=aid, name=name, kind=kind, description=description)
@@ -495,6 +599,7 @@ class Store:
         )
 
     def consume_allowance(self, room, aid, count):
+        self.require_active_bot(room, aid)
         self.refresh_allowances(room)
         row = self.db.execute(
             "SELECT allowance,allowance_reset FROM agents WHERE room=? AND id=?", (room, aid)
@@ -545,7 +650,7 @@ class Store:
                 agents=[
                     dict(r)
                     for r in self.db.execute(
-                        "SELECT a.id,a.kind,a.allowance,a.allowance_limit,a.allowance_reset,COALESCE(b.name,a.id) AS name,COALESCE(b.description,'') AS description,CASE WHEN a.kind='demo' THEN 'demo-local' ELSE 'owner-setup-required' END AS availability FROM agents a LEFT JOIN bots b ON b.id=a.id WHERE a.room=? ORDER BY a.rowid",
+                        "SELECT a.id,a.kind,a.allowance,a.allowance_limit,a.allowance_reset,COALESCE(b.name,a.id) AS name,COALESCE(b.description,'') AS description,COALESCE(b.avatar,'slate') AS avatar,COALESCE(b.wake,'') AS wake,COALESCE(b.disabled,0) AS disabled,COALESCE(b.deleted,0) AS deleted,CASE WHEN a.kind='demo' THEN 'demo-local' ELSE 'owner-setup-required' END AS availability FROM agents a LEFT JOIN bots b ON b.id=a.id WHERE a.room=? ORDER BY a.rowid",
                         (room,),
                     )
                 ],
@@ -568,9 +673,17 @@ class Store:
         with self.lock:
             self.handoffs.demo_tick()
         with self.lock:
-            agents = self.db.execute("SELECT room,id FROM agents WHERE kind='demo'").fetchall()
+            agents = self.db.execute(
+                "SELECT a.room,a.id FROM agents a LEFT JOIN bots b ON b.id=a.id WHERE a.kind='demo' AND COALESCE(b.disabled,0)=0 AND COALESCE(b.deleted,0)=0"
+            ).fetchall()
         for agent in agents:
-            for job in self.inbox(agent["room"], agent["id"]):
+            try:
+                jobs = self.inbox(agent["room"], agent["id"])
+            except Problem as exc:
+                if exc.status not in (403, 404):
+                    raise
+                continue
+            for job in jobs:
                 last = job["messages"][-1]["body"][:250]
                 body = (
                     (
@@ -590,5 +703,5 @@ class Store:
                 try:
                     self.reply(agent["room"], agent["id"], job["id"], body)
                 except Problem as exc:
-                    if exc.status != 409:
+                    if exc.status not in (403, 404, 409):
                         raise

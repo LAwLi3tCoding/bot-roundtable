@@ -160,7 +160,7 @@ python scripts/local_runtime.py up
 printf '{}\n' | python scripts/local_runtime.py client --bot helper --operation mailbox
 ```
 
-Use `--kind dot --wake mcp-events` for an event-driven Bot, or `--kind other-bot --wake poll` for a polling Bot. Each event client connects and subscribes using its own credentials. The web interface shows the command; browser sessions never issue Bot credentials.
+Use `--kind dot --wake mcp-events` for an event-driven Bot, or `--kind other-bot --wake poll` for a polling Bot. Each event client connects and subscribes using its own credentials. A local login-code Cookie session can manage Bots in the UI. Creation shows its credential once. Run `python scripts/local_runtime.py connect-bot --bot helper` and enter it through the hidden prompt to connect the local instance. Reuse that command after changing wake methods, then arrange a restart yourself. Remote and bearer-token access cannot use browser-management endpoints.
 
 Legacy `origin` / `worker` instances are recognized as two Bots without manual migration. The original Bot retains the `routine.json` fallback; a per-Bot routine file takes precedence. Omitting `client --bot` retains the original default identity.
 

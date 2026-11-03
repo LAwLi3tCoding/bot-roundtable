@@ -1054,6 +1054,58 @@ def add_bot(state, config, args):
     return {"ok": True, "bot": bot, "restart_required": True}
 
 
+def connect_bot(state, config, args):
+    """Import a web-issued credential without issuing or rotating any credential."""
+    bot = args.bot
+    if not isinstance(bot, str) or not re.fullmatch(r"[a-z][a-z0-9-]{1,39}", bot):
+        raise Failure("invalid_instance_agent")
+    port, room = config["server_port"], config["room"]
+    registered = next(
+        (item for item in request(port, "/api/bots", get_admin_token(state)) if item["id"] == bot),
+        None,
+    )
+    if not registered or registered.get("disabled") or registered.get("deleted"):
+        raise Failure("bot_unavailable")
+    kind, wake = registered["kind"], registered.get("wake")
+    if kind not in ("grok", "dot", "mailbox", "other-bot") or wake not in (
+        "grok-routine",
+        "mcp-events",
+        "poll",
+    ):
+        raise Failure("bot_connection_metadata_unavailable")
+    path = state / (bot + ".env")
+    expected = {
+        "ROUNDTABLE_URL": f"http://127.0.0.1:{port}",
+        "ROUNDTABLE_ROOM": room,
+        "ROUNDTABLE_AGENT": bot,
+    }
+    existing = path.exists() or path.is_symlink()
+    if existing:
+        credential = env_read(path)
+        if any(credential.get(key) != value for key, value in expected.items()):
+            raise Failure("existing_secret_not_overwritten")
+        token = credential.get("ROUNDTABLE_TOKEN", "")
+    else:
+        token = hidden("Paste the Bot token shown once in the browser (hidden): ").strip()
+    if not token or "\n" in token or "\r" in token:
+        raise Failure("invalid_bot_credential")
+    access = request(port, f"/api/rooms/{room}/agents/{bot}/access", token)
+    if access.get("authorized") is not True:
+        raise Failure("invalid_bot_credential")
+    if not existing:
+        env_save(path, {**expected, "ROUNDTABLE_TOKEN": token})
+    # A saved env permits retry if writing the configuration failed previously.
+    configured = instance_bots(config)
+    entry = {"id": bot, "kind": kind, "wake": wake}
+    updated = [entry if item["id"] == bot else item for item in configured]
+    if not any(item["id"] == bot for item in configured):
+        updated.append(entry)
+    new_config = {**config, "bots": updated}
+    write_json(state / "instance.json", new_config, replace=True)
+    config.update(new_config)
+    return {"ok": True, "bot": bot, "restart_required": True}
+
+
 def configure_secret(state, config, kind, replace, bot=None):
     legacy = kind == "routine" and bot is None
     bot = selected_bot(config, bot) if kind != "runtime-key" else None
@@ -1366,6 +1418,7 @@ def main():
         choices=[
             "setup",
             "add-bot",
+            "connect-bot",
             "set-grok-routine",
             "up",
             "down",
@@ -1615,6 +1668,8 @@ def main():
                     if any(owned(state, config, c) for c in MANAGED):
                         raise Failure("stop_instance_before_admin_rotation")
                     result = rotate_admin_token(state, prefer_keyring=args.keyring)
+                elif args.action == "connect-bot":
+                    result = connect_bot(state, config, args)
                 elif args.action == "add-bot":
                     result = add_bot(state, config, args)
                 elif args.action in ("runtime-key", "routine", "set-grok-routine"):

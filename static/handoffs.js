@@ -1,12 +1,14 @@
 'use strict';
 // Same task IDs and event model as native MCP. All remote text stays inert textContent.
 window.HandoffUI = (() => {
- let createTopicId='';
+ let createTopicId='',timelineRoom='',timelineGeneration=0;
+ const timelineTasks=new Map();
+ const actorId=value=>['user','system'].includes(value)?value:'bot:'+value.replace(/^bot:/,'');
  const detailDialog=document.createElement('dialog');detailDialog.id='task-detail-dialog';detailDialog.className='wide-dialog';detailDialog.setAttribute('aria-labelledby','task-header');document.body.append(detailDialog);detailDialog.append($('handoffs-view'));$('handoffs-view').hidden=false;$('task-list').hidden=true;
  const dialogError=element('p','dialog-error');dialogError.setAttribute('role','alert');detailDialog.append(dialogError);
  detailDialog.addEventListener('close',()=>{taskId='';generation++;busy=false;});
  let roomId='', taskId='', assignmentId='', snapshot=null, cursor=0, events=[], generation=0, busy=false, detailSignature='';
- const name = actor => actor==='user'?t('human'):actor==='system'?t('taskSystem'):state?.agents.find(a=>a.id===actor.replace(/^bot:/,''))?.name||actor.replace(/^bot:/,'');
+ const name = actor => {if(actor==='user')return t('human');if(actor==='system')return t('taskSystem');const agent=state?.agents.find(a=>a.id===actor.replace(/^bot:/,''));return agent?.deleted?t('botDeleted'):agent?.name||actor.replace(/^bot:/,'');};
  const status = value => t('task_'+value);
  const stamp = value => new Date(value*1000).toLocaleTimeString(language==='zh'?'zh-CN':'en-US',{hour:'2-digit',minute:'2-digit'});
  const safeText = (tag,cls,value) => element(tag,cls,value);
@@ -36,24 +38,63 @@ window.HandoffUI = (() => {
  }
  function topicTasks(topicId){return (state?.tasks||[]).filter(item=>item.task.topic_id===topicId);}
  function topicHasTasks(topicId){return topicTasks(topicId).length>0;}
- function syncCards(container,topicId){
-  const items=topicTasks(topicId),ids=new Set(items.map(item=>item.task.id));
-  for(const old of container.querySelectorAll('.task-card[data-task-id]'))if(!ids.has(old.dataset.taskId))old.remove();
+ async function loadTimeline(topicId){
+  const currentRoom=active?.id;if(!currentRoom)return;
+  if(timelineRoom!==currentRoom){timelineRoom=currentRoom;timelineGeneration++;timelineTasks.clear();}
+  const seq=timelineGeneration;
+  // Lists contain only previews; fetch the existing scoped, paginated event API.
+  for(const item of topicTasks(topicId)){
+   const id=item.task.id,version=JSON.stringify(item),cached=timelineTasks.get(id);
+   if(cached?.version===version)continue;
+   const entry=cached||{events:[],cursor:0,snapshot:null,version:''};
+   let more=true;
+   while(more){
+    const data=await post('/query',{task_id:id,after:entry.cursor});
+    if(active?.id!==currentRoom||seq!==timelineGeneration)return;
+    const known=new Set(entry.events.map(event=>event.id));entry.events.push(...data.events.filter(event=>!known.has(event.id)));
+    entry.cursor=data.cursor;entry.snapshot=data;more=data.has_more;
+   }
+   entry.version=version;timelineTasks.set(id,entry);
+  }
+ }
+ function syncCards(container,topicId,messageNode,updateMessage){
+  if(timelineRoom!==(active?.id||'')){timelineRoom=active?.id||'';timelineGeneration++;timelineTasks.clear();}
+  const items=topicTasks(topicId),ids=new Set(items.map(item=>item.task.id)),nodes=new Map([...container.children].map(node=>[node.dataset.timelineId,node]));
+  for(const old of container.querySelectorAll('[data-task-entry]'))if(!ids.has(old.dataset.taskEntry))old.remove();
   for(const item of items){
-   const task=item.task;let card=[...container.querySelectorAll('.task-card[data-task-id]')].find(node=>node.dataset.taskId===task.id);
-   if(!card){card=safeText('button','task-card');card.type='button';card.dataset.taskId=task.id;card.onclick=()=>action(()=>openTask(task.id),detailDialog);container.append(card);}
-   card.dataset.created=String(task.created);card.dataset.actors=JSON.stringify([...new Set([task.origin,...item.assignments.map(a=>'bot:'+a.worker.replace(/^bot:/,''))])]);
-   const signature=JSON.stringify([language,item]);if(card.dataset.signature===signature)continue;card.dataset.signature=signature;
-   const displayStatus=task.status==='running'&&item.assignments.every(a=>a.status==='queued')?'queued':task.status;
-   const top=safeText('span','task-card-meta');top.append(safeText('span','',name(task.origin)),safeText('span','task-status',status(displayStatus)),safeText('time','',stamp(task.updated||task.created)));
-   const workers=safeText('span','task-card-workers');for(const a of item.assignments)workers.append(safeText('span','handoff-mini',item.assignments.length===1?name(a.worker):`${name(a.worker)} · ${status(a.status)}`));
-   card.replaceChildren(top,safeText('strong','task-card-title',task.title),workers);
-   card.setAttribute('aria-label',`${task.title} · ${item.assignments.map(a=>name(a.worker)).join(', ')} · ${status(displayStatus)}`);
+   const task=item.task,cached=timelineTasks.get(task.id),snapshot=cached?.snapshot;
+   const actors=[...new Set([actorId(task.origin),...item.assignments.map(a=>actorId(a.worker))])];
+   let article=nodes.get('task:'+task.id);
+   if(!article){article=messageNode({id:'task:'+task.id,sender:actorId(task.origin),created:task.created,body:''},false);article.classList.remove('mailbox-message');article.classList.add('task-message');delete article.dataset.messageId;article.dataset.timelineId='task:'+task.id;article.dataset.taskEntry=task.id;const bubble=element('div','task-bubble');bubble.append(article.querySelector('.message-body'));article.querySelector('.message-content').append(bubble);container.append(article);nodes.set(article.dataset.timelineId,article);}
+   article.dataset.actors=JSON.stringify(actors);
+   updateMessage(article,{sender:actorId(task.origin),created:task.created,body:t('taskAssigned')+(language==='zh'?'：':': ')+(snapshot?.task.context||task.context||task.title)});
+   let card=article.querySelector('.task-card');if(!card){card=safeText('button','task-card');card.type='button';card.dataset.taskId=task.id;card.onclick=()=>action(()=>openTask(task.id),detailDialog);article.querySelector('.task-bubble').append(card);}
+   card.dataset.created=String(task.created);card.dataset.actors=JSON.stringify(actors);
+   const signature=JSON.stringify([language,item,snapshot?.task.context,actors.map(name)]);
+   if(card.dataset.signature!==signature){
+    card.dataset.signature=signature;
+    const displayStatus=task.status==='running'&&item.assignments.every(a=>a.status==='queued')?'queued':task.status;
+    const top=safeText('span','task-card-meta');top.append(safeText('span','task-status',status(displayStatus)));
+    const workers=safeText('span','task-card-workers');for(const a of item.assignments)workers.append(safeText('span','handoff-mini',item.assignments.length===1?name(a.worker):`${name(a.worker)} · ${status(a.status)}`));
+    card.replaceChildren(top,safeText('strong','task-card-title',task.title),workers);
+    card.setAttribute('aria-label',`${task.title} · ${item.assignments.map(a=>name(a.worker)).join(', ')} · ${status(displayStatus)}`);
+   }
+   let firstReply=true;
+   for(const event of cached?.events||[]){
+    if(!['claimed','progress','completed','failed','context'].includes(event.kind))continue;
+    const id='event:'+event.id;let reply=nodes.get(id);
+    const assignment=snapshot.assignments.find(a=>a.id===event.assignment);
+    const body=event.kind==='claimed'?t('taskReceipt').replace('{origin}',name(task.origin)).replace('{instruction}',assignment?.instruction||task.title):event.body;
+    if(!reply){reply=messageNode({id,sender:actorId(event.actor),created:event.created,body},false);reply.classList.remove('mailbox-message');reply.classList.add('task-reply');delete reply.dataset.messageId;reply.dataset.timelineId=id;reply.dataset.taskEntry=task.id;reply.dataset.eventId=String(event.id);reply.dataset.actors=JSON.stringify(actors);
+    const label=safeText('span','task-reply-label');reply.querySelector('.message-content').prepend(label);container.append(reply);nodes.set(id,reply);}
+    updateMessage(reply,{sender:actorId(event.actor),created:event.created,body});reply.dataset.actors=JSON.stringify(actors);
+    const label=reply.querySelector('.task-reply-label'),text=t('taskReply').replace('{title}',task.title);if(label.textContent!==text)label.textContent=text;label.hidden=!firstReply;firstReply=false;
+   }
   }
  }
  function renderDetail(){
   if(!snapshot){$('task-header').textContent=t('taskLoading');return;}
-  const signature=JSON.stringify([language,snapshot.task,snapshot.budget,snapshot.assignments,events,assignmentId]);if(signature===detailSignature)return;detailSignature=signature;
+  const signature=JSON.stringify([language,snapshot.task,snapshot.budget,snapshot.assignments,events,assignmentId,state?.agents.map(a=>[a.id,a.name,a.deleted])]);if(signature===detailSignature)return;detailSignature=signature;
   const task=snapshot.task;$('task-note').disabled=false;$('task-note-form').querySelector('button').disabled=false;
   $('task-header').replaceChildren(safeText('h2','',task.title),safeText('p','task-meta',`${name(task.origin)} · ${status(task.status)}`));
   const budget=snapshot.budget;$('task-header').append(safeText('p','muted small',`${t('taskBudget')}: ${budget.used}/${budget.limit}`));
@@ -81,7 +122,7 @@ window.HandoffUI = (() => {
   createTopicId=topicId||state?.roundtable?.id||'';
   if(!active||!state)throw new Error('needConnection');
   $('task-create-form').reset();$('task-workers').replaceChildren();
-  for(const agent of state.agents.filter(agent=>!members||members.includes('bot:'+agent.id))){const row=safeText('label','task-worker-row');const check=document.createElement('input');check.type='checkbox';check.value=agent.id;check.checked=false;check.onchange=syncWorkers;const title=safeText('span','',name(agent.id));const input=document.createElement('textarea');input.rows=2;input.maxLength=4000;input.placeholder=t('workerInstruction');input.setAttribute('aria-label',`${name(agent.id)} ${t('workerInstruction')}`);input.dataset.worker=agent.id;row.append(check,title,input);$('task-workers').append(row);}
+  for(const agent of state.agents.filter(agent=>!agent.disabled&&!agent.deleted&&(!members||members.includes('bot:'+agent.id)))){const row=safeText('label','task-worker-row');const check=document.createElement('input');check.type='checkbox';check.value=agent.id;check.checked=false;check.onchange=syncWorkers;const title=safeText('span','',name(agent.id));const input=document.createElement('textarea');input.rows=2;input.maxLength=4000;input.placeholder=t('workerInstruction');input.setAttribute('aria-label',`${name(agent.id)} ${t('workerInstruction')}`);input.dataset.worker=agent.id;row.append(check,title,input);$('task-workers').append(row);}
   syncWorkers();openDialog('task-create-dialog');
  }
  $('task-back').onclick=()=>detailDialog.close();$('task-more').onclick=()=>action(()=>fetchTask(true));
@@ -104,5 +145,5 @@ window.HandoffUI = (() => {
  }
  $('cancel-task').onclick=()=>action(()=>mutate('cancel'),detailDialog);
  $('retry-task').onclick=()=>action(()=>mutate('retry'),detailDialog);
- render();return {render,openTask,createDialog,syncCards,topicHasTasks};
+ render();return {render,openTask,createDialog,syncCards,loadTimeline,topicHasTasks};
 })();

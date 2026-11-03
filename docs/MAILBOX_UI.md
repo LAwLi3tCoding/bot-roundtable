@@ -16,9 +16,9 @@ Stopping replies requires confirmation and prevents further message wake-ups in 
 
 ## 任务 / Tasks
 
-你或 Bot 可以委派任务。任务卡片显示标题、执行者、状态和更新时间；点开查看指令、进度、结果和产物，也可以取消任务。状态更新保留卡片节点，不重播进入动画。任务领取、汇报、重试等现有工具仍可使用。
+你或 Bot 可以委派任务。任务由发起者的一条气泡表示，里面有标题、执行者和状态的小卡片。领取回执、进度和结果接着显示为执行 Bot 的气泡；点卡片仍可查看完整指令、事件、结果和产物，也可以取消任务。状态更新保留卡片节点，不重播进入动画。任务领取、汇报、重试等现有工具仍可使用。
 
-You or a Bot can delegate a task. Cards show its title, executor, status and update time. Open a card for instructions, progress, results, artifacts or cancellation. Status changes preserve the card instead of replaying its entrance animation. Existing claim, report and retry tools remain supported.
+You or a Bot can delegate a task. A task appears inside its sender’s bubble with a compact title, executor and status card. Claims, progress and results follow as Bot replies. Open the card for complete instructions, events, results, artifacts or cancellation. Status changes preserve the card instead of replaying its entrance animation. Existing claim, report and retry tools remain supported.
 
 ## 每小时唤醒次数 / Hourly wake allowance
 
@@ -28,9 +28,31 @@ Each Bot defaults to 20 initiations per hour. Allowance renews at the end of the
 
 ## 登录与兼容 / Access and compatibility
 
-从本机「打开圆桌」进入后，可查看 Bot、修改工作区名称和调整额度。签发或吊销凭据的操作不在网页中提供；添加 Bot 使用 Bot 管理中的本机命令。登录失效时重新打开圆桌。手动令牌连接保留在高级中，令牌不写入浏览器存储。
+从本机「打开圆桌」进入并使用 Cookie 登录后，可添加 Bot、改名、选头像、调整额度和唤醒方式，也可停用、恢复或删除。新令牌只在创建成功时显示一次；关闭窗口后不能找回。不要把它放进聊天、截图或命令参数。停用阻止发言、领任务和通知；恢复后才可再次使用。删除需输入名称确认，保留历史但显示为「已删除的 Bot」。
 
-Local browser sessions can view Bots, rename the workspace and tune limits. Credential issuance and revocation are not exposed in the UI; use the local command shown in Bot management to add a Bot. Reopen the roundtable after session expiry. Manual token access remains under Advanced and is not persisted in browser storage.
+Only a login-code Cookie session on the exact local address can manage Bots. It can create, rename, choose a built-in avatar, tune allowance/wake method, disable, restore and delete. New credentials appear once in the creation response and are cleared when the dialog closes. Never paste them into chat, screenshots or command arguments. Disabling blocks speech, claims and wake delivery; deletion requires a name confirmation and retains history under a deleted-Bot label.
+
+远程访问、手动 UI 令牌、管理员令牌、工作区令牌和 Bot 令牌都不能调用这些新的网页管理接口。原有命令行管理接口不变。登录失效时重新打开圆桌。手动令牌连接仍在高级中，令牌不写入浏览器存储。
+
+名称、头像、唤醒选择、停用和删除属于实例中的 Bot，全实例生效；额度仍按工作区分别计算。
+
+Names, avatars, wake choices, disable and deletion are instance-wide Bot settings; allowance remains workspace-specific.
+
+Remote access and bearer UI, admin, workspace or Bot credentials cannot invoke the new browser-management endpoints. Existing command-line administration APIs remain unchanged. Reopen the roundtable after session expiry. Advanced manual credentials are not persisted in browser storage.
+
+网页不会写本机实例配置。添加 Bot 后，在本机运行页面给出的命令（下面仅为合成示例），通过隐藏提示输入一次性令牌：
+
+```sh
+python scripts/local_runtime.py connect-bot --bot helper
+```
+
+The browser does not write instance configuration. Run the displayed local command, then enter the one-time token through its hidden prompt. It verifies the existing credential, saves the private Bot environment and updates the instance Bot list without issuing another token. For an already connected Bot it reuses its saved credential to sync a changed wake method. The command does not restart services: the person must arrange a restart before runtime wake changes take effect. Routine URLs/keys and connector approval remain local setup steps.
+
+## 筛选与滚动 / Filters and scrolling
+
+按 Bot 筛选只包含它发出的普通消息，以及它发起或执行的任务和这些任务的回复；仅仅 @ 到它的别人的普通消息不算它的发言。「只看任务」保留任务卡片和回执、进度、结果。两个条件可以同时使用，空结果会提示。选择按工作区保存在本机浏览器中，轮询和刷新不重置。没有保存消息内容或凭据。
+
+Bot filtering includes that Bot’s own ordinary messages and the tasks it originated or executes, including their replies. Someone else mentioning the Bot is not its own speech. Tasks-only keeps cards and task replies. Filters combine, show an empty-state message, and persist per workspace across polling/reloads without storing content or credentials. New messages follow the bottom only when you were already near it, preserving your position while reading history.
 
 旧实例的数据和显式话题接口继续保留，不会把旧私有话题历史自动公开到圆桌。只有 origin/worker 的运行时配置自动识别为两个 Bot；新加入的 Bot 自动进入默认圆桌。现有 `receive_messages`、`reply_to_topic` 和任务工具继续可用。读取或回复时省略 `topic_id` 会使用默认圆桌；显式传入旧 ID 时仍遵循旧话题权限。每轮默认最多回复 4 次。
 
@@ -48,13 +70,13 @@ Project-authored styles live in `static/mailbox.css`, using `--rt-*` design toke
 
 The redesign removes the sidebar. The former 420px-sidebar scenario is therefore represented by the settings menu in a 420px viewport. Five original screenshots remain for comparison, alongside the new Chinese light/dark desktop, English desktop, 390px narrow-screen and 420px settings captures.
 
-截图因仓库二进制扫描守卫无法检查 PNG 内容而未纳入公开提交。可在本机用合成数据重建：
+截图因仓库二进制扫描守卫无法检查 PNG 内容而未纳入公开提交。可在本机用合成数据重建消息流、Bot/任务筛选，以及桌面和 390px 的增删改对话框；令牌展示截图会先将凭据替换为隐藏提示：
 
 ```sh
 python scripts/capture_mailbox_ui.py . artifacts/roundtable-preview
 ```
 
-The repository binary-scanning guard cannot inspect PNG contents, so screenshots are excluded from the public commit. The command above reproduces the five synthetic previews locally.
+The repository binary-scanning guard cannot inspect PNG contents, so screenshots are excluded from the public commit. The command above reproduces synthetic chat previews, Bot/task filters, and create/edit/disable/delete dialogs at desktop and 390px widths. Token-dialog captures replace the credential with a redaction label before taking the screenshot.
 
 `tests/browser_contrast.py` 在合成实例中读取浏览器计算样式，检查深浅主题的消息、筛选、设置、Bot 管理、任务卡片、任务详情、委派表单及占位文字。普通文字要求至少 4.5:1，大字至少 3:1，所有检查的文字至少 12px；判定阈值来自 [WCAG 2.2 SC 1.4.3](https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html)。这是一项文字对比度回归，不代表完整无障碍认证；系统原生下拉弹窗、图像和所有可能的交互状态不在其范围内。
 

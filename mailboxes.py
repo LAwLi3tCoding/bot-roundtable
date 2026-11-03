@@ -37,6 +37,9 @@ class Mailboxes:
         ):
             raise Problem(403, "Room membership required")
 
+        if actor != "user":
+            self.store.require_active_bot(room, actor[4:])
+
     def _epoch(self, room, actor):
         if actor == "user":
             return "user"
@@ -259,6 +262,7 @@ class Mailboxes:
             now = time.time()
             wakes = []
             for target in mentions:
+                self.store.require_active_bot(room, target[4:])
                 recent = db.execute(
                     "SELECT COUNT(*) FROM mail_deliveries d JOIN mail_messages m ON m.id=d.message JOIN mail_topics t ON t.id=m.topic WHERE t.room=? AND d.actor=? AND d.wake=1 AND m.created>?",
                     (room, target, now - 60),

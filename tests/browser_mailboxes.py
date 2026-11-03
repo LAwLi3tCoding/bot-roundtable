@@ -100,12 +100,12 @@ def main():
                 "window.originalMessage === document.querySelector('.mailbox-message')"
             )
             # Filters only change what is shown, never create a private conversation.
-            page.locator('[data-bot-filter="bot:grok"]').click()
-            expect(page.locator(".mailbox-message:visible")).to_have_count(2)
-            page.locator('[data-bot-filter="bot:dot"]').click()
+            page.locator("#bot-filter").select_option("bot:grok")
+            expect(page.locator(".mailbox-message:visible")).to_have_count(1)
+            page.locator("#bot-filter").select_option("bot:dot")
             expect(page.locator(".mailbox-message:visible")).to_have_count(0)
             expect(page.locator(".timeline-empty")).to_be_visible()
-            page.locator('[data-bot-filter=""]').click()
+            page.locator("#bot-filter").select_option("")
             expect(page.locator(".mailbox-message:visible")).to_have_count(3)
             page.locator("#task-filter").click()
             expect(page.locator(".mailbox-message:visible")).to_have_count(0)
@@ -131,12 +131,10 @@ def main():
                 expect(page.locator("#body")).to_be_visible()
                 expect(page.locator(".mailbox-message").last).to_be_visible()
                 assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
-            assert page.locator("#bot-filters").evaluate("n => n.scrollWidth <= n.clientWidth")
-            for button in page.locator("#bot-filters button").all():
-                bounds = button.bounding_box()
-                assert bounds and bounds["x"] >= 0 and bounds["x"] + bounds["width"] <= 390
-                button.click()
-                expect(button).to_have_attribute("aria-pressed", "true")
+            bounds = page.locator("#bot-filter").bounding_box()
+            assert bounds and bounds["x"] >= 0 and bounds["x"] + bounds["width"] <= 390
+            page.locator("#bot-filter").select_option("bot:reviewer")
+            expect(page.locator("#bot-filter")).to_have_value("bot:reviewer")
             menu.click()
             panel = page.locator(".sidebar-settings-panel").bounding_box()
             assert panel and panel["x"] >= 0 and panel["x"] + panel["width"] <= 390

@@ -22,10 +22,11 @@ jobs:
       - run: mypy
       - run: python -m unittest discover -s tests -v
       - run: python -m compileall -q roundtable.py server.py grok_adapter.py mcp_bridge.py mcp_http.py handoffs.py connections.py local_client.py mcp_events.py event_delivery.py
-      - run: node --check static/app.js
-      - run: node --check static/i18n.js
-      - run: node --check static/handoffs.js
-      - run: node --check static/mailbox.js
+      - name: Check every browser module
+        run: |
+          for script in static/*.js; do
+            node --check "$script" || exit 1
+          done
   browser:
     runs-on: ubuntu-latest
     steps:
@@ -35,10 +36,8 @@ jobs:
           python-version: '3.12'
       - run: pip install -r requirements.lock
       - run: python -m playwright install --with-deps chromium
-      - run: PYTHONPATH=. python tests/browser_smoke.py
-      - run: PYTHONPATH=. python tests/browser_handoffs.py
-      - run: PYTHONPATH=. python tests/browser_onboarding.py
-      - run: PYTHONPATH=. python tests/browser_ui_login.py
-      - run: PYTHONPATH=. python tests/browser_mentions.py
-      - run: PYTHONPATH=. python tests/browser_mailboxes.py
-      - run: PYTHONPATH=. python tests/browser_contrast.py
+      - name: Run every browser regression
+        run: |
+          for script in tests/browser_*.py; do
+            PYTHONPATH=. python "$script" || exit 1
+          done
