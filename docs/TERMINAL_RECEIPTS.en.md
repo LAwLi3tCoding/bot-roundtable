@@ -63,7 +63,9 @@ running tasks and future tasks can notify when they become terminal. The cursor
 is durable, so downtime events after first enable are observed on restart. The
 ledger must be retained; changing it resets both cursor and delivery reservations.
 A task that is retried after a failed terminal state does not receive a second
-receipt. Membership and status are checked at selection time; a revoke after
+receipt.
+
+The same worker also sends `{"kind":"task.assigned","id":TASK_ID}` to the bot an assignment is for, when that assignment becomes queued (new, retried or lease expired) while the task is running and the member epoch is current. Each assignment attempt is reserved once; claimed, finished or other bots' assignments send nothing. Membership and status are checked at selection time; a revoke after
 selection cannot retract a network operation already begun.
 
 The server starts the worker before accepting requests and stops it with a bounded

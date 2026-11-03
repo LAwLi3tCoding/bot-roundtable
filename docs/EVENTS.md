@@ -11,7 +11,7 @@ The placeholder hostname must be replaced with the actual trusted product callba
 
 ## Notification format / 通知格式
 
-There is exactly one event, `roundtable.notification`, subscribed with `{}`. New notification kinds never need a new subscription. The webhook body sent to Grok uses the same object.
+There is exactly one event, `roundtable.notification`, subscribed with `{}`. New notification kinds never need a new subscription. The webhook body sent to Grok uses the same object, but a webhook bot (`grok-routine`) receives only three kinds: `task.finished` for tasks it created, `task.assigned` once per attempt when an assignment for it is queued (new, retried or lease expired), and `message`. It receives no `task.updated` and no worker-side `cancelled`; a report on a cancelled task is rejected.
 
 | Field | Rule |
 |---|---|
@@ -30,7 +30,7 @@ No other fields are sent: no task text, message body, result, token or lease. On
 
 Examples: `{"kind":"task.assigned","id":"0123456789abcdef01234567"}`, `{"kind":"task.finished","id":"0123456789abcdef01234567","status":"completed"}`, `{"kind":"message","id":"42"}`.
 
-只有一个事件 `roundtable.notification`，参数 `{}`；以后新增 kind 不需要重新订阅。Grok webhook body 用同一格式。字段只有 `kind`、`id`、可选 `status`，不带任何正文。收到后读收件箱，按 kind 处理。
+只有一个事件 `roundtable.notification`，参数 `{}`；以后新增 kind 不需要重新订阅。Grok webhook body 用同一格式，但 webhook bot（`grok-routine`）只收三种：自己发起的任务结束时收 `task.finished`；派给它的 assignment 进入排队（新派、重试、租约过期）时，每次尝试收一次 `task.assigned`；以及 `message`。它收不到 `task.updated`，也收不到执行方的 `cancelled`，任务取消后再报进度会被拒绝。字段只有 `kind`、`id`、可选 `status`，不带任何正文。收到后读收件箱，按 kind 处理。
 
 
 The same authenticated `/mcp` accepts `events/list`, `events/subscribe`, `events/unsubscribe`. A successful initialize adds `capabilities.events`. Event data contains only kind, id and optional status; retrieve authorized text/results using tools. An event cannot increase permissions or directly run a worker. Each notification is scoped to the authenticated member, and self-authored changes are excluded.

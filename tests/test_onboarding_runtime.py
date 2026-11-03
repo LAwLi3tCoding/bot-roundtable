@@ -182,6 +182,75 @@ class RuntimeContracts(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
+    def test_real_worker_claim_and_report_keep_lease_private(self):
+        from roundtable import Store
+        from server import make_server
+        import threading
+
+        store = Store()
+        for agent in ("grok", "dot"):
+            store.register_bot(agent, agent, "mailbox")
+        room = store.create_group("Synthetic", ["grok", "dot"])
+        store.grant(room["id"], "dot", 2)
+        server = make_server(store, "a" * 48, port=0)
+        thread = threading.Thread(target=server.serve_forever)
+        thread.start()
+        token = next(a["token"] for a in room["agent_tokens"] if a["id"] == "grok")
+        runtime.env_save(
+            self.state / "grok.env",
+            {"ROUNDTABLE_URL": f"http://127.0.0.1:{server.server_port}", "ROUNDTABLE_TOKEN": token},
+        )
+        config = {"room": room["id"], "origin": "grok", "worker": "dot"}
+        task = store.handoffs.create(
+            room["id"],
+            "bot:dot",
+            {
+                "title": "Synthetic",
+                "context": "Read only",
+                "assignments": [{"worker": "grok", "instruction": "Report only"}],
+                "request_id": "worker-create",
+                "budget": 1,
+            },
+        )
+        tid = task["task_id"]
+        aid = store.db.execute("SELECT id FROM assignments WHERE task=?", (tid,)).fetchone()[0]
+        lease_file = self.state / "leases" / f"grok-{aid}.json"
+
+        def call(operation, payload):
+            args = argparse.Namespace(operation=operation, task_id=None, body=None, bot="grok")
+            with patch("local_client.read_json_stdin", return_value=payload):
+                return runtime.run_client(self.state, config, args)
+
+        report = {"task_id": tid, "assignment_id": aid, "kind": "progress", "body": "Started"}
+        try:
+            with self.assertRaisesRegex(runtime.Failure, "claim_first"):
+                call("report", report)
+            with self.assertRaisesRegex(runtime.Failure, "assignment_id_required"):
+                call("claim", {"task_id": tid})
+            claimed = call(
+                "claim",
+                {
+                    "task_id": tid,
+                    "assignment_id": aid,
+                    "expected_attempt": 0,
+                    "lease_seconds": 1800,
+                },
+            )
+            self.assertNotIn("lease", claimed)
+            self.assertEqual(claimed["attempt"], 1)
+            self.assertEqual(lease_file.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(call("report", report)["status"], "working")
+            done = call("report", dict(report, kind="completed", body="Done"))
+            self.assertEqual(done["status"], "completed")
+            self.assertFalse(lease_file.exists())
+            self.assertEqual(
+                store.db.execute("SELECT status FROM tasks WHERE id=?", (tid,)).fetchone()[0],
+                "completed",
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+
     def test_real_managed_origin_create_tasks_inbox_and_stalled_stdin(self):
         from roundtable import Store
         from server import make_server

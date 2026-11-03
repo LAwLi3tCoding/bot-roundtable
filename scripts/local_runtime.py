@@ -1184,7 +1184,9 @@ def render(state, output):
 def run_client(state, config, args):
     from local_client import LocalClient, read_json_stdin
 
-    if args.operation in ("create", "tasks", "inbox") and (args.task_id or args.body is not None):
+    if args.operation in ("create", "tasks", "inbox", "claim", "report") and (
+        args.task_id or args.body is not None
+    ):
         raise Failure("client_argument_conflict")
     bot = selected_bot(config, getattr(args, "bot", None))
     member = env_read(state / (bot + ".env"))
@@ -1204,6 +1206,8 @@ def run_client(state, config, args):
         "stop-topic",
     ):
         result = client.call(args.operation, read_json_stdin())
+    elif args.operation in ("claim", "report"):
+        result = claim_or_report(state, bot, client, args.operation, read_json_stdin())
     elif args.operation == "roundtrip":
         result = client.roundtrip(config["worker"], str(state / "roundtrip.json"), args.timeout)
     elif args.operation == "cancel":
@@ -1222,6 +1226,25 @@ def run_client(state, config, args):
                 payload or {}, body=args.body, request_id="context-" + secrets.token_hex(16)
             )
         result = client.call(args.operation, payload)
+    return result
+
+
+def claim_or_report(state, bot, client, operation, payload):
+    """Keep the lease in the instance folder so it never appears in output or chat."""
+    aid = payload.get("assignment_id")
+    if not isinstance(aid, str) or not re.fullmatch(r"[a-f0-9]{24}", aid):
+        raise Failure("client_assignment_id_required")
+    lease_file = private_dir(state / "leases") / f"{bot}-{aid}.json"
+    payload = {"request_id": operation + "-" + secrets.token_hex(16), **payload}
+    if operation == "claim":
+        result = client.call("claim", payload)
+        write_json(lease_file, {"lease": result.pop("lease"), "attempt": result["attempt"]}, True)
+        return result
+    if not lease_file.exists():
+        raise Failure("client_claim_first")
+    result = client.call("report", {**payload, **read_json(lease_file)})
+    if result["status"] in ("completed", "failed"):
+        lease_file.unlink()
     return result
 
 
@@ -1478,6 +1501,8 @@ def main():
             "create",
             "tasks",
             "inbox",
+            "claim",
+            "report",
             "cancel",
             "topics",
             "create-topic",

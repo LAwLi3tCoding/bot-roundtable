@@ -180,8 +180,8 @@ PROMPTS 说明重新订阅一次通用事件。事件只是唤醒提示：读取
 `ROUNDTABLE_TASK_NOTICES=0`。本次代码更新不会修改正在运行的实例。
 
 Grok 复用已配置的 routine worker 和出站代理，无需新增 routine URL。将已授权 routine
-webhook body 使用同一通用格式：`{"kind":"message","id":"<消息ID>"}` 或
-`{"kind":"task.finished","id":"<任务ID>","status":"…"}`。routine 指令照抄
+webhook body 使用同一通用格式：`{"kind":"message","id":"<消息ID>"}`、
+`{"kind":"task.assigned","id":"<任务ID>"}` 或 `{"kind":"task.finished","id":"<任务ID>","status":"…"}`。routine 指令照抄
 [README 的模板](../README.md#grok-bot-等-webhook-接收方的-routine-指令)，只维护那一份。收到通知
 不扩大 routine 权限。真实 Grok 执行和平台投递仍须另行验证。
 
