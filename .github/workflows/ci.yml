@@ -41,3 +41,4 @@ jobs:
       - run: PYTHONPATH=. python tests/browser_ui_login.py
       - run: PYTHONPATH=. python tests/browser_mentions.py
       - run: PYTHONPATH=. python tests/browser_mailboxes.py
+      - run: PYTHONPATH=. python tests/browser_contrast.py
