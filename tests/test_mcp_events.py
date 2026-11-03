@@ -313,13 +313,16 @@ class EventsFixture(unittest.TestCase):
         sid = self.broker.rpc("events/subscribe", slow)["id"]
         self.broker.rpc("events/subscribe", healthy)
         entered, release, delivered = threading.Event(), threading.Event(), threading.Event()
+        slow_finished, unsubscribed = threading.Event(), threading.Event()
+        errors = []
         original = self.receiver.post
 
         def post(url, body, headers):
             if json.loads(body).get("name"):
                 if url.endswith("/slow"):
                     entered.set()
-                    release.wait(3)
+                    release.wait(10)
+                    slow_finished.set()
                     return 503, b"{}"
                 delivered.set()
             return original(url, body, headers)
@@ -328,16 +331,29 @@ class EventsFixture(unittest.TestCase):
         self.create()
         scan = threading.Thread(target=self.broker.dispatch_once)
         scan.start()
+
+        def unsubscribe():
+            try:
+                self.broker.rpc("events/unsubscribe", slow)
+            except Exception as exc:
+                errors.append(exc)
+            finally:
+                unsubscribed.set()
+
+        cancel = threading.Thread(target=unsubscribe)
         try:
             self.assertTrue(entered.wait(2))
             self.assertTrue(delivered.wait(1))
             del slow["delivery"]["secret"]
-            began = time.monotonic()
-            self.broker.rpc("events/unsubscribe", slow)
-            self.assertLess(time.monotonic() - began, 0.5)
+            cancel.start()
+            self.assertTrue(unsubscribed.wait(2), "unsubscribe blocked by slow callback")
+            self.assertFalse(slow_finished.is_set())
+            self.assertEqual(errors, [])
         finally:
             release.set()
             scan.join(5)
+            if cancel.ident is not None:
+                cancel.join(5)
         self.assertFalse(scan.is_alive())
         self.assertIsNone(
             self.broker.db.execute("SELECT 1 FROM subscriptions WHERE id=?", (sid,)).fetchone()
