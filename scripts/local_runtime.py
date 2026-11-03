@@ -949,7 +949,6 @@ def run_client(state, config, args):
     )
     if args.operation in (
         "create",
-        "message",
         "create-topic",
         "topic",
         "mailbox",
@@ -1233,7 +1232,6 @@ def main():
             "reply",
             "read-topic",
             "stop-topic",
-            "message",
         ],
     )
     parser.add_argument("--task-id")

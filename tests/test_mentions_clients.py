@@ -102,41 +102,30 @@ class HttpIdentityBoundary(unittest.TestCase):
                     {"Authorization": "Bearer " + token, "Content-Type": "application/json"},
                 )
                 response = conn.getresponse()
-                result = json.loads(response.read())
-                self.assertLess(response.status, 300)
-                return result
+                return response.status, json.loads(response.read())
             finally:
                 conn.close()
 
         try:
-            human = post(
-                f"/api/rooms/{room['id']}/messages",
+            forged = {"actor": "bot:alpha", "source": "bot", "sender": "alpha"}
+            status, topic = post(
+                f"/api/rooms/{room['id']}/topics",
                 room["token"],
-                {
-                    "body": "human",
-                    "request_id": "human",
-                    "mentions": [],
-                    "actor": "bot:alpha",
-                    "source": "bot",
-                    "sender": "alpha",
-                },
+                {"members": ["bot:alpha"], "title": "Synthetic", "request_id": "topic"},
             )
-            self.assertEqual(human["sender"], "user")
-            for forged in ("user", "system"):
-                reply = post(
-                    f"/api/rooms/{room['id']}/agents/alpha/peer/messages",
-                    alpha["token"],
-                    {
-                        "body": "bot",
-                        "request_id": forged,
-                        "mentions": [],
-                        "reply_to": human["id"],
-                        "actor": forged,
-                        "source": forged,
-                        "sender": forged,
-                    },
-                )
-                self.assertEqual(reply["sender"], "bot:alpha")
+            self.assertEqual(status, 201, topic)
+            user_path = f"/api/rooms/{room['id']}/topics/messages"
+            message = {"topic_id": topic["id"], "body": "human", "request_id": "human"}
+            self.assertEqual(post(user_path, room["token"], {**message, **forged})[0], 400)
+            status, human = post(user_path, room["token"], message)
+            self.assertEqual((status, human["sender"]), (201, "user"))
+            bot_path = f"/api/rooms/{room['id']}/agents/alpha/peer/topics/messages"
+            reply = {"topic_id": topic["id"], "body": "bot", "request_id": "bot", "mentions": []}
+            for value in ("user", "system"):
+                spoofed = {**reply, "actor": value, "source": value, "sender": value}
+                self.assertEqual(post(bot_path, alpha["token"], spoofed)[0], 400)
+            status, sent = post(bot_path, alpha["token"], reply)
+            self.assertEqual((status, sent["sender"]), (201, "bot:alpha"))
         finally:
             server.shutdown()
             server.server_close()

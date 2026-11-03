@@ -122,7 +122,7 @@ class HTTPMCPTests(unittest.IsolatedAsyncioTestCase):
                 }
                 <= tools
             )
-            self.assertTrue({"receive_messages", "post_discussion_message"} <= tools)
+            self.assertTrue({"receive_messages", "reply_to_topic"} <= tools)
             # Interleave different authenticated principals; no session or context leakage.
             listed = await asyncio.gather(
                 caller.call_tool("list_rooms"), foreign.call_tool("list_rooms")

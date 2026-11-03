@@ -72,7 +72,6 @@ class LocalClient:
             "context": "/tasks/context",
             "retry": "/tasks/retry",
             "cancel": "/tasks/cancel",
-            "message": "/messages",
             "topics": "/topics",
             "create-topic": "/topics",
             "topic": "/topics/query",
@@ -400,7 +399,6 @@ def main():
             "reply",
             "read-topic",
             "stop-topic",
-            "message",
         ],
     )
     parser.add_argument("task_id", nargs="?")

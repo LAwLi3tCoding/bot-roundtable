@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import patch
-from roundtable import Store, Problem
+from roundtable import Store
 
 
 class DiscussionsTest(unittest.TestCase):
@@ -21,65 +21,10 @@ class DiscussionsTest(unittest.TestCase):
             self.room, actor, {"body": "synthetic", "request_id": "one", **values}
         )
 
-    def test_reply_budget_counts_unmentioned_replies(self):
-        root = self.post(budget=1)
-        self.post("bot:alpha", reply_to=root["id"])
-        with self.assertRaises(Problem):
-            self.post("bot:bravo", reply_to=root["id"])
-
-    def test_budget_range_and_inheritance(self):
-        for value in (0, 21, True, "4"):
-            with self.assertRaises(Problem):
-                self.post(budget=value)
-        root = self.post(budget=2)
-        reply = self.post("bot:alpha", reply_to=root["id"], budget=20)
-        self.assertEqual(int(reply["budget"]), 2)
-        self.post("bot:bravo", reply_to=reply["id"], budget=20)
-        with self.assertRaises(Problem):
-            self.post("bot:alpha", request_id="third", reply_to=root["id"], budget=20)
-
     def allowance(self, bot):
         return self.store.db.execute(
             "SELECT allowance FROM agents WHERE room=? AND id=?", (self.room, bot)
         ).fetchone()[0]
-
-    def test_connection_activity_is_epoch_scoped(self):
-        root = self.post()
-        self.post("bot:alpha", reply_to=root["id"])
-        status = {row["id"]: row for row in self.store.connections.status(self.room)}
-        self.assertIsNotNone(status["alpha"]["last_reply"])
-        self.assertIsNone(status["bravo"]["last_reply"])
-        self.assertEqual(status["alpha"]["subscription_state"], "unknown")
-        self.assertNotIn("token", status["alpha"])
-        self.assertNotIn("sender_epoch", self.discussions.listing(self.room)[-1])
-        self.store.db.execute(
-            "UPDATE agents SET token='new-epoch' WHERE room=? AND id='alpha'", (self.room,)
-        )
-        status = {row["id"]: row for row in self.store.connections.status(self.room)}
-        self.assertIsNone(status["alpha"]["last_reply"])
-
-    def test_modes_require_explicit_stop_and_cannot_cross_consume(self):
-        root = self.post(budget=2)
-        with self.assertRaises(Problem):
-            self.store.start(self.room, "run", ["alpha"], 2, "run-one")
-        with self.assertRaises(Problem):
-            self.store.stop_peer(self.room, "alpha")
-        self.assertTrue(self.store.state(self.room)["discussion_active"])
-        self.store.stop(self.room)
-        self.assertFalse(self.store.state(self.room)["discussion_active"])
-        run = self.store.start(self.room, "run", ["alpha"], 2, "run-one")
-        self.assertEqual(run["status"], "running")
-        with self.assertRaises(Problem):
-            self.post(request_id="second-root")
-        self.store.stop(self.room)
-        with self.assertRaises(Problem):
-            self.post("bot:alpha", reply_to=root["id"])
-        self.post(request_id="second-root")
-
-    def test_exhausted_root_allows_mode_switch(self):
-        root = self.post(budget=1)
-        self.post("bot:alpha", reply_to=root["id"])
-        self.store.start(self.room, "run", ["alpha"], 1, "run-one")
 
     def test_notice_structure_progress_bound_and_replay(self):
         task = self.store.handoffs.create(

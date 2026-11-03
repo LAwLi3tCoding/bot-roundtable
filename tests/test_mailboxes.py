@@ -115,10 +115,6 @@ class MailboxTest(unittest.TestCase):
         with self.assertRaises(Problem):
             self.m.messages(self.room, "bot:bravo", self.topic)
 
-    def test_state_no_legacy_room_discussion_disclosure(self):
-        self.s.discussions.post(self.room, "user", {"body": "legacy", "request_id": "legacy"})
-        self.assertEqual(self.s.state(self.room, "bot:alpha")["discussion_messages"], [])
-
     def test_human_turn_renews_budget_but_replay_does_not(self):
         self.post()
         self.post("bot:bravo", request_id="two")
