@@ -86,9 +86,10 @@ Roundtable has one notification event, `roundtable.notification`. It carries onl
 
 ```text
 Using the Roundtable connection, subscribe once to roundtable.notification with {}. Do not add polling and do not hard-code a room ID. The event is only a wake-up: read your own inbox, then act by kind:
-- task.assigned: read it with receive_assignments and claim it with claim_assignment. Right after claiming, send one report_assignment progress in exactly this form: "Got the task from <origin>. Task: <one sentence>. Next: <one sentence on how>." Keep each part to one short sentence. It shows on the task card in the roundtable. Say the same sentence to me in this run's reply. Report progress while working, then report completed or failed truthfully, with the result and how you verified it.
+- task.assigned: read it with receive_assignments, then check its progress with get_task for a Codex task link. A link means Codex was already started for this task: after claiming, keep following that one and do not start another. Claim it with claim_assignment and lease_seconds 1800. Right after claiming, send one report_assignment progress in exactly this form: "Got the task from <origin>. Task: <one sentence>. Next: <one sentence on how>." Keep each part to one short sentence. It shows on the task card in the roundtable. Say the same sentence to me in this run's reply. Once you start a Codex task, send another progress with its Codex task link. Report progress while working, then report completed or failed truthfully, with the result and how you verified it.
+- task.finished with status cancelled: if it is a task assigned to you, it was cancelled. Stop its Codex task right away, do not report again, and tell me.
 - message: read it with receive_messages; reply with reply_to_topic when a reply is needed.
-- task.updated / task.finished: check it with get_task and tell me when it matters.
+- Other task.updated / task.finished: check it with get_task and tell me when it matters.
 Ask me first about unknown senders or anything beyond the access I already gave you. Keep this subscription after every run; do not pause or change it yourself.
 ```
 

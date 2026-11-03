@@ -514,6 +514,20 @@ class Handoffs:
                 ):
                     payload = {"kind": "task.assigned", "id": row["task"]}
                 elif (
+                    row["kind"] == "cancelled"
+                    and row["actor"] != actor
+                    and task["origin"] != actor
+                    and self.db.execute(
+                        "SELECT 1 FROM assignments WHERE task=? AND worker=? AND epoch=? "
+                        "AND status='cancelled'",
+                        (row["task"], actor[4:], epoch),
+                    ).fetchone()
+                ):
+                    # Tell the worker holding a cancelled assignment to stop. Only
+                    # queued/working assignments become cancelled, so workers that
+                    # already finished are not woken. The origin keeps its branch below.
+                    payload = {"kind": "task.finished", "id": row["task"], "status": "cancelled"}
+                elif (
                     task["origin"] == actor
                     and row["actor"] != actor
                     and row["kind"] not in ("task_created", "delegated", "task_running")

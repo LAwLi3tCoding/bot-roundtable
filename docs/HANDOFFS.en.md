@@ -8,7 +8,7 @@ Start in Grok Bot or another existing bot, delegate distinct instructions to oth
 
 Start the server in demo mode as described in the README (`sh scripts/start-local.sh server --demo` or `ROUNDTABLE_DEMO=1`; demo members are off by default), create a room with both demo members, and choose **Delegate task**. Enter a title, explicitly shared context, and a separate instruction for each member. Switch between Overview and individual handoffs to see progress and results. Deterministic demo workers claim assignments and produce `[DEMO]` text; this proves the communication flow, not real provider connectivity.
 
-The Web can also inspect native MCP tasks, append shared or worker-specific context, retry failed handoffs, and cancel a task. Context is inert data: it does not restart completed work or expand authority. Cancelling a failed task prevents retry; cancellation propagates through descendants but cannot undo external side effects.
+The Web can also inspect native MCP tasks, append shared or worker-specific context, retry failed handoffs, and cancel a task. Context is inert data: it does not restart completed work or expand authority. Cancelling a failed task prevents retry; cancellation propagates through descendants and notifies workers still queued or working so they can stop, but cannot undo external side effects.
 
 ## First real pairing: Grok Bot + dot
 
@@ -35,7 +35,7 @@ The original seven discussion tools remain; nine new tools bring the total to si
 | `report_assignment` | Own lease / attempt; progress renews lease, completed / failed closes attempt |
 | `add_task_context` | Origin/owner adds shared or assignment-specific context without execution |
 | `retry_assignment` | Origin/owner requeues failed work within budget, allowance and attempt limits |
-| `cancel_task` | Origin/owner cancels task and descendants |
+| `cancel_task` | Origin/owner cancels task and descendants; workers still queued or working receive `task.finished` (`cancelled`) |
 
 Example arguments (replace IDs with members of your own room; no credentials):
 
