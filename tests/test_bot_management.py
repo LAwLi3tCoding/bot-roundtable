@@ -86,6 +86,43 @@ class BotManagement(unittest.TestCase):
             self.call(f"/api/rooms/{self.room['id']}", token=self.admin)[1]["can_manage_bots"]
         )
 
+    def test_room_and_bot_credentials_cannot_be_transplanted_into_cookie(self):
+        for credential in (self.room["token"], self.room["agent_tokens"][0]["token"]):
+            cookie = "roundtable_ui=" + credential
+            self.assertEqual(self.call(self.base, cookie=cookie)[0], 403)
+            self.assertEqual(self.call(self.base, {}, cookie=cookie)[0], 403)
+            self.assertEqual(self.call(self.base + "/atlas/disable", {}, cookie=cookie)[0], 403)
+        self.assertFalse(self.store.registry()[0]["disabled"])
+
+    def test_creation_allowance_limits_are_validated_atomically(self):
+        for index, limit in enumerate((0, 20, -1, 21)):
+            with self.subTest(limit=limit):
+                aid = "limit-" + str(index)
+                status, result, _ = self.call(
+                    self.base,
+                    {
+                        "id": aid,
+                        "name": "Synthetic limit Bot",
+                        "kind": "mailbox",
+                        "avatar": "slate",
+                        "wake": "poll",
+                        "allowance_limit": limit,
+                    },
+                    cookie=self.cookie,
+                )
+                self.assertEqual(status, 201 if limit in (0, 20) else 400)
+                if status == 201:
+                    self.assertEqual(result["bot"]["allowance_limit"], limit)
+                    self.assertEqual(result["bot"]["allowance"], limit)
+                else:
+                    self.assertNotIn("token", result)
+                    self.assertNotIn(aid, [bot["id"] for bot in self.store.registry()])
+                    self.assertFalse(
+                        self.store.db.execute(
+                            "SELECT 1 FROM agents WHERE room=? AND id=?", (self.room["id"], aid)
+                        ).fetchone()
+                    )
+
     def test_revocation_observed_after_cookie_check_denies_management(self):
         sessions = self.server.ui_sessions
         # Cookie provenance succeeds, the initial validity check succeeds, then

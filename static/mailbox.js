@@ -16,7 +16,7 @@ window.MailboxUI = (() => {
   const body=element('span','character-body');body.append(element('span','character-eyes'));node.append(body);return node;
  }
  function saveFilters(){if(roomId)storage('localStorage','setItem','roundtable-filter:'+roomId,JSON.stringify({bot:botFilter,tasks:tasksOnly}));}
- function changeFilter(){saveFilters();render();requestAnimationFrame(()=>{$('chat').scrollTop=$('chat').scrollHeight;});}
+ function changeFilter(){saveFilters();render();requestAnimationFrame(()=>{$('chat').scrollTop=0;});}
  function reset(){
   if(roomId)drafts.set(roomId,$('body').value);
   roomId=active?.id||'';topicId=state?.roundtable?.id||'';messages=[];generation++;loading=false;

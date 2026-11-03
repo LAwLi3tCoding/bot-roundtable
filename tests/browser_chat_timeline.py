@@ -98,6 +98,7 @@ def main():
             expect(page.locator(".mailbox-message")).to_have_count(3)
             expect(page.locator(".task-message")).to_have_count(2)
             expect(page.locator(".task-reply")).to_have_count(4)
+            expect(page.locator(".task-reply-label:visible")).to_have_count(2)
             expect(page.locator(".task-reply").filter(has_text="picked up Atlas")).to_have_count(2)
             expect(page.locator(".task-reply").filter(has_text="Review nova layout")).to_have_count(
                 1
@@ -136,6 +137,7 @@ def main():
             page.locator("#task-filter").click()
             expect(page.locator(".mailbox-message:visible")).to_have_count(0)
             expect(page.locator(".task-reply:visible")).to_have_count(3)
+            expect(page.locator(".task-reply-label:visible")).to_have_count(1)
             # Reload restores both filters after re-establishing this synthetic login.
             page.reload()
             connect()
@@ -207,7 +209,9 @@ def main():
                 window.idleAnimations=0;
                 language='zh';translate();
             }""")
-            expect(page.locator(".task-reply").filter(has_text="收到 Atlas")).to_have_count(2)
+            expect(page.locator(".task-reply").filter(has_text="收到Atlas派的任务")).to_have_count(
+                2
+            )
             expect(page.locator(".task-reply-label").first).to_contain_text("任务：")
             store.manage_bot(
                 room["id"], "update", {"name": "Atlas renamed", "avatar": "rose"}, "atlas"
@@ -235,6 +239,69 @@ def main():
                 "window.historyNodes.every(n => n.isConnected && n.parentElement===document.querySelector('#messages'))"
             )
             assert page.evaluate("window.idleAnimations") == 0
+            # Human task messages use one light surface and remain clear of fixed chrome.
+            human_task = store.handoffs.create(
+                room["id"],
+                "user",
+                {
+                    "title": "Synthetic layout review",
+                    "context": "Check the task card in the chat.",
+                    "assignments": [{"worker": "sage", "instruction": "Review layout"}],
+                    "budget": 2,
+                    "request_id": "human-card-layout",
+                },
+            )["task_id"]
+            page.evaluate("async () => {await refresh(true);await MailboxUI.refresh();}")
+            assignment = store.handoffs.snapshot(room["id"], "user", human_task)["assignments"][0]
+            store.handoffs.operate(
+                room["id"],
+                "bot:sage",
+                "claim",
+                {
+                    "task_id": human_task,
+                    "assignment_id": assignment["id"],
+                    "expected_attempt": 0,
+                    "request_id": "human-card-claim",
+                },
+            )
+            page.evaluate("async () => {await refresh(true);await MailboxUI.refresh();}")
+            expect(
+                page.locator(".task-reply").filter(has_text="收到你派的任务：Review layout")
+            ).to_have_count(1)
+            article = page.locator(f'.task-message:has([data-task-id="{human_task}"])')
+            for width in (1440, 390):
+                page.set_viewport_size({"width": width, "height": 900})
+                article.evaluate("n => n.scrollIntoView({block:'start'})")
+                page.evaluate(
+                    "() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))"
+                )
+                toolbar = page.locator(".timeline-toolbar").bounding_box()
+                chat = page.locator("#chat").bounding_box()
+                card = article.locator(".task-card").bounding_box()
+                assert toolbar and chat and card
+                assert chat["y"] >= toolbar["y"] + toolbar["height"] - 1
+                assert card["y"] >= chat["y"] + 8
+                assert card["y"] + card["height"] <= chat["y"] + chat["height"]
+                assert article.locator(".task-card").evaluate("""n => {
+                    const r=n.getBoundingClientRect();
+                    return n.contains(document.elementFromPoint(r.x+r.width/2,r.y+2));
+                }""")
+                assert article.locator(".task-bubble").evaluate(
+                    "n => getComputedStyle(n).backgroundColor !== getComputedStyle(document.querySelector('.mailbox-message.human .message-body')).backgroundColor"
+                )
+                assert article.locator(".task-card").evaluate(
+                    "n => getComputedStyle(n).backgroundColor === 'rgba(0, 0, 0, 0)' && getComputedStyle(n).borderTopWidth === '0px'"
+                )
+                assert (
+                    page.locator(".mailbox-message .message-body").first.evaluate(
+                        "n => parseFloat(getComputedStyle(n).fontSize)"
+                    )
+                    == 16
+                )
+                if width == 1440:
+                    assert page.locator("#messages").bounding_box()["width"] == 900
+                assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+                expect(page.locator("#body")).to_be_visible()
             assert not errors, errors
             browser.close()
         print(

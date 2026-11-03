@@ -222,7 +222,7 @@ window.I18N = {
 
     "filterCount": "{count} 条消息",
     "taskAssigned": "派了一个任务",
-    "taskReceipt": "收到 {origin} 派的任务：{instruction}",
+    "taskReceipt": "收到{origin}派的任务：{instruction}",
     "taskReply": "任务：{title}",
     "addBot": "添加 Bot",
     "editBot": "编辑 Bot",

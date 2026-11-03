@@ -26,9 +26,9 @@
   --rt-slate-bg: #e9e9ee;
   --rt-eye: #fff;
   --rt-app-width: 1120px;
-  --rt-timeline-width: 860px;
+  --rt-timeline-width: 900px;
   --rt-font: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --rt-body: 14px;
+  --rt-body: 16px;
   --rt-small: 12px;
   --rt-title: 20px;
   --rt-space-1: 4px;
@@ -45,7 +45,7 @@
   --rt-font-mono: ui-monospace, SFMono-Regular, Consolas, monospace;
   --rt-heading-size: 20px;
   --rt-subheading-size: 16px;
-  --rt-card-title-size: 15px;
+  --rt-card-title-size: 16px;
   --rt-title-mobile: 18px;
   --rt-weight-semibold: 600;
   --rt-leading-body: 1.6;
@@ -188,7 +188,7 @@ svg { width: var(--rt-icon-size); height: var(--rt-icon-size); flex-shrink: 0; f
 #filter-summary { white-space: nowrap; font-variant-numeric: tabular-nums; }
 #task-filter { flex-shrink: 0; font-size: var(--rt-small); white-space: nowrap; border-color: var(--rt-line); }
 #task-filter[aria-pressed=true], #task-filter.selected { background: var(--rt-own); color: var(--rt-own-ink); }
-#chat { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: var(--rt-space-5) var(--rt-space-6); }
+#chat { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scroll-padding-block: var(--rt-space-5); padding: var(--rt-space-5) var(--rt-space-6); }
 #messages { width: min(100%, var(--rt-timeline-width)); margin-inline: auto; }
 .mailbox-time-divider { display: block; text-align: center; font-size: var(--rt-small); color: var(--rt-muted); font-variant-numeric: tabular-nums; margin: var(--rt-space-4) 0 var(--rt-space-5); }
 .message, .mailbox-message { display: flex; align-items: flex-start; gap: var(--rt-space-3); margin-bottom: var(--rt-space-5); }
@@ -217,11 +217,11 @@ svg { width: var(--rt-icon-size); height: var(--rt-icon-size); flex-shrink: 0; f
 .character-avatar:hover .character-eyes { animation: character-blink var(--rt-blink-duration) ease; }
 .avatar-stack { display: inline-flex; align-items: center; }
 .avatar-stack .avatar + .avatar { margin-left: var(--rt-avatar-overlap); border: var(--rt-avatar-ring) solid var(--rt-bg); }
-.task-bubble { padding: var(--rt-space-3); border-radius: var(--rt-card-radius); background: var(--rt-surface); }
-.human .task-bubble { background: var(--rt-own); color: var(--rt-own-ink); }
-.task-bubble .message-body { padding: 0; background: transparent; }
+.task-message { scroll-margin-block: var(--rt-space-3); }
+.task-bubble { padding: var(--rt-space-4); border: var(--rt-border-width) solid var(--rt-line); border-radius: var(--rt-card-radius); background: var(--rt-surface); }
+.task-bubble .message-body { padding: 0; background: transparent; color: var(--rt-muted); font-size: var(--rt-small); }
 .task-bubble .task-card { color: var(--rt-ink); }
-.task-card { display: flex; flex-direction: column; align-items: stretch; width: 100%; margin: var(--rt-space-2) 0 0; padding: var(--rt-space-4); gap: var(--rt-space-2); text-align: left; border: var(--rt-border-width) solid var(--rt-line); border-radius: var(--rt-card-radius); background: var(--rt-surface); }
+.task-card { display: flex; flex-direction: column; align-items: stretch; width: 100%; margin: var(--rt-space-2) 0 0; padding: 0; gap: var(--rt-space-2); text-align: left; border: 0; border-radius: var(--rt-radius); background: transparent; }
 .task-card-meta { display: flex; flex-wrap: wrap; gap: var(--rt-space-2); color: var(--rt-muted); font-size: var(--rt-small); }
 .task-card-meta time { margin-left: auto; font-variant-numeric: tabular-nums; }
 .task-card-title { font-size: var(--rt-card-title-size); font-weight: var(--rt-weight-semibold); overflow-wrap: anywhere; }

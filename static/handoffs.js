@@ -79,6 +79,7 @@ window.HandoffUI = (() => {
     card.replaceChildren(top,safeText('strong','task-card-title',task.title),workers);
     card.setAttribute('aria-label',`${task.title} · ${item.assignments.map(a=>name(a.worker)).join(', ')} · ${status(displayStatus)}`);
    }
+   let firstReply=true;
    for(const event of cached?.events||[]){
     if(!['claimed','progress','completed','failed','context'].includes(event.kind))continue;
     const id='event:'+event.id;let reply=nodes.get(id);
@@ -87,7 +88,7 @@ window.HandoffUI = (() => {
     if(!reply){reply=messageNode({id,sender:actorId(event.actor),created:event.created,body},false);reply.classList.remove('mailbox-message');reply.classList.add('task-reply');delete reply.dataset.messageId;reply.dataset.timelineId=id;reply.dataset.taskEntry=task.id;reply.dataset.eventId=String(event.id);reply.dataset.actors=JSON.stringify(actors);
     const label=safeText('span','task-reply-label');reply.querySelector('.message-content').prepend(label);container.append(reply);nodes.set(id,reply);}
     updateMessage(reply,{sender:actorId(event.actor),created:event.created,body});reply.dataset.actors=JSON.stringify(actors);
-    const label=reply.querySelector('.task-reply-label'),text=t('taskReply').replace('{title}',task.title);if(label.textContent!==text)label.textContent=text;
+    const label=reply.querySelector('.task-reply-label'),text=t('taskReply').replace('{title}',task.title);if(label.textContent!==text)label.textContent=text;label.hidden=!firstReply;firstReply=false;
    }
   }
  }
