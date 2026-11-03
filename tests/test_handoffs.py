@@ -82,15 +82,19 @@ class HandoffTests(unittest.TestCase):
         self.assertEqual({row["sender"] for row in notices}, {"system"})
         for kind in ("delegated", "claimed", "completed"):
             self.assertTrue(any(row["notice"]["kind"] == kind for row in notices))
-        self.assertEqual(
-            self.store.discussions.inbox(self.rid, "bot:worker-one", {})["messages"], []
-        )
         events = self.h.event_feed(
             self.rid,
             "bot:worker-one",
             {"name": "roundtable.notification", "arguments": {}, "after": cursor},
         )["events"]
-        self.assertFalse([e for e in events if e["data"]["kind"] == "mention"])
+        self.assertFalse(
+            [
+                e
+                for e in events
+                if e["data"]["kind"]
+                not in ("task.assigned", "task.updated", "task.finished", "message")
+            ]
+        )
 
     def test_generic_notification_kinds_and_payloads(self):
         def feed(actor, after):

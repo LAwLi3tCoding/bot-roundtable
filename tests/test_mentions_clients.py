@@ -21,10 +21,11 @@ class MentionClients(unittest.IsolatedAsyncioTestCase):
         store = Store()
         room = store.room("Synthetic mentions")
         bot = store.add_agent(room["id"], "reader-bot")
-        message = store.discussions.post(
-            room["id"],
-            "user",
-            {"body": "Question", "mentions": ["reader-bot"], "request_id": "question"},
+        topic = store.mailboxes.create(
+            room["id"], "user", {"members": ["bot:reader-bot"], "title": "Q", "request_id": "t"}
+        )
+        message = store.mailboxes.post(
+            room["id"], "user", topic["id"], {"body": "Question", "request_id": "question"}
         )
         server = make_server(store, secrets.token_urlsafe(32), port=0)
         thread = threading.Thread(target=server.serve_forever)
@@ -56,23 +57,23 @@ class MentionClients(unittest.IsolatedAsyncioTestCase):
             async with stdio_client(params) as (read, write):
                 async with ClientSession(read, write) as session:
                     await session.initialize()
-                    inbox = unpack(await session.call_tool("receive_mentions", {"after": 0}))
+                    inbox = unpack(await session.call_tool("receive_messages", {"after": 0}))
                     self.assertEqual(inbox["messages"][0]["id"], message["id"])
                     payload = {
                         "body": "Answer",
                         "mentions": [],
                         "request_id": "answer",
-                        "reply_to": message["id"],
+                        "topic_id": topic["id"],
                     }
-                    reply = unpack(await session.call_tool("post_discussion_message", payload))
-                    self.assertEqual(reply["reply_to"], message["id"])
-                    self.assertEqual(client.call("message", payload)["id"], reply["id"])
+                    reply = unpack(await session.call_tool("reply_to_topic", payload))
+                    self.assertEqual(reply["topic"], topic["id"])
+                    self.assertEqual(client.call("reply", payload)["id"], reply["id"])
                     self.assertEqual(
-                        client.call("mentions", {"after": inbox["next_cursor"]})["messages"], []
+                        client.call("mailbox", {"after": inbox["next_cursor"]})["messages"], []
                     )
                     store.remove_agent(room["id"], bot["id"])
                     with self.assertRaises(ValueError):
-                        client.call("mentions", {"after": 0})
+                        client.call("mailbox", {"after": 0})
         finally:
             server.shutdown()
             server.server_close()
@@ -121,10 +122,6 @@ class HttpIdentityBoundary(unittest.TestCase):
                 },
             )
             self.assertEqual(human["sender"], "user")
-            for bot in ("alpha", "bravo"):
-                self.assertEqual(
-                    len(store.discussions.inbox(room["id"], "bot:" + bot, {})["messages"]), 1
-                )
             for forged in ("user", "system"):
                 reply = post(
                     f"/api/rooms/{room['id']}/agents/alpha/peer/messages",
@@ -140,13 +137,6 @@ class HttpIdentityBoundary(unittest.TestCase):
                     },
                 )
                 self.assertEqual(reply["sender"], "bot:alpha")
-                for bot in ("alpha", "bravo"):
-                    self.assertEqual(
-                        store.discussions.inbox(room["id"], "bot:" + bot, {"after": human["id"]})[
-                            "messages"
-                        ],
-                        [],
-                    )
         finally:
             server.shutdown()
             server.server_close()

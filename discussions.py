@@ -1,8 +1,7 @@
-"""Scoped discussion messages; mention text never grants authority."""
+"""Legacy room log and task notices. Wake-ups go only through mailboxes."""
 
 import hashlib
 import json
-import logging
 import os
 import time
 from roundtable import Problem, text
@@ -16,9 +15,6 @@ class Discussions:
           id INTEGER PRIMARY KEY, room TEXT, sender TEXT, body TEXT,
           mentions TEXT, reply_to INTEGER, depth INTEGER, created REAL,
           request TEXT, UNIQUE(room,sender,request));
-        CREATE TABLE IF NOT EXISTS discussion_mentions(
-          message INTEGER, room TEXT, bot TEXT, epoch TEXT,
-          PRIMARY KEY(message,bot));
         """)
 
         columns = {row[1] for row in store.db.execute("PRAGMA table_info(discussion_messages)")}
@@ -173,28 +169,6 @@ class Discussions:
                 if used >= budget or depth > budget:
                     raise Problem(409, "Discussion reply budget exhausted")
             now = time.time()
-            wakes = []
-            for target in mentions if mentions or bot else list(members):
-                recent = db.execute(
-                    "SELECT COUNT(*) FROM discussion_mentions n JOIN discussion_messages m ON m.id=n.message WHERE n.bot=? AND m.created>?",
-                    (target, now - 60),
-                ).fetchone()[0]
-                if (
-                    depth >= budget
-                    or (bot and root and used + 1 >= budget)
-                    or target == bot
-                    or recent >= 10
-                ):
-                    logging.info("discussion mention wake suppressed")
-                else:
-                    wakes.append(target)
-            if bot and len(wakes) > members[bot]["allowance"]:
-                raise Problem(403, "Bot initiation allowance exhausted")
-            if bot:
-                db.execute(
-                    "UPDATE agents SET allowance=allowance-? WHERE room=? AND id=?",
-                    (len(wakes), room, bot),
-                )
             cursor = db.execute(
                 "INSERT INTO discussion_messages(room,sender,body,mentions,reply_to,depth,created,request) VALUES(?,?,?,?,?,?,?,?)",
                 (room, actor, body, json.dumps(mentions), reply, depth, now, request),
@@ -211,29 +185,9 @@ class Discussions:
                     mid,
                 ),
             )
-            for target in wakes:
-                db.execute(
-                    "INSERT INTO discussion_mentions VALUES(?,?,?,?)",
-                    (mid, room, target, members[target]["token"]),
-                )
             return self.decode(
                 db.execute("SELECT * FROM discussion_messages WHERE id=?", (mid,)).fetchone()
             )
-
-    def inbox(self, room, actor, data):
-        after = data.get("after", 0)
-        if type(after) is not int or after < 0:
-            raise Problem(400, "Invalid cursor")
-        bot = actor.removeprefix("bot:")
-        with self.store.lock:
-            rows = self.store.db.execute(
-                "SELECT m.* FROM discussion_messages m JOIN discussion_mentions n ON n.message=m.id JOIN agents a ON a.room=n.room AND a.id=n.bot AND a.token=n.epoch WHERE n.room=? AND n.bot=? AND m.id>? AND NOT EXISTS (SELECT 1 FROM discussion_messages root WHERE CAST(root.id AS TEXT)=m.root AND root.closed IS NOT NULL) ORDER BY m.id LIMIT 100",
-                (room, bot, after),
-            ).fetchall()
-            return {
-                "messages": [self.decode(row) for row in rows],
-                "next_cursor": rows[-1]["id"] if rows else after,
-            }
 
     def listing(self, room):
         return [

@@ -140,9 +140,9 @@ window.MailboxUI = (() => {
  $('mailbox-avatar-form').onsubmit=e=>{e.preventDefault();avatarSettings[$('mailbox-avatar-actor').value]={initial:$('mailbox-avatar-initial').value.slice(0,2),color:$('mailbox-avatar-color').value,character:$('mailbox-avatar-character').value};storage('localStorage','setItem','roundtable-avatars',JSON.stringify(avatarSettings));closeDialog('mailbox-avatar-dialog');signature='';render();details();};
  // Desktop layout preference; keyboard and pointer resizing share one clamp.
  const shell=document.querySelector('.app-shell'), resize=$('mailbox-resize');
- let sidebarWidth=Number(storage('localStorage','getItem','roundtable-sidebar-width'))||320;
+ let sidebarWidth=Number(storage('localStorage','getItem','roundtable-sidebar-width'))||300;
  function setSidebarWidth(width) {
-  sidebarWidth=Math.max(240,Math.min(400,width));
+  sidebarWidth=Math.max(260,Math.min(420,width));
   shell.style.setProperty('--mailbox-sidebar-width',sidebarWidth+'px');
   resize.setAttribute('aria-valuenow',String(sidebarWidth));
   storage('localStorage','setItem','roundtable-sidebar-width',String(sidebarWidth));
@@ -159,7 +159,7 @@ window.MailboxUI = (() => {
  resize.addEventListener('keydown',event=>{
   if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
   event.preventDefault();
-  setSidebarWidth(event.key==='Home'?240:event.key==='End'?400:sidebarWidth+(event.key==='ArrowLeft'?-10:10));
+  setSidebarWidth(event.key==='Home'?260:event.key==='End'?420:sidebarWidth+(event.key==='ArrowLeft'?-10:10));
  });
  resize.addEventListener('pointerdown',event=>{
   if(event.button!==0)return;

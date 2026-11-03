@@ -1,4 +1,4 @@
-"""Explicit Grok webhook notifications (kinds task.finished and mention) with a durable at-most-one-attempt ledger.
+"""Explicit Grok webhook notifications (kinds task.finished and message) with a durable at-most-one-attempt ledger.
 
 Reserve before network I/O. A crash after reservation can lose a notification;
 a crash after delivery can leave its outcome unknown. Neither is auto-retried.
@@ -125,9 +125,9 @@ class TerminalReceipts:
     def close(self):
         self.db.close()
 
-    def send_mention(self, scope, message_id, adapter):
+    def send_message(self, scope, message_id, adapter):
         if type(message_id) is not int or not 0 < message_id < 2**63:
-            raise ValueError("Invalid mention message ID")
+            raise ValueError("Invalid message ID")
         return self.send(
             "mention:" + scope,
             {"id": format(message_id, "024x"), "status": "completed"},
@@ -310,7 +310,7 @@ class TerminalWorker:
                         (self.room, self.origin, mention["message"]),
                     ).fetchone()
                     result = (
-                        ledger.send_mention(key, mention["message"], self.adapter)
+                        ledger.send_message(key, mention["message"], self.adapter)
                         if current_mention
                         else {"attempted": False}
                     )

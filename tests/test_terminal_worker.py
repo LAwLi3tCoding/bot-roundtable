@@ -48,7 +48,6 @@ class TerminalWorkerTests(unittest.TestCase):
 
     def test_legacy_schema_continues_terminal_delivery(self):
         del self.store.discussions
-        self.store.db.execute("DROP TABLE discussion_mentions")
         self.store.db.execute("DROP TABLE discussion_messages")
         self.store.db.commit()
         worker = self.start()

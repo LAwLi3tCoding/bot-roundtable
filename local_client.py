@@ -72,7 +72,6 @@ class LocalClient:
             "context": "/tasks/context",
             "retry": "/tasks/retry",
             "cancel": "/tasks/cancel",
-            "mentions": "/mentions",
             "message": "/messages",
             "topics": "/topics",
             "create-topic": "/topics",
@@ -401,7 +400,6 @@ def main():
             "reply",
             "read-topic",
             "stop-topic",
-            "mentions",
             "message",
         ],
     )

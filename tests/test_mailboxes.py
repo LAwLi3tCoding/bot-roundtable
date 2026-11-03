@@ -35,6 +35,38 @@ class MailboxTest(unittest.TestCase):
         self.m.read(self.room, "bot:bravo", self.topic, message["id"])
         self.assertEqual(self.m.topics(self.room, "bot:bravo")[0]["unread"], 0)
 
+    def test_budget_counts_bot_replies_and_last_reply_wakes_nobody(self):
+        topic = self.m.create(
+            self.room,
+            "user",
+            {
+                "title": "Budget",
+                "members": ["bot:alpha", "bot:bravo"],
+                "request_id": "b",
+                "budget": 4,
+            },
+        )["id"]
+        self.m.post(self.room, "user", topic, {"body": "Start", "request_id": "u"})
+        woke = []
+        for i in range(4):
+            sender, target = (
+                ("bot:alpha", "bot:bravo") if i % 2 == 0 else ("bot:bravo", "bot:alpha")
+            )
+            before = len(self.m.wake_inbox(self.room, target)["messages"])
+            self.m.post(
+                self.room,
+                sender,
+                topic,
+                {"body": str(i), "request_id": f"r{i}", "mentions": [target]},
+            )
+            woke.append(len(self.m.wake_inbox(self.room, target)["messages"]) > before)
+        # Budget 4 = four bot replies. The fourth cannot be answered, so it wakes nobody.
+        self.assertEqual(woke, [True, True, True, False])
+        with self.assertRaisesRegex(Problem, "budget"):
+            self.m.post(self.room, "bot:alpha", topic, {"body": "x", "request_id": "r5"})
+        self.m.post(self.room, "user", topic, {"body": "Again", "request_id": "u2"})
+        self.m.post(self.room, "bot:alpha", topic, {"body": "ok", "request_id": "r6"})
+
     def test_owner_atomic_join_and_history(self):
         self.post()
         self.assertEqual(len(self.m.messages(self.room, "user", self.topic)["messages"]), 1)
