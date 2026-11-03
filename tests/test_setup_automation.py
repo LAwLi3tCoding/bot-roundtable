@@ -21,12 +21,6 @@ runtime = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(runtime)
 
 
-def port():
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        return sock.getsockname()[1]
-
-
 class SetupTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -35,8 +29,10 @@ class SetupTests(unittest.TestCase):
             origin="test-origin",
             worker="test-worker",
             allowance=20,
-            server_port=port(),
-            mcp_port=port(),
+            # Let setup reserve both candidates together. Two sequential bind/close
+            # probes can receive the same ephemeral port on Linux.
+            server_port=None,
+            mcp_port=None,
         )
 
     def tearDown(self):

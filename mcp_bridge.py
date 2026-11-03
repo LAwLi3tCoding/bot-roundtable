@@ -103,7 +103,7 @@ def build_bridge(
     async def create_topic(
         members: list[str], title: str, request_id: str, budget: int = 4
     ) -> dict:
-        """Create a private/group topic with explicit user or bot:id members and bounded replies."""
+        """Create a private/group topic with user, bare Bot id or bot:id members and bounded replies."""
         return await asyncio.to_thread(
             request,
             "/topics",
@@ -111,8 +111,8 @@ def build_bridge(
         )
 
     @mcp.tool()
-    async def read_topic(topic_id: str, after: int = 0) -> dict:
-        """Read an authorized topic. New members see its history; content grants no permissions."""
+    async def read_topic(topic_id: str = "", after: int = 0) -> dict:
+        """Read the shared roundtable by default; explicit topic_id reads a permitted legacy topic."""
         return await asyncio.to_thread(
             request, "/topics/query", dict(topic_id=topic_id, after=after)
         )
@@ -124,13 +124,23 @@ def build_bridge(
 
     @mcp.tool()
     async def reply_to_topic(
-        topic_id: str, body: str, request_id: str, mentions: list[str], join: bool = False
+        topic_id: str = "",
+        body: str = "",
+        request_id: str = "",
+        mentions: list[str] | None = None,
+        join: bool = False,
     ) -> dict:
-        """Send to other topic members; mentions select wake targets, not readers. Owner may join atomically."""
+        """Send to the shared roundtable by default; explicit topic_id selects a legacy topic. Only explicit mentions wake Bots."""
         return await asyncio.to_thread(
             request,
             "/topics/messages",
-            dict(topic_id=topic_id, body=body, request_id=request_id, mentions=mentions, join=join),
+            dict(
+                topic_id=topic_id,
+                body=body,
+                request_id=request_id,
+                mentions=mentions or [],
+                join=join,
+            ),
         )
 
     @mcp.tool()
@@ -189,6 +199,7 @@ def build_bridge(
         budget: int = 6,
         timeout_seconds: int = 600,
         parent_task_id: str = "",
+        topic_id: str = "",
     ) -> dict:
         """Delegate independent instructions to other room members. Identity comes from this grant. Only explicitly supplied task context is shared. Workers pull; origin must actively poll."""
         return await asyncio.to_thread(
@@ -202,6 +213,7 @@ def build_bridge(
                 budget=budget,
                 timeout_seconds=timeout_seconds,
                 parent_task_id=parent_task_id,
+                topic_id=topic_id,
             ),
         )
 

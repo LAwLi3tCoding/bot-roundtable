@@ -78,7 +78,11 @@ class Store:
         """)
         migrations = {
             "rooms": {"lead": "TEXT NOT NULL DEFAULT ''"},
-            "agents": {"allowance": "INTEGER NOT NULL DEFAULT 0"},
+            "agents": {
+                "allowance": "INTEGER NOT NULL DEFAULT 20",
+                "allowance_limit": "INTEGER NOT NULL DEFAULT 20",
+                "allowance_reset": "REAL NOT NULL DEFAULT 0",
+            },
             "runs": {"actor": "TEXT NOT NULL DEFAULT 'user'", "lead": "TEXT NOT NULL DEFAULT ''"},
         }
         for table, columns in migrations.items():
@@ -136,7 +140,7 @@ class Store:
             )
             for aid, _ in DEMO_BOTS if self.demo else ():
                 self.db.execute(
-                    "INSERT INTO agents(room,id,kind,token) VALUES (?,?,?,?)",
+                    "INSERT INTO agents(room,id,kind,token,allowance) VALUES (?,?,?,?,20)",
                     (rid, aid, "demo", ""),
                 )
         return dict(id=rid, token=token, name=name)
@@ -192,11 +196,13 @@ class Store:
                 raise Problem(400, "A room can contain at most 6 bots")
             try:
                 self.db.execute(
-                    "INSERT INTO agents(room,id,kind,token) VALUES (?,?,?,?)",
+                    "INSERT INTO agents(room,id,kind,token,allowance) VALUES (?,?,?,?,20)",
                     (room, aid, kind, digest(token)),
                 )
             except sqlite3.IntegrityError:
                 raise Problem(409, "Agent already exists") from None
+            if self.db.execute("SELECT 1 FROM mail_roundtables WHERE room=?", (room,)).fetchone():
+                self.mailboxes.roundtable(room)
         return dict(id=aid, token=token, kind=kind)
 
     def message(self, room: str, run: str, sender: str, source: str, body: str):
@@ -246,17 +252,13 @@ class Store:
             lead = room_row["lead"]
             if actor != "user":
                 aid = actor.removeprefix("bot:")
-                scope = self.db.execute(
-                    "SELECT allowance FROM agents WHERE room=? AND id=?", (room, aid)
-                ).fetchone()
-                if not scope or scope["allowance"] < budget:
-                    raise Problem(403, "Bot initiation allowance exhausted or not granted")
                 if aid in targets or aid == lead:
                     raise Problem(403, "Self invocation is not allowed")
-                self.db.execute(
-                    "UPDATE agents SET allowance=allowance-? WHERE room=? AND id=?",
-                    (budget, room, aid),
-                )
+                if not self.db.execute(
+                    "SELECT 1 FROM agents WHERE room=? AND id=?", (room, aid)
+                ).fetchone():
+                    raise Problem(403, "Room membership required")
+                self.consume_allowance(room, aid, budget)
             plan = [targets[i % len(targets)] for i in range(budget)]
             if lead:
                 if budget < 3:
@@ -473,24 +475,47 @@ class Store:
 
     def grant(self, room: str, aid: str, allowance: int) -> dict:
         if type(allowance) is not int or not 0 <= allowance <= 20:
-            raise Problem(400, "Initiation allowance must be 0–20 total replies")
+            raise Problem(400, "每小时主动唤醒次数须为 0–20 / Hourly wake limit must be 0–20")
         with self.transaction():
-            self.idle(room)
             if not self.db.execute(
                 "SELECT 1 FROM agents WHERE room=? AND id=?", (room, aid)
             ).fetchone():
                 raise Problem(404, "Agent not found")
             self.db.execute(
-                "UPDATE agents SET allowance=? WHERE room=? AND id=?", (allowance, room, aid)
+                "UPDATE agents SET allowance=?,allowance_limit=?,allowance_reset=? WHERE room=? AND id=?",
+                (allowance, allowance, time.time() + 3600, room, aid),
             )
         return dict(id=aid, allowance=allowance)
+
+    def refresh_allowances(self, room):
+        now = time.time()
+        self.db.execute(
+            "UPDATE agents SET allowance=allowance_limit,allowance_reset=? WHERE room=? AND allowance_reset<=?",
+            (now + 3600, room, now),
+        )
+
+    def consume_allowance(self, room, aid, count):
+        self.refresh_allowances(room)
+        row = self.db.execute(
+            "SELECT allowance,allowance_reset FROM agents WHERE room=? AND id=?", (room, aid)
+        ).fetchone()
+        if count > row["allowance"]:
+            minutes = max(1, int((row["allowance_reset"] - time.time() + 59) // 60))
+            raise Problem(
+                403,
+                f"主动唤醒次数已用完，{minutes} 分钟后恢复 / Wake allowance exhausted; resets in {minutes} minutes",
+            )
+        self.db.execute(
+            "UPDATE agents SET allowance=allowance-? WHERE room=? AND id=?", (count, room, aid)
+        )
 
     def stop_peer(self, room: str, agent: str):
         with self.transaction():
             if (
                 self.discussions.active(room)
                 or self.db.execute(
-                    "SELECT 1 FROM mail_topics WHERE room=? AND stopped=0", (room,)
+                    "SELECT 1 FROM mail_topics t WHERE room=? AND stopped=0 AND (NOT EXISTS(SELECT 1 FROM mail_roundtables r WHERE r.topic=t.id) OR EXISTS(SELECT 1 FROM mail_messages m WHERE m.topic=t.id))",
+                    (room,),
                 ).fetchone()
             ):
                 raise Problem(403, "Only the room owner may stop all active conversations")
@@ -503,7 +528,8 @@ class Store:
 
     def state(self, room: str, actor: str = "user") -> dict:
         self.expire()
-        with self.lock:
+        with self.transaction():
+            self.refresh_allowances(room)
             room_row = self.db.execute(
                 "SELECT id,name,lead FROM rooms WHERE id=?", (room,)
             ).fetchone()
@@ -511,6 +537,7 @@ class Store:
                 raise Problem(404, "Room not found")
             return dict(
                 room=dict(room_row),
+                roundtable=self.mailboxes.roundtable(room, actor),
                 tasks=self.handoffs.listing(room, actor),
                 discussion_messages=self.discussions.listing(room) if actor == "user" else [],
                 topics=self.mailboxes.topics(room, actor),
@@ -518,7 +545,7 @@ class Store:
                 agents=[
                     dict(r)
                     for r in self.db.execute(
-                        "SELECT a.id,a.kind,a.allowance,COALESCE(b.name,a.id) AS name,COALESCE(b.description,'') AS description,CASE WHEN a.kind='demo' THEN 'demo-local' ELSE 'owner-setup-required' END AS availability FROM agents a LEFT JOIN bots b ON b.id=a.id WHERE a.room=? ORDER BY a.rowid",
+                        "SELECT a.id,a.kind,a.allowance,a.allowance_limit,a.allowance_reset,COALESCE(b.name,a.id) AS name,COALESCE(b.description,'') AS description,CASE WHEN a.kind='demo' THEN 'demo-local' ELSE 'owner-setup-required' END AS availability FROM agents a LEFT JOIN bots b ON b.id=a.id WHERE a.room=? ORDER BY a.rowid",
                         (room,),
                     )
                 ],

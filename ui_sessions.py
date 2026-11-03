@@ -94,14 +94,14 @@ class UISessions:
 
     @staticmethod
     def permitted(method, path):
-        # No credential, membership, allowance or registration administration.
+        # Credential issuance and membership administration remain forbidden.
         if method == "GET":
             return path in ("/api/rooms", "/api/bots") or bool(
                 re.fullmatch(r"/api/rooms/[a-f0-9]{24}(?:/connections|/tasks|/topics)?", path)
             )
-        return bool(
+        return method == "POST" and bool(
             re.fullmatch(
-                r"/api/rooms/[a-f0-9]{24}/(?:tasks(?:/(?:query|context|cancel|retry))?|topics(?:/(?:query|messages|inbox|read|stop))?|runs|stop)",
+                r"/api/rooms/[a-f0-9]{24}/(?:tasks(?:/(?:query|context|cancel|retry))?|topics(?:/(?:query|messages|inbox|read|stop|update|roundtable))?|runs|stop|grant|settings)",
                 path,
             )
         )

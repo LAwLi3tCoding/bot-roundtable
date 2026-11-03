@@ -370,10 +370,65 @@ class TerminalWorker:
                 source.close()
 
 
+class BotWorkers:
+    """One independently scoped observer per configured Bot."""
+
+    def __init__(self, workers):
+        self.workers = workers
+
+    def start(self):
+        started = []
+        try:
+            for worker in self.workers:
+                started.append(worker)
+                worker.start()
+        except Exception:
+            for worker in started:
+                worker.stop()
+            raise
+
+    def stop(self):
+        for worker in self.workers:
+            worker.stop()
+
+    def status(self):
+        statuses = {worker.origin: worker.status() for worker in self.workers}
+        return {
+            "state": "backoff"
+            if any(s["state"] == "backoff" for s in statuses.values())
+            else "running",
+            "bots": statuses,
+        }
+
+
 def configured_worker(source):
     """No config/secret lookup or thread when disabled; inherit explicitly enabled env."""
     if os.environ.get("ROUNDTABLE_TERMINAL_NOTIFICATIONS") != "1":
         return None
+    if os.environ.get("ROUNDTABLE_BOT_ROUTINES"):
+        routines = json.loads(os.environ["ROUNDTABLE_BOT_ROUTINES"])
+        ledger = os.environ["ROUNDTABLE_TERMINAL_LEDGER"]
+        private_ledger(ledger)
+        workers = []
+        seen = set()
+        for routine in routines:
+            bot = routine["bot"]
+            if bot in seen:
+                raise ValueError("Duplicate Bot routine")
+            seen.add(bot)
+            env = routine["environment"]
+            workers.append(
+                TerminalWorker(
+                    source,
+                    ledger,
+                    os.environ["ROUNDTABLE_TERMINAL_ROOM"],
+                    bot,
+                    GrokWebhook(
+                        env["GROK_ROUTINE_URL"], env["GROK_ROUTINE_KEY"], env["GROK_ALLOWED_HOST"]
+                    ),
+                )
+            )
+        return BotWorkers(workers)
     adapter = GrokWebhook(
         os.environ["GROK_ROUTINE_URL"],
         os.environ["GROK_ROUTINE_KEY"],

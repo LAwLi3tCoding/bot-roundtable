@@ -1,6 +1,6 @@
 """Real stdio MCP identities and desktop browser sharing one task/event store.
 
-Synthetic mailbox actors only. Set HANDOFF_RECORD=1 to save a real browser video.
+Synthetic mailbox actors only; task cards share the conversation view.
 """
 
 import asyncio
@@ -10,7 +10,6 @@ import os
 from pathlib import Path
 import secrets
 import sys
-import subprocess
 import threading
 from contextlib import AsyncExitStack
 
@@ -121,14 +120,8 @@ def main():
             errors = []
             page.on("pageerror", lambda err: errors.append(str(err)))
             page.goto(f"http://127.0.0.1:{server.server_port}")
-            page.locator("#access").click()
-            page.locator("#admin").fill(admin)
-            page.locator("#access-form button[type=submit]").click()
-            expect(page.locator("#access-dialog")).not_to_be_visible()
-            page.locator("#mailbox-settings").evaluate("e => e.open = true")
-            page.locator(".workspace-picker").evaluate("e => e.open = true")
-            page.locator(".room-nav").filter(has_text=room["name"]).click()
-            page.locator("#task-view").click()
+            page.evaluate("token => { adminToken = token; return reloadWorkspace(); }", admin)
+            page.evaluate("room => selectRoom(room)", {"id": room["id"], "name": room["name"]})
 
             def call(tool, **args):
                 return clients.call(ids[0], tool, **args)
@@ -150,7 +143,9 @@ def main():
                 )["task_id"]
 
             def refresh():
-                page.evaluate("() => refresh(true)")
+                page.evaluate(
+                    "async () => { await refresh(true); await MailboxUI.refresh(); HandoffUI.render(); }"
+                )
 
             def report(worker, item, claim, kind, body):
                 return clients.call(
@@ -167,20 +162,26 @@ def main():
 
             tid = create("DEMO · Plan a useful collaboration")
             refresh()
-            page.locator(f'[data-task-id="{tid}"]').click()
-            expect(page.locator("#task-header")).to_contain_text(tid)
-            # Task audit remains in the task view; private topics never receive task notices.
-            page.locator("#discussion-view").click()
-            expect(page.locator("#handoffs-view")).not_to_be_visible()
+            card = page.locator(f'[data-task-id="{tid}"]')
+            expect(card).to_have_attribute(
+                "data-created",
+                str(store.handoffs.snapshot(room["id"], "user", tid)["task"]["created"]),
+            )
+            expect(card.locator(".handoff-mini")).to_have_count(2)
+            for worker in card.locator(".handoff-mini").all():
+                expect(worker).to_contain_text(" · Queued")
+            actors = json.loads(card.get_attribute("data-actors"))
+            assert set(actors) == {"bot:" + aid for aid in ids}
+            card.click()
+            expect(page.locator("#task-header")).to_contain_text("Plan a useful collaboration")
+            expect(page.locator("#task-view")).to_have_count(0)
+            page.locator("#task-back").click()
+            expect(page.locator("#task-detail-dialog")).not_to_be_visible()
             expect(page.locator(".message-content")).to_have_count(0)
-            if not page.locator("#mailbox-settings").evaluate("e => e.open"):
-                page.locator("#mailbox-settings > summary").click()
-            page.locator("#language").select_option("zh")
-            page.locator("#task-view").click()
-            expect(page.locator("#task-header")).to_contain_text(tid)
-            if not page.locator("#mailbox-settings").evaluate("e => e.open"):
-                page.locator("#mailbox-settings > summary").click()
-            page.locator("#language").select_option("en")
+            page.evaluate(
+                "() => { window.retainedTaskCard = document.querySelector('.task-card'); }"
+            )
+            page.locator(f'[data-task-id="{tid}"]').click()
             inbox = [clients.call(a, "receive_assignments")[0] for a in ids[1:]]
             assert inbox[0]["instruction"] != inbox[1]["instruction"]
             claims = [
@@ -264,6 +265,10 @@ def main():
             assert call("get_task", task_id=tid)["task"]["status"] == "completed"
             refresh()
             expect(page.locator("#task-header")).to_contain_text("Completed", timeout=10000)
+            assert page.evaluate(
+                "() => window.retainedTaskCard === document.querySelector('.task-card')"
+            )
+            expect(page.locator(f'[data-task-id="{tid}"]')).to_contain_text("Completed")
             # Open another task with held query: stale task contents/actions must disappear immediately.
             second = create("DEMO · Cancellation check")
             page.locator("#task-back").click()
@@ -290,13 +295,11 @@ def main():
             page.locator("#cancel-task").click()
             expect(page.locator("#task-header")).to_contain_text("Cancelled", timeout=10000)
             assert call("get_task", task_id=second)["task"]["status"] == "cancelled"
-            page.locator("#mailbox-settings").evaluate("e => e.open = true")
-            page.locator(".workspace-picker").evaluate("e => e.open = true")
-            page.locator(".room-nav").filter(has_text=other["name"]).click()
+            page.locator("#task-back").click()
+            page.evaluate("room => selectRoom(room)", {"id": other["id"], "name": other["name"]})
             expect(page.locator(f'[data-task-id="{tid}"]')).to_have_count(0)
             expect(page.locator("#task-thread")).not_to_be_visible()
-            page.locator("#task-view").click()
-            page.locator("#new-task").click()
+            page.locator("#delegate-topic").click()
             expect(page.locator("#task-workers input:checked")).to_have_count(0)
             expect(page.locator("#create-task")).to_be_disabled()
             for checkbox in page.locator("#task-workers input").all():
@@ -310,6 +313,9 @@ def main():
                 field.fill(f"DEMO independent instruction {index + 1}")
             page.locator("#create-task").click()
             expect(page.locator("#task-create-dialog")).not_to_be_visible()
+            webtid = store.handoffs.listing(other["id"], "user")[0]["task"]["id"]
+            expect(page.locator(f'[data-task-id="{webtid}"]')).to_be_visible()
+            page.locator(f'[data-task-id="{webtid}"]').click()
             expect(page.locator("#task-header")).to_contain_text("Web-origin task")
             store.handoffs.demo_tick()
             refresh()
@@ -325,151 +331,30 @@ def main():
             )
             page.locator("#task-note").fill("Error visibility check")
             page.locator("#task-note-form button[type=submit]").click()
-            expect(page.locator("#error")).to_be_visible()
-            expect(page.locator("#error")).not_to_be_empty()
+            expect(page.locator("#task-detail-dialog .dialog-error")).to_be_visible()
+            expect(page.locator("#task-detail-dialog .dialog-error")).not_to_be_empty()
             page.unroute("**/tasks/context")
             page.locator("#task-note").fill("")
             page.evaluate("document.getElementById('error').textContent = ''")
-            if not page.locator("#mailbox-settings").evaluate("e => e.open"):
-                page.locator("#mailbox-settings > summary").click()
-            page.locator("#language").select_option("zh")
-            expect(page.locator("html")).to_have_attribute("lang", "zh-CN")
-            page.locator("#task-header").scroll_into_view_if_needed()
-            page.screenshot(path=str(artifacts / "desktop-zh.png"))
-            if not page.locator("#mailbox-settings").evaluate("e => e.open"):
-                page.locator("#mailbox-settings > summary").click()
-            page.locator("#language").select_option("en")
-            page.screenshot(path=str(artifacts / "desktop-en.png"))
             assert not errors, errors
-            if os.environ.get("HANDOFF_RECORD"):
-                video_context = browser.new_context(
-                    viewport={"width": 1280, "height": 900},
-                    locale="en-US",
-                )
-                demo = video_context.new_page()
-                recorder = subprocess.Popen(
-                    [
-                        "ffmpeg",
-                        "-y",
-                        "-loglevel",
-                        "error",
-                        "-f",
-                        "image2pipe",
-                        "-vcodec",
-                        "png",
-                        "-framerate",
-                        "10",
-                        "-i",
-                        "-",
-                        "-an",
-                        "-c:v",
-                        "libvpx-vp9",
-                        "-pix_fmt",
-                        "yuv420p",
-                        str(artifacts / "native-handoffs-demo.webm"),
-                    ],
-                    stdin=subprocess.PIPE,
-                )
-
-                def hold(milliseconds):
-                    for _ in range(milliseconds // 100):
-                        recorder.stdin.write(demo.screenshot())
-                        demo.wait_for_timeout(100)
-
-                demo.goto(f"http://127.0.0.1:{server.server_port}")
-                # Ephemeral test auth stays in memory; never render a credential input in this video.
-                demo.evaluate("(token) => { adminToken = token; return reloadWorkspace(); }", admin)
-                demo.locator("#mailbox-settings").evaluate("e => e.open = true")
-                demo.locator(".workspace-picker").evaluate("e => e.open = true")
-                demo.locator(".room-nav").filter(has_text=room["name"]).click()
-                demo.locator("#task-view").click()
-                demo_id = create("DEMO · Native entry → two bot handoffs")
-                demo.evaluate("() => refresh(true)")
-                demo.locator(f'[data-task-id="{demo_id}"]').click()
-                expect(demo.locator("#task-header")).to_contain_text(demo_id)
-                hold(2000)
-                items = [
-                    next(
-                        x for x in clients.call(a, "receive_assignments") if x["task_id"] == demo_id
-                    )
-                    for a in ids[1:]
-                ]
-                leases = [
-                    clients.call(
-                        a,
-                        "claim_assignment",
-                        task_id=demo_id,
-                        assignment_id=item["id"],
-                        expected_attempt=0,
-                        request_id=secrets.token_hex(12),
-                    )
-                    for a, item in zip(ids[1:], items)
-                ]
-                demo.locator(f'[data-assignment-id="{items[0]["id"]}"]').click()
-                report(
-                    ids[1],
-                    items[0],
-                    leases[0],
-                    "progress",
-                    "DEMO: reviewing keyboard focus and readable handoff states.",
-                )
-                demo.evaluate("() => refresh(true)")
-                expect(demo.locator("#handoff-events")).to_contain_text(
-                    "reviewing keyboard focus", timeout=10000
-                )
-                demo.locator("#task-header").scroll_into_view_if_needed()
-                hold(2200)
-                demo.screenshot(path=str(artifacts / "native-progress-en.png"))
-                report(
-                    ids[1],
-                    items[0],
-                    leases[0],
-                    "completed",
-                    "DEMO: keyboard navigation and clear status text verified.",
-                )
-                report(
-                    ids[2],
-                    items[1],
-                    leases[1],
-                    "completed",
-                    "DEMO: independent assignments and room isolation verified.",
-                )
-                demo.evaluate("() => refresh(true)")
-                expect(demo.locator("#task-header")).to_contain_text("Completed", timeout=10000)
-                demo.locator("#assignment-switch button").first.click()
-                demo.locator("#task-header").scroll_into_view_if_needed()
-                hold(2200)
-                demo.screenshot(path=str(artifacts / "native-completed-en.png"))
-                if not demo.locator("#mailbox-settings").evaluate("e => e.open"):
-                    demo.locator("#mailbox-settings > summary").click()
-                demo.locator("#language").select_option("zh")
-                demo.screenshot(path=str(artifacts / "native-completed-zh.png"))
-                demo.locator(f'[data-assignment-id="{items[0]["id"]}"]').click()
-                demo.locator("#task-note").scroll_into_view_if_needed()
-                demo.screenshot(path=str(artifacts / "native-result-zh.png"))
-                if not demo.locator("#mailbox-settings").evaluate("e => e.open"):
-                    demo.locator("#mailbox-settings > summary").click()
-                demo.locator("#language").select_option("en")
-                demo.locator("#task-note").scroll_into_view_if_needed()
-                demo.screenshot(path=str(artifacts / "native-result-en.png"))
-                if not demo.locator("#mailbox-settings").evaluate("e => e.open"):
-                    demo.locator("#mailbox-settings > summary").click()
-                demo.locator("#language").select_option("zh")
-                hold(2000)
-                cancel_id = create("DEMO · Stop pending handoffs")
-                demo.locator("#task-back").click()
-                demo.evaluate("() => refresh(true)")
-                demo.locator(f'[data-task-id="{cancel_id}"]').click()
-                expect(demo.locator("#cancel-task")).to_be_enabled()
-                demo.locator("#cancel-task").click()
-                hold(2000)
-                recorder.stdin.close()
-                assert recorder.wait(30) == 0
-                video_context.close()
+            page.locator("#task-back").click()
+            single = call(
+                "create_task",
+                title="DEMO · One assignment",
+                context="Synthetic single task",
+                assignments=[{"worker": ids[1], "instruction": "Check the layout."}],
+                request_id=secrets.token_hex(12),
+                budget=6,
+            )["task_id"]
+            page.evaluate("room => selectRoom(room)", {"id": room["id"], "name": room["name"]})
+            refresh()
+            single_card = page.locator(f'[data-task-id="{single}"]')
+            expect(single_card.locator(".task-status")).to_have_text("Queued")
+            expect(single_card.locator(".handoff-mini")).to_have_text("Demo Research")
             context.close()
             browser.close()
         print(
-            "PASS: real stdio MCP + browser task identity, independent workers, progress/context/XSS, retry/fan-in, delayed navigation, cancellation, room isolation, Web demo, EN/ZH"
+            "PASS: real stdio MCP + browser task identity, independent workers, progress/context/XSS, retry/fan-in, delayed navigation, cancellation, room isolation, Web delegation"
         )
     finally:
         clients.close()

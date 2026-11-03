@@ -149,6 +149,32 @@ class LoginHTTP(unittest.TestCase):
             )
         self.assertEqual(self.call("/api/ui-login/exchange", body={"code": issued})[0], 200)
 
+    def test_cookie_settings_only_renames_and_grant_works(self):
+        room = self.store.room("Synthetic")["id"]
+        self.store.add_agent(room, "alpha")
+        self.store.settings(room, "Synthetic", "alpha")
+        code = self.call("/api/ui-login/issue", self.admin)[1]["code"]
+        cookie = self.call("/api/ui-login/exchange", body={"code": code, "cookie": True})[2][
+            "Set-Cookie"
+        ].split(";")[0]
+        auth = {"Cookie": cookie}
+        self.assertEqual(
+            self.call(
+                f"/api/rooms/{room}/settings", body={"name": "Renamed", "lead": ""}, headers=auth
+            )[0],
+            200,
+        )
+        self.assertEqual(
+            self.store.state(room)["room"], {"id": room, "name": "Renamed", "lead": "alpha"}
+        )
+        self.assertEqual(
+            self.call(
+                f"/api/rooms/{room}/grant", body={"id": "alpha", "allowance": 5}, headers=auth
+            )[0],
+            200,
+        )
+        self.assertEqual(self.store.state(room)["agents"][0]["allowance_limit"], 5)
+
     def test_cookie_lifecycle_and_csrf(self):
         code = self.call("/api/ui-login/issue", self.admin)[1]["code"]
         status, body, headers = self.call(

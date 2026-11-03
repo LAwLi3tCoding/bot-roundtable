@@ -490,8 +490,70 @@ class HandoffTests(unittest.TestCase):
         self.store.add_agent(self.rid, "origin")
         with self.assertRaises(Problem):
             self.snapshot(task)
-        with self.assertRaises(Problem):
-            self.create()
+        replacement = self.create()
+        self.assertNotEqual(replacement["task_id"], task["task_id"])
+
+    def test_retry_uses_recovered_hourly_allowance(self):
+        task = self.create()
+        first = self.claim(task)
+        self.report(first, kind="failed")
+        self.store.db.execute(
+            "UPDATE agents SET allowance=0,allowance_reset=0 WHERE room=? AND id='origin'",
+            (self.rid,),
+        )
+        self.h.operate(
+            self.rid,
+            self.actor,
+            "retry",
+            dict(
+                task_id=task["task_id"],
+                assignment_id=first["assignment_id"],
+                request_id="retry-hour",
+            ),
+        )
+        self.claim(task, nonce="claim-again")
+        remaining = self.store.db.execute(
+            "SELECT allowance FROM agents WHERE room=? AND id='origin'", (self.rid,)
+        ).fetchone()[0]
+        self.assertEqual(remaining, 19)
+
+    def test_legacy_task_links_without_reauthorizing_replacement_bot(self):
+        task = self.create()
+        self.store.db.execute("UPDATE tasks SET topic_id=NULL WHERE id=?", (task["task_id"],))
+        self.assertTrue(self.snapshot(task)["task"]["topic_id"])
+        self.store.db.execute("UPDATE tasks SET topic_id=NULL WHERE id=?", (task["task_id"],))
+        self.store.remove_agent(self.rid, "worker-one")
+        self.store.add_agent(self.rid, "worker-one")
+        self.assertIsNone(self.snapshot(task)["task"]["topic_id"])
+
+    def test_task_conversation_association(self):
+        first = self.create()
+        snap = self.snapshot(first)
+        topic = snap["task"]["topic_id"]
+        self.assertTrue(topic)
+        self.assertEqual(
+            self.store.mailboxes._members(topic),
+            ["bot:origin", "bot:outsider", "bot:worker-one", "bot:worker-two", "user"],
+        )
+        self.assertEqual(topic, self.store.mailboxes.roundtable(self.rid)["id"])
+        second = self.create(request_id="another")
+        self.assertEqual(self.snapshot(second)["task"]["topic_id"], topic)
+        explicit = self.create(request_id="explicit", topic_id=topic)
+        self.assertEqual(self.snapshot(explicit)["task"]["topic_id"], topic)
+        listed = self.h.listing(self.rid, "user")
+        self.assertTrue(all(item["task"]["topic_id"] == topic for item in listed))
+        self.assertGreaterEqual(snap["task"]["updated"], snap["task"]["created"])
+
+    def test_task_conversation_rejects_missing_participant(self):
+        topic = self.store.mailboxes.create(
+            self.rid,
+            "user",
+            dict(title="Private", members=["bot:origin"], request_id="private"),
+        )
+        with self.assertRaises(Problem) as caught:
+            self.create(topic_id=topic["id"])
+        self.assertEqual(caught.exception.status, 400)
+        self.assertEqual(self.h.listing(self.rid, "user"), [])
 
     def test_parent_depth_shared_budget_and_cancel(self):
         root = self.create(budget=6)

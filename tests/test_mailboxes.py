@@ -135,12 +135,12 @@ class MailboxTest(unittest.TestCase):
                 {"title": "New", "members": ["bot:alpha"], "request_id": "new"},
             )
 
-    def test_human_default_wakes_members_and_replay_is_stable(self):
+    def test_human_default_is_silent_and_replay_is_stable(self):
         first = self.post("user", join=True)
-        self.assertEqual(first["mentions"], ["bot:alpha", "bot:bravo"])
+        self.assertEqual(first["mentions"], [])
         self.assertEqual(first, self.post("user", join=True))
         for actor in ("bot:alpha", "bot:bravo"):
-            self.assertEqual(len(self.m.wake_inbox(self.room, actor)["messages"]), 1)
+            self.assertEqual(len(self.m.wake_inbox(self.room, actor)["messages"]), 0)
         silent = self.post("user", request_id="silent", mentions=[])
         self.assertEqual(silent["mentions"], [])
-        self.assertEqual(len(self.m.wake_inbox(self.room, "bot:alpha")["messages"]), 1)
+        self.assertEqual(len(self.m.wake_inbox(self.room, "bot:alpha")["messages"]), 0)
