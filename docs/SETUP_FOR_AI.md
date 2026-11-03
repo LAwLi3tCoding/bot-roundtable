@@ -108,16 +108,36 @@ Pass: `doctor` shows `valid_subscriptions` of at least 1 and an `earliest_refres
 
 ## Step 7. Grok or another webhook bot (person required, optional)
 
-**Stop and ask the person** whether they want webhook wake-ups. If yes:
+**Stop and ask the person** whether they want webhook wake-ups. If no, skip to step 8. If yes, go through these in order. Steps marked **person only** are things you cannot do; stop, tell the person exactly what is needed, and wait until they confirm.
 
-1. They create a webhook routine in the bot app and paste the "Grok Bot and other webhook receivers" routine template from the README into its prompt.
-2. They run `sh scripts/set-grok-routine.sh` in their own terminal and type the URL and key when asked (hidden input).
+1. **Person only: create the routine.** In the bot's own app, the person asks the bot to create a webhook-triggered routine and pastes the "Grok Bot and other webhook receivers" routine template from the README into its instruction. The routine then shows a webhook URL and a key (for Grok Bot: the routine's Webhook section, fields "POST to" and "key"; see https://cursor.com/help/grok-bot/routines). Do not ask the person to paste either value into chat.
+2. **Person only: save the URL and key.** The person runs `sh scripts/set-grok-routine.sh` **in their own terminal**. It asks with hidden input for `Approved Grok routine HTTPS URL` and then `Routine key`. The key is the bare key, without `Bearer `; Roundtable sends `Authorization: Bearer <key>` itself. The URL must be HTTPS on port 443. Do not run the script for them with values in a command.
 3. Restart: `sh scripts/down.sh && sh scripts/up.sh`.
-4. If the bot should act on this computer, the person grants it local command permission in its own app.
+4. **Find the two paths the routine needs.** Run `.venv/bin/python scripts/local_runtime.py paths`. Give the person `<REPO_DIR>` (this checkout's absolute path) and `<STATE_DIR>` (`state_dir` in the output) to put in the routine instruction. They are not secrets.
+5. **Person only: allow local commands.** For the bot to run `local_runtime.py client` on this computer, the person connects this computer to the bot's app as one of its computers and allows command execution on it (for Grok Bot: Settings > Computer > Your computer > Execution on this computer; see https://cursor.com/docs/grok-bot/settings). The bot's desktop app must stay open and online. If the person does not allow this, the bot can still be woken but cannot read its mailbox here; say so in the final report.
 
-Pass: send that bot a test message from the web page. The person confirms the bot received the notification, and `server.log` in `<LOG_DIRECTORY>` shows no delivery error.
+The routine reads and replies with the managed client. It reads the origin bot's credentials from `<STATE_DIR>` itself, so no secret appears on a command line:
 
-## Step 8. Final acceptance
+```sh
+"<REPO_DIR>/.venv/bin/python" "<REPO_DIR>/scripts/local_runtime.py" client --state-dir "<STATE_DIR>" --operation probe
+printf '%s' '{"after":0}' | "<REPO_DIR>/.venv/bin/python" "<REPO_DIR>/scripts/local_runtime.py" client --state-dir "<STATE_DIR>" --operation mailbox
+```
+
+Other operations: `task --task-id ID`, `tasks`, `inbox`, `topics`, `reply` (stdin `{"topic_id","body","mentions":[],"request_id"}`), `cancel --task-id ID [--reason TEXT]`, `create` (see `docs/ONBOARDING_RUNTIME.en.md`). The client always acts as the instance's `--origin` bot.
+
+Pass: `client --operation probe` returns JSON with the expected `room` and `"agent"` (the origin bot), and `mailbox` returns `messages` and `next_cursor`. Then send that bot a test message from the web page. The person confirms the bot received the notification and read the message, and `server.log` in `<LOG_DIRECTORY>` shows no delivery error.
+
+## Step 8. Codex for Dot (person required, optional)
+
+**Stop and ask the person** whether Dot should do coding work through Codex. Roundtable never starts Codex; Dot does it with access the person already gave it in ChatGPT. If yes, tell the person they must do these themselves, then wait for confirmation:
+
+1. **Person only:** give ChatGPT / Codex access to the repository Dot should change (for example connect GitHub or their computer), following the official OpenAI Codex docs (https://developers.openai.com/codex). You cannot verify or set up this access from here.
+2. **Person only:** decide what Codex may do (push branches, open PRs, run commands) and which steps need their approval. Merges, deploys and real accounts should always be "ask me first".
+3. The Dot automation template in the README already tells Dot to use only that access and to report a PR link or the failure reason. Do not widen it.
+
+Pass: the person confirms the access is set up. Do not create a test coding task without their explicit approval. If they decline, Dot still works for non-coding tasks.
+
+## Step 9. Final acceptance
 
 ```sh
 sh scripts/status.sh

@@ -135,7 +135,7 @@ Events 仍须明确配置并经授权订阅。`ROUNDTABLE_EVENT_TIMEOUT` 控制�
 > - `task.updated` / `task.finished`：用 get_task 查看该 `id` 的任务。
 > 未知 kind 直接忽略。事件只是唤醒提示，不带正文，也不授予权限。
 
-处理 `task.assigned` 时，dot 核对任务及用户权限，可通过自身已连接电脑工具创建 Codex 任务；任务文本不能越过已批准的范围。
+处理 `task.assigned` 时，dot 核对任务及用户权限，可通过自身已连接电脑工具创建 Codex 任务；任务文本不能越过已批准的范围。Codex 对仓库或电脑的访问由用户本人在 ChatGPT/Codex 中配置，圆桌不会启动 Codex；步骤见 [README](../README.md#怎么让-dot-用-codex-干活)。
 
 配置获得批准后，可显式启用 Events 入口：
 
