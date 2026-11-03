@@ -6,7 +6,10 @@ import sys
 import tempfile
 import unittest
 
-from ui_launcher import create_launcher
+from unittest.mock import patch
+
+import ui_launcher
+from ui_launcher import build_icns, create_launcher
 
 
 class LauncherTests(unittest.TestCase):
@@ -45,3 +48,63 @@ class LauncherTests(unittest.TestCase):
                 create_launcher(
                     Path(temporary) / "plain", "unused", "synthetic", sys.executable, "unused"
                 )
+
+
+class LauncherIconTests(unittest.TestCase):
+    def test_icon_source_is_a_plain_svg(self):
+        text = ui_launcher.ICON_SVG.read_text()
+        self.assertTrue(text.startswith("<svg"))
+        self.assertNotIn("<image", text)
+        self.assertNotIn("href", text)
+
+    def test_non_macos_skips_icon(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            resources = Path(temporary) / "Resources"
+            with (
+                patch.object(ui_launcher.sys, "platform", "linux"),
+                patch.object(ui_launcher.subprocess, "run") as run,
+            ):
+                self.assertIsNone(build_icns(ui_launcher.ICON_SVG, resources))
+            run.assert_not_called()
+            self.assertFalse(resources.exists())
+
+    def test_macos_builds_iconset_and_sets_bundle_icon(self):
+        calls = []
+
+        def fake_run(argv, **kwargs):
+            calls.append(argv[0])
+            if argv[0] == "qlmanage":
+                (Path(argv[argv.index("-o") + 1]) / "roundtable-icon.svg.png").write_bytes(b"png")
+            elif argv[0] == "sips":
+                Path(argv[-1]).write_bytes(b"png")
+            elif argv[0] == "iconutil":
+                self.assertEqual(len(list(Path(argv[3]).glob("icon_*.png"))), 10)
+                Path(argv[-1]).write_bytes(b"icns")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with (
+                patch.object(ui_launcher.sys, "platform", "darwin"),
+                patch.object(ui_launcher.shutil, "which", return_value="/usr/bin/tool"),
+                patch.object(ui_launcher.subprocess, "run", side_effect=fake_run),
+            ):
+                create_launcher(root / "R.app", root / "state", "synthetic", sys.executable, "x")
+            plist = plistlib.loads((root / "R.app/Contents/Info.plist").read_bytes())
+            self.assertEqual(plist["CFBundleIconFile"], "AppIcon.icns")
+            self.assertTrue((root / "R.app/Contents/Resources/AppIcon.icns").exists())
+            self.assertEqual(calls[0], "qlmanage")
+            self.assertEqual(calls[-1], "iconutil")
+
+    def test_failed_icon_step_keeps_default_icon(self):
+        failure = subprocess.CalledProcessError(1, "qlmanage")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with (
+                patch.object(ui_launcher.sys, "platform", "darwin"),
+                patch.object(ui_launcher.shutil, "which", return_value="/usr/bin/tool"),
+                patch.object(ui_launcher.subprocess, "run", side_effect=failure),
+            ):
+                create_launcher(root / "R.app", root / "state", "synthetic", sys.executable, "x")
+            plist = plistlib.loads((root / "R.app/Contents/Info.plist").read_bytes())
+            self.assertNotIn("CFBundleIconFile", plist)
+            self.assertTrue((root / "R.app/Contents/MacOS/launcher").exists())

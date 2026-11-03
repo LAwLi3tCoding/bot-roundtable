@@ -279,13 +279,18 @@ class TerminalWorkerTests(unittest.TestCase):
         self.adapter.dispatch_terminal.assert_called_once()
 
     def test_dispatch_total_timeout_consumes_reservation(self):
-        release = threading.Event()
-        self.adapter.dispatch_terminal.side_effect = lambda *args: release.wait(3)
+        release, dispatch_returned = threading.Event(), threading.Event()
+
+        def stalled(*args):
+            release.wait(10)
+            dispatch_returned.set()
+
+        self.adapter.dispatch_terminal.side_effect = stalled
         ledger = TerminalReceipts(":memory:", delivery_timeout=0.03)
         try:
-            before = time.monotonic()
             result = ledger.send("scope", {"id": "d" * 24, "status": "completed"}, self.adapter)
-            self.assertLess(time.monotonic() - before, 0.5)
+            # send() gave up on its own deadline while the dispatch was still stalled.
+            self.assertFalse(dispatch_returned.is_set(), "send waited for stalled dispatch")
             self.assertEqual(result["outcome"], "uncertain")
             self.assertEqual(
                 ledger.send("scope", {"id": "d" * 24, "status": "completed"}, self.adapter)[
