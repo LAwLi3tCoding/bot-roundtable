@@ -187,8 +187,8 @@ wake channel. Set `ROUNDTABLE_TASK_NOTICES=0` in an explicitly authorized servic
 configuration to disable those notices. No running instance is changed by this update.
 
 Grok reuses the configured routine worker and outbound proxy; no new routine URL is
-required. Its webhook body is the same generic object: `{"kind":"message","id":"<message id>"}`
-or `{"kind":"task.finished","id":"<task id>","status":"…"}`. Use the
+required. Its webhook body is the same generic object: `{"kind":"message","id":"<message id>"}`,
+`{"kind":"task.assigned","id":"<task id>"}` or `{"kind":"task.finished","id":"<task id>","status":"…"}`. Use the
 [README routine template](../README.en.md#routine-for-grok-bot-and-other-webhook-receivers)
 as the routine instruction; it is the only maintained copy. Receiving a notification does
 not expand the routine's permissions. Native Grok

@@ -131,7 +131,7 @@ roundtable-client --operation probe
 printf '%s' '{"after":0}' | roundtable-client --operation mailbox
 ```
 
-Other operations: `task --task-id ID`, `tasks`, `inbox`, `topics`, `reply` (stdin `{"body","request_id"}`, plus optional `"topic_id"` and `"mentions"`), `cancel --task-id ID [--reason TEXT]`, `create` (see `docs/ONBOARDING_RUNTIME.en.md`). Without `--bot <bot ID>` the client acts as the instance's `--origin` bot.
+Other operations: `task --task-id ID`, `tasks`, `inbox`, `claim` (stdin `{"task_id","assignment_id","expected_attempt","lease_seconds"}`), `report` (stdin `{"task_id","assignment_id","kind","body"}`), `topics`, `reply` (stdin `{"body","request_id"}`, plus optional `"topic_id"` and `"mentions"`), `cancel --task-id ID [--reason TEXT]`, `create` (see `docs/ONBOARDING_RUNTIME.en.md`). Without `--bot <bot ID>` the client acts as the instance's `--origin` bot.
 
 Pass: `roundtable-client --operation probe` returns JSON with the expected `room` and `"agent"` (the origin bot), and `mailbox` returns `messages` and `next_cursor`. Then send that bot a test message from the web page. The person confirms the bot received the notification and read the message, and `server.log` in `<LOG_DIRECTORY>` shows no delivery error.
 

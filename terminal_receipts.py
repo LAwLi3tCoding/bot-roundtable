@@ -1,4 +1,8 @@
-"""Explicit Grok webhook notifications (kinds task.finished and message) with a durable at-most-one-attempt ledger.
+"""Explicit Grok webhook notifications (kinds task.finished, task.assigned and message) with a durable at-most-one-attempt ledger.
+
+task.finished goes to the bot that originated the task; task.assigned goes to the
+bot whose assignment is newly queued (delegated, retried or lease expired), once
+per assignment attempt; message goes to the bot a mailbox message wakes.
 
 Reserve before network I/O. A crash after reservation can lose a notification;
 a crash after delivery can leave its outcome unknown. Neither is auto-retried.
@@ -108,6 +112,19 @@ class MentionAdapter(GrokWebhook):
         return self.adapter.notify("message", str(int(task_id, 16)), **kwargs)
 
 
+class AssignedAdapter(GrokWebhook):
+    """Send task.assigned through the same bounded transport and reservation path."""
+
+    def __init__(self, adapter):
+        self.adapter = adapter
+
+    def preflight(self):
+        return self.adapter.preflight()
+
+    def dispatch_terminal(self, task_id, status, **kwargs):
+        return self.adapter.notify("task.assigned", task_id, **kwargs)
+
+
 class TerminalReceipts:
     def __init__(self, path, delivery_timeout=20, stop=None):
         self.stop = stop
@@ -132,6 +149,14 @@ class TerminalReceipts:
             "mention:" + scope,
             {"id": format(message_id, "024x"), "status": "completed"},
             MentionAdapter(adapter),
+        )
+
+    def send_assignment(self, scope, task_id, assignment_id, attempt, adapter):
+        # One reservation per queued attempt: a retry or expired lease queues a new attempt.
+        return self.send(
+            "assigned:" + scope + ":" + assignment_id + ":" + str(attempt),
+            {"id": task_id, "status": "completed"},
+            AssignedAdapter(adapter),
         )
 
     def send(self, scope, task, adapter):
@@ -333,7 +358,7 @@ class TerminalWorker:
                             (mention_cursor, mention_key),
                         )
                 rows = source.execute(
-                    "SELECT e.id AS event_id,e.kind,t.id,t.status,t.room,t.origin,"
+                    "SELECT e.id AS event_id,e.kind,e.assignment,t.id,t.status,t.room,t.origin,"
                     "t.origin_epoch=a.token AS epoch_valid FROM task_events e "
                     "LEFT JOIN tasks t ON t.id=e.task "
                     "LEFT JOIN agents a ON a.room=t.room AND a.id=? "
@@ -349,6 +374,7 @@ class TerminalWorker:
                         "FROM tasks t LEFT JOIN agents a ON a.room=t.room AND a.id=? WHERE t.id=?",
                         (self.origin, row["id"]),
                     ).fetchone()
+                    result = None
                     if (
                         current_task is not None
                         and active_origin()
@@ -360,6 +386,28 @@ class TerminalWorker:
                         and current_task["status"] in TERMINAL
                     ):
                         result = ledger.send(self.room, dict(current_task), self.adapter)
+                    elif (
+                        current_task is not None
+                        and row["kind"] in ("delegated", "retry_requested", "lease_expired")
+                        and active_origin()
+                    ):
+                        # Recheck after any earlier network wait: still ours, queued, running.
+                        assignment = source.execute(
+                            "SELECT a.id,a.attempt FROM assignments a JOIN tasks t ON t.id=a.task "
+                            "JOIN agents g ON g.room=t.room AND g.id=a.worker AND g.token=a.epoch "
+                            "WHERE a.id=? AND a.task=? AND a.worker=? AND a.status='queued' "
+                            "AND t.status='running' AND t.room=?",
+                            (row["assignment"], row["id"], self.origin, self.room),
+                        ).fetchone()
+                        if assignment is not None:
+                            result = ledger.send_assignment(
+                                key,
+                                row["id"],
+                                assignment["id"],
+                                assignment["attempt"],
+                                self.adapter,
+                            )
+                    if result is not None:
                         if (
                             result.get("outcome") == "definitely_not_sent"
                             and not result["attempted"]

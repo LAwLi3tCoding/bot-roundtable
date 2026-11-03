@@ -33,12 +33,12 @@ class TerminalWorkerTests(unittest.TestCase):
         self.store.db.close()
         self.temp.cleanup()
 
-    def start(self):
+    def start(self, bot="origin"):
         worker = TerminalWorker(
             self.path / "source.db",
             self.path / "ledger.db",
             self.room,
-            "origin",
+            bot,
             self.adapter,
             interval=0.01,
         )
@@ -129,7 +129,7 @@ class TerminalWorkerTests(unittest.TestCase):
         time.sleep(0.05)
         self.assertEqual(self.adapter.notify.call_count, 1)
 
-    def task(self, origin="origin"):
+    def task(self, origin="origin", budget=1):
         self.sequence += 1
         return self.store.handoffs.create(
             self.room,
@@ -137,11 +137,102 @@ class TerminalWorkerTests(unittest.TestCase):
             {
                 "title": "Synthetic receipt",
                 "context": "Test only",
-                "budget": 1,
+                "budget": budget,
                 "assignments": [{"worker": "worker", "instruction": "No external work"}],
                 "request_id": str(self.sequence),
             },
         )["task_id"]
+
+    def assignment(self, tid):
+        row = self.store.db.execute(
+            "SELECT id,attempt FROM assignments WHERE task=?", (tid,)
+        ).fetchone()
+        return row["id"], row["attempt"]
+
+    def claim(self, tid):
+        aid, attempt = self.assignment(tid)
+        self.sequence += 1
+        return self.store.handoffs.operate(
+            self.room,
+            "bot:worker",
+            "claim",
+            {
+                "task_id": tid,
+                "assignment_id": aid,
+                "lease_seconds": 30,
+                "expected_attempt": attempt,
+                "request_id": "claim-" + str(self.sequence),
+            },
+        )
+
+    def assigned_calls(self):
+        return [c.args for c in self.adapter.notify.call_args_list if c.args[0] == "task.assigned"]
+
+    def test_assignment_notifies_worker_once_and_survives_restart(self):
+        worker = self.start("worker")
+        tid = self.task()
+        self.until(lambda: len(self.assigned_calls()) == 1)
+        self.assertEqual(self.assigned_calls(), [("task.assigned", tid)])
+        self.drained(worker)
+        worker.stop()
+        again = self.start("worker")
+        self.drained(again)
+        self.assertEqual(self.assigned_calls(), [("task.assigned", tid)])
+
+    def test_expired_lease_and_retry_notify_again_once_each(self):
+        self.start("worker")
+        tid = self.task(budget=3)
+        self.until(lambda: len(self.assigned_calls()) == 1)
+        self.claim(tid)
+        with self.store.transaction():
+            self.store.db.execute(
+                "UPDATE assignments SET lease_until=? WHERE task=?", (time.time() - 1, tid)
+            )
+        self.store.handoffs.expire()
+        self.until(lambda: len(self.assigned_calls()) == 2)
+        lease = self.claim(tid)
+        aid, attempt = self.assignment(tid)
+        self.store.handoffs.operate(
+            self.room,
+            "bot:worker",
+            "update",
+            {
+                "task_id": tid,
+                "assignment_id": aid,
+                "lease": lease["lease"],
+                "attempt": attempt,
+                "kind": "failed",
+                "body": "Synthetic failure",
+                "request_id": "fail",
+            },
+        )
+        self.store.handoffs.operate(
+            self.room,
+            "bot:origin",
+            "retry",
+            {"task_id": tid, "assignment_id": aid, "request_id": "retry"},
+        )
+        self.until(lambda: len(self.assigned_calls()) == 3)
+        time.sleep(0.1)
+        self.assertEqual(self.assigned_calls(), [("task.assigned", tid)] * 3)
+
+    def test_claimed_or_finished_assignment_is_not_notified(self):
+        worker = self.start("worker")
+        with self.store.transaction():
+            self.claim(self.task())
+        with self.store.transaction():
+            tid = self.task()
+            self.store.handoffs.operate(
+                self.room, "bot:origin", "cancel", {"task_id": tid, "request_id": "cancel"}
+            )
+        self.drained(worker)
+        self.assertEqual(self.assigned_calls(), [])
+
+    def test_assignment_for_another_bot_is_not_notified(self):
+        worker = self.start("other")
+        self.task()
+        self.drained(worker)
+        self.adapter.notify.assert_not_called()
 
     def finish(self, tid):
         # Commit the same terminal event used by the task state machine.
