@@ -53,6 +53,26 @@ def main():
             expect(page.locator("#error")).to_contain_text("Check the entered values.")
             expect(page.locator(".message-body")).to_have_count(2)
             expect(page.locator("#body")).to_have_value("@nobody This bot is not a member")
+            body = page.locator("#body")
+            body.fill("   ")
+            body.press("Enter")
+            body.fill("Line one")
+            body.press("Meta+Enter")
+            body.press_sequentially("Line two")
+            body.press("Control+Enter")
+            body.press_sequentially("Line three")
+            body.press("Shift+Enter")
+            body.press_sequentially("Line four")
+            multiline = "Line one\nLine two\nLine three\nLine four"
+            expect(body).to_have_value(multiline)
+            body.dispatch_event("keydown", {"key": "Enter", "isComposing": True})
+            body.dispatch_event("keydown", {"key": "Enter", "keyCode": 229})
+            expect(body).to_have_value(multiline)
+            expect(page.locator(".message-body")).to_have_count(2)
+            with page.expect_request("**/topics/messages") as entered:
+                body.press("Enter")
+            assert entered.value.post_data_json["body"] == multiline
+            expect(page.locator(".message-body")).to_have_count(3)
             page.locator("#mailbox-settings > summary").click()
             page.locator("#manage").click()
             page.locator("#manage-dialog details summary").click()
@@ -63,7 +83,7 @@ def main():
             assert store.mailboxes.wake_inbox(room["id"], "bot:worker")["messages"] == []
             browser.close()
         print(
-            "Roundtable mentions: completion, targeted wake, silent insertion, invalid bot rejection, draft retention, stop passed"
+            "Roundtable mentions: completion, targeted wake, silent insertion, invalid bot rejection, draft retention, Enter to send, stop passed"
         )
     finally:
         server.shutdown()
