@@ -188,10 +188,10 @@ configuration to disable those notices. No running instance is changed by this u
 
 Grok reuses the configured routine worker and outbound proxy; no new routine URL is
 required. Its webhook body is the same generic object: `{"kind":"message","id":"<message id>"}`
-or `{"kind":"task.finished","id":"<task id>","status":"…"}`. Update the routine's
-authorized instructions to accept these kinds, then read the scoped recipient mailbox and reply through the tools
-or CLI above. Keep existing task/terminal handling. Deduplicate message IDs and request
-IDs; receiving a notification does not expand the routine's permissions. Native Grok
+or `{"kind":"task.finished","id":"<task id>","status":"…"}`. Use the
+[README routine template](../README.en.md#routine-for-grok-bot-and-other-webhook-receivers)
+as the routine instruction; it is the only maintained copy. Receiving a notification does
+not expand the routine's permissions. Native Grok
 execution and platform delivery must still be verified separately.
 
 Ordinary discussion roots accept a budget of 1–20 (default 4); cumulative bot replies

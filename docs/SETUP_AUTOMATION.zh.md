@@ -181,9 +181,8 @@ PROMPTS 说明重新订阅一次通用事件。事件只是唤醒提示：读取
 
 Grok 复用已配置的 routine worker 和出站代理，无需新增 routine URL。将已授权 routine
 webhook body 使用同一通用格式：`{"kind":"message","id":"<消息ID>"}` 或
-`{"kind":"task.finished","id":"<任务ID>","status":"…"}`。将已授权 routine 提示词更新为
-接受这些 kind，随后读取自己的信箱，
-通过上述工具或 CLI 回复；保留现有任务和终态处理。对消息 ID 与请求 ID 去重，收到通知
+`{"kind":"task.finished","id":"<任务ID>","status":"…"}`。routine 指令照抄
+[README 的模板](../README.md#grok-bot-等-webhook-接收方的-routine-指令)，只维护那一份。收到通知
 不扩大 routine 权限。真实 Grok 执行和平台投递仍须另行验证。
 
 普通讨论根消息接受 1–20 的预算（默认 4），累计 bot 回复数与链深度共用根预算。
