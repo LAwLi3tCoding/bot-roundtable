@@ -229,14 +229,6 @@ $('body').addEventListener('keydown', event => {
  else if(event.key === 'Enter' || event.key === 'Tab') {event.preventDefault(); chooseMention(mentionIndex);}
  else if(event.key === 'Escape') {event.preventDefault();mentionList.hidden=true;}
 });
-$('compose').onsubmit=event=>{event.preventDefault();action(async()=>{
- const body=$('body').value, room=active?.id;
- const ids = new Set([...body.matchAll(/(?:^|\s)@([a-z][a-z0-9-]{1,39})(?=\s|$|[.,!?])/g)].map(m=>m[1]));
- const mentions=(state?.agents||[]).filter(a=>ids.has(a.id)).map(a=>a.id);
- await api(roomPath('/messages'),roomAuth(),{body,mentions,budget:Number($('budget').value),reply_to:replyTo,request_id:crypto.randomUUID()});
- if(active?.id!==room)return;
- $('body').value='';replyTo=null;mentionList.hidden=true;threadId='';await refresh(true);
-});};
 $('stop').onclick=()=>action(async()=>{await api(roomPath('/stop'),roomAuth(),{});await refresh(true);});
 $('thread-select').onchange=()=>{threadId=$('thread-select').value;renderState();};$('latest').onclick=()=>{threadId='';renderState();$('chat').scrollTop=$('chat').scrollHeight;};
 $('directory').onclick=()=>action(async()=>{requireAdmin();await reloadWorkspace();renderDirectory();openDialog('directory-dialog');});

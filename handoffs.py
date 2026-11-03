@@ -10,7 +10,7 @@ TERMINAL = {"completed", "failed", "cancelled", "timeout", "revoked"}
 
 
 NOTIFICATION_EVENT = "roundtable.notification"
-NOTIFICATION_KINDS = ("task.assigned", "task.updated", "task.finished", "mention", "message")
+NOTIFICATION_KINDS = ("task.assigned", "task.updated", "task.finished", "message")
 TASK_FINISHED = {
     "task_completed": "completed",
     "task_failed": "failed",
@@ -596,6 +596,8 @@ class Handoffs:
                     self.event(tid, aid, actor, "context", body)
                     return {"task_id": tid, "added": True}
                 if operation == "cancel":
+                    reason = data.get("reason")
+                    reason = "" if reason is None else text(reason, 500)
                     targets = self.db.execute(
                         "WITH RECURSIVE subtree(id) AS ("
                         "SELECT id FROM tasks WHERE room=? AND id=? "
@@ -613,7 +615,9 @@ class Handoffs:
                             "UPDATE tasks SET status='cancelled' WHERE id=? AND status IN ('running','failed')",
                             (target_id,),
                         )
-                        self.event(target_id, "", actor, "cancelled", "")
+                        self.event(
+                            target_id, "", actor, "cancelled", reason if target_id == tid else ""
+                        )
                     return {"task_id": tid, "cancelled": True}
                 if task["deadline"] <= now or task["status"] in ("cancelled", "timeout"):
                     raise Problem(409, "Task is closed")

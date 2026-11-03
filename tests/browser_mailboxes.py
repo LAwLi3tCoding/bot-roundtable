@@ -100,40 +100,40 @@ def main():
             expect(page.locator("#room-search")).not_to_be_visible()
             assert page.locator("#task-view").evaluate("e => !!e.closest('#sidebar')")
 
-            assert page.locator("#sidebar").bounding_box()["width"] == 320
+            assert page.locator("#sidebar").bounding_box()["width"] == 300
             page.locator("#mailbox-collapse").click()
-            assert page.locator("#sidebar").bounding_box()["width"] == 88
+            assert page.locator("#sidebar").bounding_box()["width"] == 76
             page.locator("#mailbox-collapse").click()
             page.locator("#mailbox-resize").focus()
             expect(page.locator("#mailbox-resize")).to_be_focused()
             page.keyboard.press("End")
             page.keyboard.press("ArrowRight")
-            assert page.locator("#sidebar").bounding_box()["width"] == 400
+            assert page.locator("#sidebar").bounding_box()["width"] == 420
             page.keyboard.press("Home")
             page.keyboard.press("ArrowLeft")
-            assert page.locator("#sidebar").bounding_box()["width"] == 240
+            assert page.locator("#sidebar").bounding_box()["width"] == 260
             page.locator("#mailbox-settings > summary").click()
             panel = page.locator(".sidebar-settings-panel").bounding_box()
-            assert panel["x"] >= 0 and panel["x"] + panel["width"] <= 240
+            assert panel["x"] >= 0 and panel["x"] + panel["width"] <= 260
             page.keyboard.press("Escape")
             expect(page.locator("#mailbox-settings > summary")).to_be_focused()
             page.locator("#mailbox-resize").focus()
             page.keyboard.press("ArrowRight")
-            assert page.locator("#sidebar").bounding_box()["width"] == 250
-            for _ in range(7):
+            assert page.locator("#sidebar").bounding_box()["width"] == 270
+            for _ in range(3):
                 page.keyboard.press("ArrowRight")
-            assert page.locator("#sidebar").bounding_box()["width"] == 320
+            assert page.locator("#sidebar").bounding_box()["width"] == 300
 
             page.locator('[data-bot-id="sage"]').click()
             expect(page.locator("#room-title")).to_have_text("Sage")
-            assert page.locator("#compose").bounding_box()["height"] == 44
+            assert page.locator("#compose").bounding_box()["height"] == 48
             page.locator("#body").fill("first line\nsecond line")
             expect(page.locator("#compose")).to_have_class(re.compile("composer-expanded"))
             page.locator("#body").fill("short")
             assert "composer-expanded" in page.locator("#compose").get_attribute("class")
             page.locator("#body").fill("")
             assert "composer-expanded" not in page.locator("#compose").get_attribute("class")
-            assert page.locator("#compose").bounding_box()["height"] == 44
+            assert page.locator("#compose").bounding_box()["height"] == 48
             # Observe the real insertion animation, including progress across frames.
             page.evaluate("""() => {
                 window.motionEvidence = [];
@@ -289,7 +289,7 @@ def main():
             canvas = page.locator("#chat").bounding_box()
             assert own["x"] + own["width"] > canvas["x"] + canvas["width"] * 0.8
             assert peer["x"] < canvas["x"] + canvas["width"] * 0.25
-            assert page.locator("#compose").bounding_box()["width"] == 960
+            assert page.locator("#compose").bounding_box()["width"] == 880
             identity = page.locator(".conversation-identity").bounding_box()
             assert (
                 abs(identity["x"] + identity["width"] / 2 - canvas["x"] - canvas["width"] / 2) < 2

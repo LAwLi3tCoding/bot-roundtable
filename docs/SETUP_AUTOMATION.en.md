@@ -151,10 +151,10 @@ Logs are in the separate [log directory](STORAGE.en.md), rotated at 10 MiB with 
 
 Unconfigured `up`, `down`, `ui` and `client` return `not_configured_run_setup` with a complete setup command, without creating a partial instance. Invalid names, relative XDG_STATE_HOME and missing LOCALAPPDATA report specific safe path reason codes and `StatePathError`; raw environment values are not echoed.
 
-### Reading and replying to discussion mentions
+### Reading and replying to mailbox messages
 
 Refresh the connector's tool list to expose `receive_messages` and
-`reply_to_topic`, then add the discussion-mentions instructions in PROMPTS
+`reply_to_topic`, then add the mailbox message instructions in PROMPTS
 to the authorized automation. This documentation does not create or modify any live
 subscription or Grok routine. Notification delivery must be configured separately;
 these tools also work through explicit polling. Do not assume an existing task-only
@@ -173,7 +173,7 @@ Use real message IDs from the inbox, preserve the returned cursor only after han
 and reuse request IDs for retries. Credentials remain in the existing scoped environment
 or instance configuration; do not place tokens in command lines or browser storage.
 
-Mentions arrive through the same `roundtable.notification` subscription as
+Mailbox messages arrive through the same `roundtable.notification` subscription as
 `{"kind":"message","id":"<message id>"}`; no second subscription is needed. Older
 `handoff.available`, `task.updated` and `message.mentioned` subscriptions are no longer
 accepted: refresh event discovery in ChatGPT and subscribe once to the generic event
@@ -182,7 +182,7 @@ inbox, deduplicate by message ID and advance the cursor only after handling. Sub
 behavior require native platform verification; local protocol tests do not prove them.
 
 Task creation, claim and terminal status may produce system discussion notices. These
-are display-only and never create mention wake-ups; task kinds remain the sole task
+are display-only and never wake any bot; task kinds remain the sole task
 wake channel. Set `ROUNDTABLE_TASK_NOTICES=0` in an explicitly authorized service
 configuration to disable those notices. No running instance is changed by this update.
 

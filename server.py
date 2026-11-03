@@ -276,17 +276,6 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
                 if parts[5] == "peer":
                     if len(parts) >= 7 and parts[6] == "topics":
                         return self.mailbox_dispatch(room, "bot:" + agent, parts[7:], method, body)
-                    if (
-                        len(parts) == 7
-                        and method == "POST"
-                        and parts[6] in ("messages", "mentions")
-                    ):
-                        action = (
-                            store.discussions.post
-                            if parts[6] == "messages"
-                            else store.discussions.inbox
-                        )
-                        return (200, action(room, "bot:" + agent, body))
                     if len(parts) == 7 and parts[6] == "probe" and method == "POST":
                         return (200, store.connections.probe(room, agent, body.get("nonce")))
                     if len(parts) == 7 and parts[6] == "capabilities" and method == "GET":
@@ -340,8 +329,6 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
                         "capabilities": capabilities(getattr(store, "terminal_worker", None)),
                     },
                 )
-            if len(parts) == 4 and parts[3] == "messages" and method == "POST":
-                return (201, store.discussions.post(room, "user", body))
             if len(parts) >= 4 and parts[3] == "tasks":
                 return self.task_dispatch(room, "user", parts[4:], method, body)
             if len(parts) == 3 and method == "GET":

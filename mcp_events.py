@@ -25,7 +25,7 @@ from event_delivery import encode, signed_headers, signing_key
 from mcp.shared.version import SUPPORTED_PROTOCOL_VERSIONS
 
 NOTIFICATION_EVENT = "roundtable.notification"
-NOTIFICATION_KINDS = ["task.assigned", "task.updated", "task.finished", "mention", "message"]
+NOTIFICATION_KINDS = ["task.assigned", "task.updated", "task.finished", "message"]
 
 # One generic event. New notification kinds never require a new subscription;
 # the payload names what changed and the bot reads bodies from its own inbox.

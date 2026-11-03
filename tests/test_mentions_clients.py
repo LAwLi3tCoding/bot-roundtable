@@ -21,10 +21,11 @@ class MentionClients(unittest.IsolatedAsyncioTestCase):
         store = Store()
         room = store.room("Synthetic mentions")
         bot = store.add_agent(room["id"], "reader-bot")
-        message = store.discussions.post(
-            room["id"],
-            "user",
-            {"body": "Question", "mentions": ["reader-bot"], "request_id": "question"},
+        topic = store.mailboxes.create(
+            room["id"], "user", {"members": ["bot:reader-bot"], "title": "Q", "request_id": "t"}
+        )
+        message = store.mailboxes.post(
+            room["id"], "user", topic["id"], {"body": "Question", "request_id": "question"}
         )
         server = make_server(store, secrets.token_urlsafe(32), port=0)
         thread = threading.Thread(target=server.serve_forever)
@@ -56,23 +57,23 @@ class MentionClients(unittest.IsolatedAsyncioTestCase):
             async with stdio_client(params) as (read, write):
                 async with ClientSession(read, write) as session:
                     await session.initialize()
-                    inbox = unpack(await session.call_tool("receive_mentions", {"after": 0}))
+                    inbox = unpack(await session.call_tool("receive_messages", {"after": 0}))
                     self.assertEqual(inbox["messages"][0]["id"], message["id"])
                     payload = {
                         "body": "Answer",
                         "mentions": [],
                         "request_id": "answer",
-                        "reply_to": message["id"],
+                        "topic_id": topic["id"],
                     }
-                    reply = unpack(await session.call_tool("post_discussion_message", payload))
-                    self.assertEqual(reply["reply_to"], message["id"])
-                    self.assertEqual(client.call("message", payload)["id"], reply["id"])
+                    reply = unpack(await session.call_tool("reply_to_topic", payload))
+                    self.assertEqual(reply["topic"], topic["id"])
+                    self.assertEqual(client.call("reply", payload)["id"], reply["id"])
                     self.assertEqual(
-                        client.call("mentions", {"after": inbox["next_cursor"]})["messages"], []
+                        client.call("mailbox", {"after": inbox["next_cursor"]})["messages"], []
                     )
                     store.remove_agent(room["id"], bot["id"])
                     with self.assertRaises(ValueError):
-                        client.call("mentions", {"after": 0})
+                        client.call("mailbox", {"after": 0})
         finally:
             server.shutdown()
             server.server_close()
@@ -101,52 +102,30 @@ class HttpIdentityBoundary(unittest.TestCase):
                     {"Authorization": "Bearer " + token, "Content-Type": "application/json"},
                 )
                 response = conn.getresponse()
-                result = json.loads(response.read())
-                self.assertLess(response.status, 300)
-                return result
+                return response.status, json.loads(response.read())
             finally:
                 conn.close()
 
         try:
-            human = post(
-                f"/api/rooms/{room['id']}/messages",
+            forged = {"actor": "bot:alpha", "source": "bot", "sender": "alpha"}
+            status, topic = post(
+                f"/api/rooms/{room['id']}/topics",
                 room["token"],
-                {
-                    "body": "human",
-                    "request_id": "human",
-                    "mentions": [],
-                    "actor": "bot:alpha",
-                    "source": "bot",
-                    "sender": "alpha",
-                },
+                {"members": ["bot:alpha"], "title": "Synthetic", "request_id": "topic"},
             )
-            self.assertEqual(human["sender"], "user")
-            for bot in ("alpha", "bravo"):
-                self.assertEqual(
-                    len(store.discussions.inbox(room["id"], "bot:" + bot, {})["messages"]), 1
-                )
-            for forged in ("user", "system"):
-                reply = post(
-                    f"/api/rooms/{room['id']}/agents/alpha/peer/messages",
-                    alpha["token"],
-                    {
-                        "body": "bot",
-                        "request_id": forged,
-                        "mentions": [],
-                        "reply_to": human["id"],
-                        "actor": forged,
-                        "source": forged,
-                        "sender": forged,
-                    },
-                )
-                self.assertEqual(reply["sender"], "bot:alpha")
-                for bot in ("alpha", "bravo"):
-                    self.assertEqual(
-                        store.discussions.inbox(room["id"], "bot:" + bot, {"after": human["id"]})[
-                            "messages"
-                        ],
-                        [],
-                    )
+            self.assertEqual(status, 201, topic)
+            user_path = f"/api/rooms/{room['id']}/topics/messages"
+            message = {"topic_id": topic["id"], "body": "human", "request_id": "human"}
+            self.assertEqual(post(user_path, room["token"], {**message, **forged})[0], 400)
+            status, human = post(user_path, room["token"], message)
+            self.assertEqual((status, human["sender"]), (201, "user"))
+            bot_path = f"/api/rooms/{room['id']}/agents/alpha/peer/topics/messages"
+            reply = {"topic_id": topic["id"], "body": "bot", "request_id": "bot", "mentions": []}
+            for value in ("user", "system"):
+                spoofed = {**reply, "actor": value, "source": value, "sender": value}
+                self.assertEqual(post(bot_path, alpha["token"], spoofed)[0], 400)
+            status, sent = post(bot_path, alpha["token"], reply)
+            self.assertEqual((status, sent["sender"]), (201, "bot:alpha"))
         finally:
             server.shutdown()
             server.server_close()
