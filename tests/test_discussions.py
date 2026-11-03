@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import patch
-from roundtable import Store, Problem
+from roundtable import Store
 
 
 class DiscussionsTest(unittest.TestCase):
@@ -21,132 +21,10 @@ class DiscussionsTest(unittest.TestCase):
             self.room, actor, {"body": "synthetic", "request_id": "one", **values}
         )
 
-    def test_human_broadcast_and_bot_plain_no_wake(self):
-        root = self.post()
-        for bot in ("alpha", "bravo"):
-            self.assertEqual(
-                len(self.discussions.inbox(self.room, "bot:" + bot, {})["messages"]), 1
-            )
-        self.post("bot:alpha", reply_to=root["id"])
-        self.assertEqual(len(self.discussions.inbox(self.room, "bot:bravo", {})["messages"]), 1)
-
-    def test_explicit_targets_replay_and_conflict(self):
-        message = self.post(mentions=["alpha"])
-        self.assertEqual(self.post(mentions=["alpha"]), message)
-        self.assertEqual(self.discussions.inbox(self.room, "bot:bravo", {})["messages"], [])
-        with self.assertRaises(Problem):
-            self.post(mentions=["bravo"])
-        with self.assertRaises(Problem):
-            self.post(request_id="other", mentions=["outsider"])
-
-    def test_reply_budget_counts_unmentioned_replies(self):
-        root = self.post(budget=1)
-        self.post("bot:alpha", reply_to=root["id"])
-        with self.assertRaises(Problem):
-            self.post("bot:bravo", reply_to=root["id"])
-
-    def test_budget_range_and_inheritance(self):
-        for value in (0, 21, True, "4"):
-            with self.assertRaises(Problem):
-                self.post(budget=value)
-        root = self.post(budget=2)
-        reply = self.post("bot:alpha", reply_to=root["id"], budget=20)
-        self.assertEqual(int(reply["budget"]), 2)
-        self.post("bot:bravo", reply_to=reply["id"], budget=20)
-        with self.assertRaises(Problem):
-            self.post("bot:alpha", request_id="third", reply_to=root["id"], budget=20)
-
     def allowance(self, bot):
         return self.store.db.execute(
             "SELECT allowance FROM agents WHERE room=? AND id=?", (self.room, bot)
         ).fetchone()[0]
-
-    def test_bot_root_mention_wakes_target_and_spends_allowance(self):
-        root = self.post("bot:alpha", mentions=["bravo"])
-        self.assertEqual(root["depth"], 0)
-        inbox = self.discussions.inbox(self.room, "bot:bravo", {})["messages"]
-        self.assertEqual([m["id"] for m in inbox], [root["id"]])
-        self.assertEqual(self.allowance("alpha"), 19)
-        self.post("bot:alpha", request_id="plain")
-        self.assertEqual(len(self.discussions.inbox(self.room, "bot:bravo", {})["messages"]), 1)
-        self.assertEqual(self.allowance("alpha"), 19)
-
-    def test_bot_root_mention_rejected_without_allowance(self):
-        self.store.grant(self.room, "alpha", 0)
-        with self.assertRaises(Problem) as error:
-            self.post("bot:alpha", mentions=["bravo"])
-        self.assertEqual(error.exception.status, 403)
-        self.assertEqual(self.discussions.inbox(self.room, "bot:bravo", {})["messages"], [])
-        self.assertEqual(self.discussions.listing(self.room), [])
-
-    def test_bot_ping_pong_stops_within_budget(self):
-        message = self.post("bot:alpha", mentions=["bravo"], budget=3)
-        speakers = ["bravo", "alpha"]
-        sent = 1
-        for turn in range(10):
-            bot = speakers[turn % 2]
-            other = speakers[(turn + 1) % 2]
-            try:
-                message = self.post(
-                    "bot:" + bot,
-                    request_id="turn-" + str(turn),
-                    reply_to=message["id"],
-                    mentions=[other],
-                )
-            except Problem as error:
-                self.assertEqual(error.status, 409)
-                break
-            sent += 1
-        else:
-            self.fail("bot ping-pong never stopped")
-        self.assertLessEqual(sent, 3)
-        wakes = self.store.db.execute("SELECT COUNT(*) FROM discussion_mentions").fetchone()[0]
-        self.assertLess(wakes, sent)
-
-    def test_connection_activity_is_epoch_scoped(self):
-        root = self.post()
-        self.post("bot:alpha", reply_to=root["id"])
-        status = {row["id"]: row for row in self.store.connections.status(self.room)}
-        self.assertIsNotNone(status["alpha"]["last_reply"])
-        self.assertIsNone(status["bravo"]["last_reply"])
-        self.assertEqual(status["alpha"]["subscription_state"], "unknown")
-        self.assertNotIn("token", status["alpha"])
-        self.assertNotIn("sender_epoch", self.discussions.listing(self.room)[-1])
-        self.store.db.execute(
-            "UPDATE agents SET token='new-epoch' WHERE room=? AND id='alpha'", (self.room,)
-        )
-        status = {row["id"]: row for row in self.store.connections.status(self.room)}
-        self.assertIsNone(status["alpha"]["last_reply"])
-
-    def test_modes_require_explicit_stop_and_cannot_cross_consume(self):
-        root = self.post(budget=2)
-        with self.assertRaises(Problem):
-            self.store.start(self.room, "run", ["alpha"], 2, "run-one")
-        with self.assertRaises(Problem):
-            self.store.stop_peer(self.room, "alpha")
-        self.assertTrue(self.store.state(self.room)["discussion_active"])
-        self.store.stop(self.room)
-        self.assertFalse(self.store.state(self.room)["discussion_active"])
-        self.assertEqual(self.discussions.inbox(self.room, "bot:alpha", {})["messages"], [])
-        self.assertGreater(
-            self.store.db.execute(
-                "SELECT COUNT(*) FROM discussion_mentions WHERE room=?", (self.room,)
-            ).fetchone()[0],
-            0,
-        )
-        run = self.store.start(self.room, "run", ["alpha"], 2, "run-one")
-        self.assertEqual(run["status"], "running")
-        with self.assertRaises(Problem):
-            self.post(request_id="second-root")
-        self.store.stop(self.room)
-        with self.assertRaises(Problem):
-            self.post("bot:alpha", reply_to=root["id"])
-        self.post(request_id="second-root")
-
-    def test_exhausted_root_allows_mode_switch(self):
-        root = self.post(budget=1)
-        self.post("bot:alpha", reply_to=root["id"])
-        self.store.start(self.room, "run", ["alpha"], 1, "run-one")
 
     def test_notice_structure_progress_bound_and_replay(self):
         task = self.store.handoffs.create(
@@ -187,7 +65,6 @@ class DiscussionsTest(unittest.TestCase):
                 summary="",
             ),
         )
-        self.assertEqual(self.discussions.inbox(self.room, "bot:alpha", {})["messages"], [])
 
     def test_connection_ttl_is_protocol_evidence_only(self):
         before = self.store.connections.status(self.room)[0]
@@ -209,13 +86,23 @@ class DiscussionsTest(unittest.TestCase):
             "bot:alpha",
             {"name": "roundtable.notification", "arguments": {}, "after": None},
         )["cursor"]
-        root = self.post(mentions=["alpha"])
+        topic = self.store.mailboxes.create(
+            self.room,
+            "user",
+            {"members": ["bot:alpha"], "title": "Synthetic", "request_id": "topic"},
+        )["id"]
+        root = self.store.mailboxes.post(
+            self.room,
+            "user",
+            topic,
+            {"body": "Synthetic", "request_id": "msg", "mentions": ["bot:alpha"]},
+        )
         result = feed(
             self.room,
             "bot:alpha",
             {"name": "roundtable.notification", "arguments": {}, "after": cursor},
         )
-        self.assertEqual(result["events"][0]["data"], {"kind": "mention", "id": str(root["id"])})
+        self.assertEqual(result["events"][0]["data"], {"kind": "message", "id": str(root["id"])})
         self.assertEqual(
             feed(
                 self.room,

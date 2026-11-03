@@ -190,7 +190,7 @@ function renderManage() {
 function renderMCP(){void action(refreshConnections,$('mcp-dialog'));const config={mcpServers:{roundtable:{command:'/absolute/path/to/.venv/bin/python',args:['/absolute/path/to/bot-roundtable/mcp_bridge.py'],env:{ROUNDTABLE_URL:location.origin,ROUNDTABLE_ROOM:active?.id||'ROOM_ID',ROUNDTABLE_AGENT:'REGISTERED_BOT_ID',ROUNDTABLE_TOKEN:'ROOM_SCOPED_AGENT_TOKEN'}}}};$('mcp-config').textContent=t('managedCLI')+'\n.venv/bin/python scripts/local_runtime.py client --operation doctor\n.venv/bin/python scripts/local_runtime.py client --operation probe\n\n'+t('manualMCP')+'\n'+JSON.stringify(config,null,2);}
 function showBotForm(leadRoom=null){requireAdmin();leadContext=leadRoom;$('bot-form').reset();$('bot-dialog-title').textContent=t(leadRoom?'createLead':'registerBot');openDialog('bot-dialog');}
 $('language').onchange=()=>{language=$('language').value;storage('localStorage','setItem','roundtable-language',language);translate();};
-$('menu').onclick=()=>{document.querySelector('.app-shell').classList.remove('chat-open'); $('room-search').focus();};
+$('menu').onclick=()=>{document.querySelector('.app-shell').classList.remove('chat-open'); $('mailbox-search').focus();};
 $('room-search').oninput=renderNavigation;
 $('options-open').onclick=()=>openDialog('options-dialog');
 document.querySelectorAll('.close').forEach(button=>button.onclick=()=>button.closest('dialog').close());
@@ -229,14 +229,6 @@ $('body').addEventListener('keydown', event => {
  else if(event.key === 'Enter' || event.key === 'Tab') {event.preventDefault(); chooseMention(mentionIndex);}
  else if(event.key === 'Escape') {event.preventDefault();mentionList.hidden=true;}
 });
-$('compose').onsubmit=event=>{event.preventDefault();action(async()=>{
- const body=$('body').value, room=active?.id;
- const ids = new Set([...body.matchAll(/(?:^|\s)@([a-z][a-z0-9-]{1,39})(?=\s|$|[.,!?])/g)].map(m=>m[1]));
- const mentions=(state?.agents||[]).filter(a=>ids.has(a.id)).map(a=>a.id);
- await api(roomPath('/messages'),roomAuth(),{body,mentions,budget:Number($('budget').value),reply_to:replyTo,request_id:crypto.randomUUID()});
- if(active?.id!==room)return;
- $('body').value='';replyTo=null;mentionList.hidden=true;threadId='';await refresh(true);
-});};
 $('stop').onclick=()=>action(async()=>{await api(roomPath('/stop'),roomAuth(),{});await refresh(true);});
 $('thread-select').onchange=()=>{threadId=$('thread-select').value;renderState();};$('latest').onclick=()=>{threadId='';renderState();$('chat').scrollTop=$('chat').scrollHeight;};
 $('directory').onclick=()=>action(async()=>{requireAdmin();await reloadWorkspace();renderDirectory();openDialog('directory-dialog');});

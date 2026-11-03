@@ -18,7 +18,7 @@ from collections.abc import Callable
 from outbound import canonical_host, proxy_config, OutboundNotSentError, OutboundConfig
 
 
-NOTIFICATION_KINDS = ("task.assigned", "task.updated", "task.finished", "mention")
+NOTIFICATION_KINDS = ("task.assigned", "task.updated", "task.finished", "message")
 FINISHED_STATUSES = ("completed", "failed", "timeout", "cancelled")
 
 
@@ -26,15 +26,15 @@ def notification_body(kind, item_id, status=None):
     """Validate and build the webhook body shared with roundtable.notification.
 
     Rules: kind is one of NOTIFICATION_KINDS. task.* ids are 24 lowercase hex
-    characters; mention ids are positive decimal message ids as strings.
+    characters; message ids are positive decimal mailbox message ids as strings.
     task.finished requires a finished status; task.updated may carry a status;
-    task.assigned and mention carry none. No other keys are ever sent.
+    task.assigned and message carry none. No other keys are ever sent.
     """
     if kind not in NOTIFICATION_KINDS or not isinstance(item_id, str):
         raise ValueError("Invalid notification")
-    if kind == "mention":
+    if kind == "message":
         if not re.fullmatch(r"[1-9][0-9]{0,17}", item_id) or status is not None:
-            raise ValueError("Invalid mention notification")
+            raise ValueError("Invalid message notification")
     elif not re.fullmatch(r"[a-f0-9]{24}", item_id):
         raise ValueError("Invalid task notification")
     if kind == "task.finished" and status not in FINISHED_STATUSES:

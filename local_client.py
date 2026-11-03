@@ -72,12 +72,17 @@ class LocalClient:
             "context": "/tasks/context",
             "retry": "/tasks/retry",
             "cancel": "/tasks/cancel",
-            "mentions": "/mentions",
-            "message": "/messages",
+            "topics": "/topics",
+            "create-topic": "/topics",
+            "topic": "/topics/query",
+            "mailbox": "/topics/inbox",
+            "reply": "/topics/messages",
+            "read-topic": "/topics/read",
+            "stop-topic": "/topics/stop",
         }
         if operation not in routes:
             raise ValueError("Unsupported local operation")
-        method = "GET" if operation in ("capabilities", "tasks", "doctor") else "POST"
+        method = "GET" if operation in ("capabilities", "tasks", "doctor", "topics") else "POST"
         if operation == "probe":
             payload = {"nonce": secrets.token_urlsafe(18)}
         if payload is not None and not isinstance(payload, dict):
@@ -387,8 +392,13 @@ def main():
             "context",
             "retry",
             "cancel",
-            "mentions",
-            "message",
+            "topics",
+            "create-topic",
+            "topic",
+            "mailbox",
+            "reply",
+            "read-topic",
+            "stop-topic",
         ],
     )
     parser.add_argument("task_id", nargs="?")

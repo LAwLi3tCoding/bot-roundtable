@@ -97,11 +97,11 @@ class UISessions:
         # No credential, membership, allowance or registration administration.
         if method == "GET":
             return path in ("/api/rooms", "/api/bots") or bool(
-                re.fullmatch(r"/api/rooms/[a-f0-9]{24}(?:/connections|/tasks)?", path)
+                re.fullmatch(r"/api/rooms/[a-f0-9]{24}(?:/connections|/tasks|/topics)?", path)
             )
         return bool(
             re.fullmatch(
-                r"/api/rooms/[a-f0-9]{24}/(?:tasks(?:/(?:query|context|cancel|retry))?|runs|stop)",
+                r"/api/rooms/[a-f0-9]{24}/(?:tasks(?:/(?:query|context|cancel|retry))?|topics(?:/(?:query|messages|inbox|read|stop))?|runs|stop)",
                 path,
             )
         )

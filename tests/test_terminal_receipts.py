@@ -18,8 +18,8 @@ class TerminalReceiptTests(unittest.TestCase):
             {"kind": "task.finished", "id": "a" * 24, "status": "completed"},
         )
         with patch.object(adapter, "_post") as post:
-            adapter.notify("mention", "42")
-        self.assertEqual(json.loads(post.call_args.args[0]), {"kind": "mention", "id": "42"})
+            adapter.notify("message", "42")
+        self.assertEqual(json.loads(post.call_args.args[0]), {"kind": "message", "id": "42"})
 
     def test_notification_body_validation(self):
         adapter = GrokWebhook("https://approved.example/routine", "test-secret", "approved.example")
@@ -30,11 +30,11 @@ class TerminalReceiptTests(unittest.TestCase):
             ("task.finished", "a" * 24, "running"),
             ("task.finished", "A" * 24, "completed"),
             ("task.assigned", "a" * 24, "queued"),
-            ("mention", "0", None),
-            ("mention", "-1", None),
-            ("mention", "a" * 24, None),
-            ("mention", "1", "completed"),
-            ("mention", 1, None),
+            ("message", "0", None),
+            ("message", "-1", None),
+            ("message", "a" * 24, None),
+            ("message", "1", "completed"),
+            ("message", 1, None),
         ]
         with patch.object(adapter, "_post") as post:
             for kind, item, status in invalid:

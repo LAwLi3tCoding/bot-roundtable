@@ -219,6 +219,26 @@ class RuntimeContracts(unittest.TestCase):
             inbox = runtime.run_client(self.state, config, args)
             self.assertNotIn(token, json.dumps(inbox))
             self.assertEqual(store.db.execute("SELECT origin FROM tasks").fetchone()[0], "bot:grok")
+            args.operation = "cancel"
+            with self.assertRaisesRegex(runtime.Failure, "task_id_required"):
+                runtime.run_client(self.state, config, args)
+            args.task_id, args.reason = created["task_id"], "No longer needed"
+            cancelled = runtime.run_client(self.state, config, args)
+            self.assertEqual(cancelled, {"task_id": created["task_id"], "cancelled": True})
+            self.assertEqual(
+                store.db.execute(
+                    "SELECT status FROM tasks WHERE id=?", (created["task_id"],)
+                ).fetchone()[0],
+                "cancelled",
+            )
+            self.assertEqual(
+                store.db.execute(
+                    "SELECT body FROM task_events WHERE task=? AND kind='cancelled'",
+                    (created["task_id"],),
+                ).fetchone()[0],
+                "No longer needed",
+            )
+            args.task_id, args.reason = None, None
             # Exercise the shared reader through local_client, keeping the pipe open.
             command = [sys.executable, str(ROOT / "local_client.py"), "create"]
             env = dict(

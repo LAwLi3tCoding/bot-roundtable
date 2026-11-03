@@ -9,12 +9,12 @@ class GrokMentions(unittest.TestCase):
         adapter = Mock(spec=GrokWebhook)
         ledger = TerminalReceipts(":memory:")
         try:
-            first = ledger.send_mention("synthetic", 12, adapter)
-            second = ledger.send_mention("synthetic", 12, adapter)
+            first = ledger.send_message("synthetic", 12, adapter)
+            second = ledger.send_message("synthetic", 12, adapter)
             self.assertTrue(first["attempted"])
             self.assertFalse(second["attempted"])
             adapter.notify.assert_called_once()
-            self.assertEqual(adapter.notify.call_args.args, ("mention", "12"))
+            self.assertEqual(adapter.notify.call_args.args, ("message", "12"))
         finally:
             ledger.close()
 
@@ -23,8 +23,8 @@ class GrokMentions(unittest.TestCase):
         adapter.notify.side_effect = TimeoutError()
         ledger = TerminalReceipts(":memory:")
         try:
-            self.assertEqual(ledger.send_mention("synthetic", 13, adapter)["outcome"], "uncertain")
-            self.assertFalse(ledger.send_mention("synthetic", 13, adapter)["attempted"])
+            self.assertEqual(ledger.send_message("synthetic", 13, adapter)["outcome"], "uncertain")
+            self.assertFalse(ledger.send_message("synthetic", 13, adapter)["attempted"])
             adapter.notify.assert_called_once()
         finally:
             ledger.close()

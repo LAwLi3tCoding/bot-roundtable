@@ -125,6 +125,8 @@ def main():
             page.locator("#admin").fill(admin)
             page.locator("#access-form button[type=submit]").click()
             expect(page.locator("#access-dialog")).not_to_be_visible()
+            page.locator("#mailbox-settings").evaluate("e => e.open = true")
+            page.locator(".workspace-picker").evaluate("e => e.open = true")
             page.locator(".room-nav").filter(has_text=room["name"]).click()
             page.locator("#task-view").click()
 
@@ -167,18 +169,18 @@ def main():
             refresh()
             page.locator(f'[data-task-id="{tid}"]').click()
             expect(page.locator("#task-header")).to_contain_text(tid)
+            # Task audit remains in the task view; private topics never receive task notices.
             page.locator("#discussion-view").click()
-            expect(
-                page.locator(".message-content").get_by_role("button", name="Open task").first
-            ).to_be_visible()
-            expect(page.locator(".message-body").first).to_contain_text("delegated")
+            expect(page.locator("#handoffs-view")).not_to_be_visible()
+            expect(page.locator(".message-content")).to_have_count(0)
+            if not page.locator("#mailbox-settings").evaluate("e => e.open"):
+                page.locator("#mailbox-settings > summary").click()
             page.locator("#language").select_option("zh")
-            expect(page.locator(".message-body").first).to_contain_text("委派了任务")
-            assert "MCP" not in page.locator(".message-meta").first.inner_text()
-            assert "system" not in page.locator(".message-meta").first.inner_text()
-            page.locator("#language").select_option("en")
-            page.locator(".message-content").get_by_role("button", name="Open task").first.click()
+            page.locator("#task-view").click()
             expect(page.locator("#task-header")).to_contain_text(tid)
+            if not page.locator("#mailbox-settings").evaluate("e => e.open"):
+                page.locator("#mailbox-settings > summary").click()
+            page.locator("#language").select_option("en")
             inbox = [clients.call(a, "receive_assignments")[0] for a in ids[1:]]
             assert inbox[0]["instruction"] != inbox[1]["instruction"]
             claims = [
@@ -288,9 +290,12 @@ def main():
             page.locator("#cancel-task").click()
             expect(page.locator("#task-header")).to_contain_text("Cancelled", timeout=10000)
             assert call("get_task", task_id=second)["task"]["status"] == "cancelled"
+            page.locator("#mailbox-settings").evaluate("e => e.open = true")
+            page.locator(".workspace-picker").evaluate("e => e.open = true")
             page.locator(".room-nav").filter(has_text=other["name"]).click()
             expect(page.locator(f'[data-task-id="{tid}"]')).to_have_count(0)
             expect(page.locator("#task-thread")).not_to_be_visible()
+            page.locator("#task-view").click()
             page.locator("#new-task").click()
             expect(page.locator("#task-workers input:checked")).to_have_count(0)
             expect(page.locator("#create-task")).to_be_disabled()
@@ -325,10 +330,14 @@ def main():
             page.unroute("**/tasks/context")
             page.locator("#task-note").fill("")
             page.evaluate("document.getElementById('error').textContent = ''")
+            if not page.locator("#mailbox-settings").evaluate("e => e.open"):
+                page.locator("#mailbox-settings > summary").click()
             page.locator("#language").select_option("zh")
             expect(page.locator("html")).to_have_attribute("lang", "zh-CN")
             page.locator("#task-header").scroll_into_view_if_needed()
             page.screenshot(path=str(artifacts / "desktop-zh.png"))
+            if not page.locator("#mailbox-settings").evaluate("e => e.open"):
+                page.locator("#mailbox-settings > summary").click()
             page.locator("#language").select_option("en")
             page.screenshot(path=str(artifacts / "desktop-en.png"))
             assert not errors, errors
@@ -370,6 +379,8 @@ def main():
                 demo.goto(f"http://127.0.0.1:{server.server_port}")
                 # Ephemeral test auth stays in memory; never render a credential input in this video.
                 demo.evaluate("(token) => { adminToken = token; return reloadWorkspace(); }", admin)
+                demo.locator("#mailbox-settings").evaluate("e => e.open = true")
+                demo.locator(".workspace-picker").evaluate("e => e.open = true")
                 demo.locator(".room-nav").filter(has_text=room["name"]).click()
                 demo.locator("#task-view").click()
                 demo_id = create("DEMO · Native entry → two bot handoffs")
@@ -429,14 +440,20 @@ def main():
                 demo.locator("#task-header").scroll_into_view_if_needed()
                 hold(2200)
                 demo.screenshot(path=str(artifacts / "native-completed-en.png"))
+                if not demo.locator("#mailbox-settings").evaluate("e => e.open"):
+                    demo.locator("#mailbox-settings > summary").click()
                 demo.locator("#language").select_option("zh")
                 demo.screenshot(path=str(artifacts / "native-completed-zh.png"))
                 demo.locator(f'[data-assignment-id="{items[0]["id"]}"]').click()
                 demo.locator("#task-note").scroll_into_view_if_needed()
                 demo.screenshot(path=str(artifacts / "native-result-zh.png"))
+                if not demo.locator("#mailbox-settings").evaluate("e => e.open"):
+                    demo.locator("#mailbox-settings > summary").click()
                 demo.locator("#language").select_option("en")
                 demo.locator("#task-note").scroll_into_view_if_needed()
                 demo.screenshot(path=str(artifacts / "native-result-en.png"))
+                if not demo.locator("#mailbox-settings").evaluate("e => e.open"):
+                    demo.locator("#mailbox-settings > summary").click()
                 demo.locator("#language").select_option("zh")
                 hold(2000)
                 cancel_id = create("DEMO · Stop pending handoffs")

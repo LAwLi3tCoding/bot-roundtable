@@ -947,10 +947,25 @@ def run_client(state, config, args):
         config["origin"],
         member["ROUNDTABLE_TOKEN"],
     )
-    if args.operation in ("create", "mentions", "message"):
+    if args.operation in (
+        "create",
+        "create-topic",
+        "topic",
+        "mailbox",
+        "reply",
+        "read-topic",
+        "stop-topic",
+    ):
         result = client.call(args.operation, read_json_stdin())
     elif args.operation == "roundtrip":
         result = client.roundtrip(config["worker"], str(state / "roundtrip.json"), args.timeout)
+    elif args.operation == "cancel":
+        if not args.task_id:
+            raise Failure("client_task_id_required")
+        cancel_payload = {"task_id": args.task_id, "request_id": "cancel-" + secrets.token_hex(16)}
+        if getattr(args, "reason", None):
+            cancel_payload["reason"] = args.reason
+        result = client.call("cancel", cancel_payload)
     elif args.operation == "wait":
         result = client.wait(args.task_id or "", args.timeout)
     else:
@@ -1209,13 +1224,20 @@ def main():
             "create",
             "tasks",
             "inbox",
-            "mentions",
-            "message",
+            "cancel",
+            "topics",
+            "create-topic",
+            "topic",
+            "mailbox",
+            "reply",
+            "read-topic",
+            "stop-topic",
         ],
     )
     parser.add_argument("--task-id")
     parser.add_argument("--timeout", type=float, default=600)
     parser.add_argument("--body")
+    parser.add_argument("--reason", help="Optional cancel reason (cancel only)")
     parser.add_argument("--keyring", action="store_true")
     args = parser.parse_args()
     try:

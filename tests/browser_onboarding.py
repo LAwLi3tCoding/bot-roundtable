@@ -46,7 +46,8 @@ def main():
             expect(page.locator("#remember-access")).not_to_be_checked()
             page.locator("#admin").fill(token)
             page.locator("#access-form button[type=submit]").click()
-            expect(page.locator("#room-title")).to_have_text("Synthetic task room")
+            expect(page.locator("#room-subtitle")).to_contain_text("Synthetic task room")
+            page.locator("#task-view").click()
             expect(page.locator("#handoffs-view")).to_be_visible()
             assert page.evaluate("sessionStorage.getItem('roundtable-access-v1') === null")
             assert page.evaluate("localStorage.getItem('roundtable-access-v1') === null")
@@ -55,8 +56,8 @@ def main():
             page.locator("#access").click()
             page.locator("#admin").fill(token)
             page.locator("#access-form button[type=submit]").click()
-            expect(page.locator("#room-title")).to_have_text("Synthetic task room")
-            page.locator("#discussion-view").click()
+            expect(page.locator("#room-subtitle")).to_contain_text("Synthetic task room")
+            page.locator("#mailbox-all").click()
             expect(page.locator("#handoffs-view")).not_to_be_visible()
             page.locator("#access").click()
             expect(page.locator("#remember-access")).to_be_disabled()
@@ -77,7 +78,7 @@ def main():
             page.locator("#room").fill(room["id"])
             page.locator("#token").fill(room["token"])
             page.locator("#room-connect").click()
-            expect(page.locator("#room-title")).to_have_text("Synthetic task room")
+            expect(page.locator("#room-subtitle")).to_contain_text("Synthetic task room")
             page.reload()
             expect(page.locator("#access")).to_have_text("Connect")
             checks += 1
@@ -99,7 +100,7 @@ def main():
             view.locator("#access").click()
             view.locator("#admin").fill(token)
             view.locator("#access-form button[type=submit]").click()
-            expect(view.locator("#room-title")).to_have_text("Synthetic task room")
+            expect(view.locator("#room-subtitle")).to_contain_text("Synthetic task room")
             blocked.close()
             checks += 1
             # Even another loopback hostname never persists access tokens.
@@ -110,7 +111,7 @@ def main():
             expect(host_page.locator("#remember-access")).to_be_disabled()
             host_page.locator("#admin").fill(token)
             host_page.locator("#access-form button[type=submit]").click()
-            expect(host_page.locator("#room-title")).to_have_text("Synthetic task room")
+            expect(host_page.locator("#room-subtitle")).to_contain_text("Synthetic task room")
             assert host_page.evaluate(
                 "localStorage.getItem('roundtable-access-v1') === null && sessionStorage.getItem('roundtable-access-v1') === null"
             )

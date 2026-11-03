@@ -59,9 +59,6 @@ class NoticeSecurityReview(unittest.TestCase):
         self.assertNotIn(claim["lease"], json.dumps(notices))
         self.assertNotIn("Safe progress", json.dumps(notices))
         self.assertTrue(all(row["body"] == "" for row in notices))
-        self.assertEqual(
-            self.store.db.execute("SELECT COUNT(*) FROM discussion_mentions").fetchone()[0], 0
-        )
 
     def test_activity_expires_and_new_epoch_is_unknown(self):
         with patch("connections.time.time", return_value=1000):

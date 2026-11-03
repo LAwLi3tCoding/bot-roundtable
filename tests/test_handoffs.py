@@ -82,15 +82,19 @@ class HandoffTests(unittest.TestCase):
         self.assertEqual({row["sender"] for row in notices}, {"system"})
         for kind in ("delegated", "claimed", "completed"):
             self.assertTrue(any(row["notice"]["kind"] == kind for row in notices))
-        self.assertEqual(
-            self.store.discussions.inbox(self.rid, "bot:worker-one", {})["messages"], []
-        )
         events = self.h.event_feed(
             self.rid,
             "bot:worker-one",
             {"name": "roundtable.notification", "arguments": {}, "after": cursor},
         )["events"]
-        self.assertFalse([e for e in events if e["data"]["kind"] == "mention"])
+        self.assertFalse(
+            [
+                e
+                for e in events
+                if e["data"]["kind"]
+                not in ("task.assigned", "task.updated", "task.finished", "message")
+            ]
+        )
 
     def test_generic_notification_kinds_and_payloads(self):
         def feed(actor, after):
@@ -116,15 +120,21 @@ class HandoffTests(unittest.TestCase):
         )
         self.assertTrue(all(set(e) <= {"kind", "id", "status"} for e in origin))
         self.assertNotIn("Synthetic", repr(origin))
-        mention = self.store.discussions.post(
+        topic = self.store.mailboxes.create(
             self.rid,
             "user",
-            {"body": "Synthetic mention", "mentions": ["origin"], "request_id": "m1"},
+            {"members": ["bot:origin"], "title": "Synthetic", "request_id": "topic"},
+        )["id"]
+        mention = self.store.mailboxes.post(
+            self.rid,
+            "user",
+            topic,
+            {"body": "Synthetic mention", "mentions": ["bot:origin"], "request_id": "m1"},
         )
         cursor = feed(self.actor, origin_cursor)["cursor"]
         self.assertEqual(feed(self.actor, cursor)["events"], [])
         page = feed(self.actor, origin_cursor)["events"]
-        self.assertEqual(page[-1]["data"], {"kind": "mention", "id": str(mention["id"])})
+        self.assertEqual(page[-1]["data"], {"kind": "message", "id": str(mention["id"])})
         for name, arguments in (
             ("handoff.available", {}),
             ("message.mentioned", {}),

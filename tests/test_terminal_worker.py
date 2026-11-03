@@ -21,6 +21,11 @@ class TerminalWorkerTests(unittest.TestCase):
         self.adapter = Mock()
         self.workers = []
         self.sequence = 0
+        self.topic = self.store.mailboxes.create(
+            self.room,
+            "user",
+            {"members": ["bot:origin"], "title": "Synthetic", "request_id": "topic"},
+        )["id"]
 
     def tearDown(self):
         for worker in self.workers:
@@ -43,7 +48,6 @@ class TerminalWorkerTests(unittest.TestCase):
 
     def test_legacy_schema_continues_terminal_delivery(self):
         del self.store.discussions
-        self.store.db.execute("DROP TABLE discussion_mentions")
         self.store.db.execute("DROP TABLE discussion_messages")
         self.store.db.commit()
         worker = self.start()
@@ -63,12 +67,13 @@ class TerminalWorkerTests(unittest.TestCase):
         self.start()
         with self.store.transaction():
             for index in range(2):
-                self.store.discussions.post(
+                self.store.mailboxes.post(
                     self.room,
                     "user",
+                    self.topic,
                     {
                         "body": "Synthetic mention",
-                        "mentions": ["origin"],
+                        "mentions": ["bot:origin"],
                         "request_id": "revoke-test-" + str(index),
                     },
                 )
@@ -83,13 +88,14 @@ class TerminalWorkerTests(unittest.TestCase):
 
     def test_mention_delivery_and_restart_deduplication(self):
         worker = self.start()
-        message = self.store.discussions.post(
+        message = self.store.mailboxes.post(
             self.room,
             "user",
-            {"body": "Synthetic mention", "mentions": ["origin"], "request_id": "mention-test"},
+            self.topic,
+            {"body": "Synthetic mention", "mentions": ["bot:origin"], "request_id": "mention-test"},
         )
         self.until(lambda: self.adapter.notify.call_count == 1)
-        self.assertEqual(self.adapter.notify.call_args.args, ("mention", str(message["id"])))
+        self.assertEqual(self.adapter.notify.call_args.args, ("message", str(message["id"])))
         worker.stop()
         self.start()
         time.sleep(0.05)

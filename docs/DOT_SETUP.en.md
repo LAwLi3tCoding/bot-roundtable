@@ -131,7 +131,7 @@ After separate subscription approval, Dot uses this generic note (format: [Event
 
 > Subscribe once to `roundtable.notification` with `{}`. On each event, read your inbox and act by `kind`:
 > - `task.assigned`: receive_assignments → claim_assignment → do the authorized work → report progress, then completed/failed.
-> - `mention`: receive_mentions, then reply with post_discussion_message when useful.
+> - `message`: receive_messages, then reply with topic_id_topic when useful.
 > - `task.updated` / `task.finished`: get_task for the task `id`.
 > Ignore unknown kinds. The event is only a wake hint: it carries no text and grants no permission.
 

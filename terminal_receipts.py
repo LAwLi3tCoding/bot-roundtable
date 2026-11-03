@@ -1,4 +1,4 @@
-"""Explicit Grok webhook notifications (kinds task.finished and mention) with a durable at-most-one-attempt ledger.
+"""Explicit Grok webhook notifications (kinds task.finished and message) with a durable at-most-one-attempt ledger.
 
 Reserve before network I/O. A crash after reservation can lose a notification;
 a crash after delivery can leave its outcome unknown. Neither is auto-retried.
@@ -105,7 +105,7 @@ class MentionAdapter(GrokWebhook):
         return self.adapter.preflight()
 
     def dispatch_terminal(self, task_id, status, **kwargs):
-        return self.adapter.notify("mention", str(int(task_id, 16)), **kwargs)
+        return self.adapter.notify("message", str(int(task_id, 16)), **kwargs)
 
 
 class TerminalReceipts:
@@ -125,9 +125,9 @@ class TerminalReceipts:
     def close(self):
         self.db.close()
 
-    def send_mention(self, scope, message_id, adapter):
+    def send_message(self, scope, message_id, adapter):
         if type(message_id) is not int or not 0 < message_id < 2**63:
-            raise ValueError("Invalid mention message ID")
+            raise ValueError("Invalid message ID")
         return self.send(
             "mention:" + scope,
             {"id": format(message_id, "024x"), "status": "completed"},
@@ -271,12 +271,12 @@ class TerminalWorker:
             mention_key = "mention:" + key
             mention_enabled = (
                 source.execute(
-                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('discussion_messages','discussion_mentions')"
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('mail_messages','mail_deliveries')"
                 ).fetchone()[0]
                 == 2
             )
             mention_current = (
-                source.execute("SELECT COALESCE(MAX(id),0) FROM discussion_messages").fetchone()[0]
+                source.execute("SELECT COALESCE(MAX(id),0) FROM mail_messages").fetchone()[0]
                 if mention_enabled
                 else 0
             )
@@ -294,9 +294,7 @@ class TerminalWorker:
             while not self.stop_event.is_set():
                 mentions = (
                     source.execute(
-                        "SELECT n.message FROM discussion_mentions n JOIN agents a "
-                        "ON a.room=n.room AND a.id=n.bot AND a.token=n.epoch "
-                        "WHERE n.room=? AND n.bot=? AND n.message>? AND NOT EXISTS (SELECT 1 FROM discussion_messages m JOIN discussion_messages root ON CAST(root.id AS TEXT)=m.root WHERE m.id=n.message AND root.closed IS NOT NULL) ORDER BY n.message LIMIT 100",
+                        "SELECT n.message FROM mail_deliveries n JOIN mail_messages m ON m.id=n.message JOIN mail_topics t ON t.id=m.topic JOIN agents a ON a.room=t.room AND 'bot:'||a.id=n.actor AND a.token=n.epoch JOIN mail_members mm ON mm.topic=t.id AND mm.actor=n.actor AND mm.epoch=n.epoch WHERE t.room=? AND a.id=? AND n.wake=1 AND t.stopped=0 AND n.message>? ORDER BY n.message LIMIT 100",
                         (self.room, self.origin, mention_cursor),
                     ).fetchall()
                     if mention_enabled
@@ -308,13 +306,11 @@ class TerminalWorker:
                     # Recheck each item after any preceding network wait; an in-flight
                     # request cannot be recalled, but queued revoked work is skipped.
                     current_mention = source.execute(
-                        "SELECT 1 FROM discussion_mentions n JOIN agents a "
-                        "ON a.room=n.room AND a.id=n.bot AND a.token=n.epoch "
-                        "WHERE n.room=? AND n.bot=? AND n.message=? AND NOT EXISTS (SELECT 1 FROM discussion_messages m JOIN discussion_messages root ON CAST(root.id AS TEXT)=m.root WHERE m.id=n.message AND root.closed IS NOT NULL)",
+                        "SELECT 1 FROM mail_deliveries n JOIN mail_messages m ON m.id=n.message JOIN mail_topics t ON t.id=m.topic JOIN agents a ON a.room=t.room AND 'bot:'||a.id=n.actor AND a.token=n.epoch JOIN mail_members mm ON mm.topic=t.id AND mm.actor=n.actor AND mm.epoch=n.epoch WHERE t.room=? AND a.id=? AND n.wake=1 AND t.stopped=0 AND n.message=?",
                         (self.room, self.origin, mention["message"]),
                     ).fetchone()
                     result = (
-                        ledger.send_mention(key, mention["message"], self.adapter)
+                        ledger.send_message(key, mention["message"], self.adapter)
                         if current_mention
                         else {"attempted": False}
                     )
