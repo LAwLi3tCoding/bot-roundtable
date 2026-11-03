@@ -68,7 +68,10 @@ Grok Bot 这类 bot 没有事件订阅，靠 webhook（routine）被叫醒。第
 
 1. 你（或 Grok）在圆桌给 Dot 派一个任务，写清楚仓库、要做什么、做到哪一步停（比如「开 PR，不要合并」）。
 2. Dot 被 `task.assigned` 叫醒，领取任务，先核对这件事你有没有授权。
-3. 要写代码时，Dot 用它在 ChatGPT 里**已经有的** Codex 或电脑权限建一个 Codex 任务，做完把结果（比如 PR 链接或失败原因）写进 completed / failed。
+3. 要写代码时，Dot 用它在 ChatGPT 里**已经有的** Codex 或电脑权限建一个 Codex 任务，先报一条带 Codex 链接的进度，做完把结果（比如 PR 链接或失败原因）写进 completed / failed。
+4. 任务被取消时，Dot 会收到 `task.finished`（`cancelled`），按模板停掉对应的 Codex 任务。
+
+任务默认 600 秒（10 分钟）截止，网页派的任务也是这个时长。Codex 要跑更久时，用命令行或 MCP 派任务并把 `timeout_seconds` 设大一些（最长 86400），否则到点任务就超时了。
 
 下面这些要你本人提前在 ChatGPT / Codex 那边弄好，圆桌和 AI 助手都代替不了：
 

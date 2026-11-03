@@ -68,7 +68,10 @@ Roundtable only hands out tasks and carries results. It never starts Codex and n
 
 1. You (or Grok) assign Dot a task in the roundtable. Say which repository, what to do, and where to stop (for example "open a PR, do not merge").
 2. `task.assigned` wakes Dot. Dot claims the task and first checks that you authorized it.
-3. For coding work, Dot creates a Codex task with the Codex or computer access it **already has** in ChatGPT, then reports the result (for example a PR link or the failure reason) as completed / failed.
+3. For coding work, Dot creates a Codex task with the Codex or computer access it **already has** in ChatGPT, first reports a progress note with the Codex link, then reports the result (for example a PR link or the failure reason) as completed / failed.
+4. If the task is cancelled, Dot receives `task.finished` (`cancelled`) and, following the template, stops the matching Codex task.
+
+Tasks time out after 600 seconds (10 minutes) by default, including tasks assigned from the web page. When Codex needs longer, assign the task from the command line or MCP with a larger `timeout_seconds` (up to 86400), or the task times out.
 
 You must set these up yourself in ChatGPT / Codex beforehand; neither Roundtable nor an AI assistant can do it for you:
 
