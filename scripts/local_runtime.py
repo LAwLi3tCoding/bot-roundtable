@@ -452,7 +452,7 @@ def command(state, config, component):
     return cmd
 
 
-def process_stamp(pid):
+def legacy_process_stamp(pid):
     result = subprocess.run(
         ["ps", "-ww", "-p", str(pid), "-o", "lstart=", "-o", "command="],
         capture_output=True,
@@ -464,6 +464,56 @@ def process_stamp(pid):
     )
 
 
+def process_stamp(pid):
+    if sys.platform != "linux":
+        return legacy_process_stamp(pid)
+    if type(pid) is not int or pid <= 0:
+        raise Failure("invalid_process_id")
+    proc = Path("/proc") / str(pid)
+
+    def identity():
+        # comm may contain spaces and parentheses; fields after its final ')' are fixed.
+        fields = (proc / "stat").read_text().rsplit(")", 1)[1].split()
+        return fields[0], fields[19]
+
+    try:
+        boot = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+    except OSError:
+        raise Failure("process_identity_unavailable") from None
+    for attempt in range(3):
+        try:
+            before = identity()
+            argv = (proc / "cmdline").read_bytes().split(b"\0")
+            after = identity()
+        except (FileNotFoundError, ProcessLookupError):
+            return ""
+        except (OSError, IndexError, ValueError):
+            raise Failure("process_identity_unavailable") from None
+        if after[0] in ("Z", "X", "x"):
+            return ""
+        if before[1] != after[1] or not boot:
+            raise Failure("process_identity_uncertain")
+        if argv and argv[0]:
+            if argv[-1] == b"":
+                argv.pop()
+            return "linux:" + json.dumps([boot, after[1], [os.fsdecode(arg) for arg in argv]])
+        # Linux can clear argv during exit before exposing zombie state. Recheck;
+        # an empty command alone is never evidence that a process is gone.
+        if attempt < 2:
+            time.sleep(0.01)
+    raise Failure("process_identity_uncertain")
+
+
+def stamp_matches_command(stamp, expected, interpreter=False):
+    if stamp.startswith("linux:"):
+        try:
+            argv = json.loads(stamp[6:])[2]
+            return (argv[1:] if interpreter else argv) == expected
+        except (ValueError, IndexError, TypeError):
+            return False
+    return " ".join(expected) in stamp
+
+
 def owned(state, config, component):
     path = state / (component + ".pid.json")
     if not path.exists():
@@ -472,12 +522,28 @@ def owned(state, config, component):
     stamp = process_stamp(record["pid"])
     if not stamp:
         return None
+    recorded = record["stamp"]
+    # Old running instances keep their strict display-stamp check until their next start.
+    comparison = (
+        legacy_process_stamp(record["pid"])
+        if (sys.platform == "linux" and not recorded.startswith("linux:"))
+        else stamp
+    )
+    expected = [
+        str(Path(__file__).resolve()),
+        "_serve",
+        "--state-dir",
+        str(state),
+        "--component",
+        component,
+        "--identity",
+        config["identity"],
+    ]
     if (
-        stamp != record["stamp"]
+        comparison != recorded
         or record["identity"] != config["identity"]
         or record["component"] != component
-        or f"{Path(__file__).resolve()} _serve --state-dir {state} --component {component} --identity {config['identity']}"
-        not in stamp
+        or not stamp_matches_command(stamp, expected, interpreter=True)
     ):
         raise Failure("pid_ownership_mismatch")
     return record["pid"]
@@ -694,7 +760,7 @@ def ready(state, config, component):
             return (
                 info.get("identity") == config["identity"]
                 and info.get("command") == expected
-                and " ".join(expected) in process_stamp(info["pid"])
+                and stamp_matches_command(process_stamp(info["pid"]), expected)
             )
         if component == "server":
             member = env_read(state / (config["worker"] + ".env"))
