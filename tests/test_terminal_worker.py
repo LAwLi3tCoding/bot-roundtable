@@ -86,6 +86,34 @@ class TerminalWorkerTests(unittest.TestCase):
         time.sleep(0.1)
         self.assertEqual(self.adapter.notify.call_count, 1)
 
+    def test_mentions_recheck_disabled_bot_after_blocked_delivery(self):
+        self.store.register_bot("origin", "Origin", "mailbox")
+        entered, release = threading.Event(), threading.Event()
+
+        def deliver(*args, **kwargs):
+            entered.set()
+            release.wait(2)
+
+        self.adapter.notify.side_effect = deliver
+        self.start()
+        with self.store.transaction():
+            for index in range(2):
+                self.store.mailboxes.post(
+                    self.room,
+                    "user",
+                    self.topic,
+                    {
+                        "body": "Synthetic mention",
+                        "mentions": ["bot:origin"],
+                        "request_id": "revoke-test-" + str(index),
+                    },
+                )
+        self.assertTrue(entered.wait(2))
+        self.store.manage_bot(self.room, "disable", {}, "origin")
+        release.set()
+        time.sleep(0.1)
+        self.assertEqual(self.adapter.notify.call_count, 1)
+
     def test_mention_delivery_and_restart_deduplication(self):
         worker = self.start()
         message = self.store.mailboxes.post(

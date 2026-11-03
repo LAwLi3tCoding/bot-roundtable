@@ -5,6 +5,7 @@ import hmac
 import json
 import logging
 import os
+import re
 import threading
 from http.cookies import SimpleCookie, CookieError
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -93,6 +94,7 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
                     "/i18n.js",
                     "/style.css",
                     "/handoffs.js",
+                    "/bot-management.js",
                     "/mailbox.js",
                     "/mailbox.css",
                 ):
@@ -101,17 +103,25 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
                         "/app.js": ("app.js", "text/javascript; charset=utf-8"),
                         "/mailbox.js": ("mailbox.js", "text/javascript; charset=utf-8"),
                         "/mailbox.css": ("mailbox.css", "text/css; charset=utf-8"),
+                        "/bot-management.js": (
+                            "bot-management.js",
+                            "text/javascript; charset=utf-8",
+                        ),
                         "/handoffs.js": ("handoffs.js", "text/javascript; charset=utf-8"),
                         "/i18n.js": ("i18n.js", "text/javascript; charset=utf-8"),
                         "/style.css": ("style.css", "text/css; charset=utf-8"),
                     }[path]
                     return self.respond(200, (STATIC / file).read_bytes(), mime)
+                cookie_authenticated = False
                 token = self.headers.get("Authorization", "").removeprefix("Bearer ")
                 if not token:
                     cookies = SimpleCookie()
                     cookies.load(self.headers.get("Cookie", ""))
                     if "roundtable_ui" in cookies:
                         token = cookies["roundtable_ui"].value
+                        cookie_authenticated = not self.headers.get(
+                            "Authorization"
+                        ) and sessions.valid_cookie(token)
                         if not sessions.valid(token) and path not in (
                             "/api/ui-login/exchange",
                             "/api/ui-login/revoke",
@@ -152,7 +162,9 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
                             raise Problem(403, "Admin credential required")
                         return self.respond(201, sessions.issue())
                     if path == "/api/ui-login/exchange":
-                        granted = sessions.exchange(body.get("code"))
+                        granted = sessions.exchange(
+                            body.get("code"), cookie=body.get("cookie") is True
+                        )
                         if body.get("cookie") is True:
                             secret = granted.pop("session_token")
                             return self.respond(
@@ -182,7 +194,13 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
                             cookie="roundtable_ui=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0",
                         )
                     raise Problem(404, "Not found")
+                management = re.fullmatch(
+                    r"/api/rooms/([a-f0-9]{24})/bot-management(?:/([a-z][a-z0-9-]{1,39})/(update|disable|restore|delete))?",
+                    path,
+                )
                 temporary_session = sessions.valid(token)
+                if management and not (cookie_authenticated and temporary_session):
+                    raise Problem(403, "Open the roundtable locally to manage bots")
                 if temporary_session:
                     if any(
                         self.headers.get(h)
@@ -201,21 +219,42 @@ def make_server(store, admin, host="127.0.0.1", port=8765):
                         cast(ThreadingHTTPServer, self.server).server_port,
                         exchange=method == "POST",
                     )
-                    if not sessions.permitted(method, path):
+                    if not management and not sessions.permitted(method, path):
                         raise Problem(403, "UI session cannot administer credentials or membership")
                     token = admin  # Restricted route already checked; never returned to browser.
                 # Authenticate and execute under one store lock, so a revoked
                 # membership cannot act with a previously validated token.
                 # Parse input and write responses outside this critical section.
                 with store.lock:
-                    if temporary_session and path.endswith("/settings"):
-                        current = store.db.execute(
-                            "SELECT lead FROM rooms WHERE id=?", (path.split("/")[3],)
-                        ).fetchone()
-                        if current is None:
-                            raise Problem(404, "Room not found")
-                        body = body | {"lead": current["lead"]}
-                    status, result = self.dispatch(method, path, token, body)
+                    if management:
+                        room, aid, operation = management.groups()
+                        if method == "GET" and aid is None:
+                            status, result = (
+                                200,
+                                {
+                                    "bots": store.managed_bots(room),
+                                    "avatars": ["sage", "sand", "rose", "blue", "slate"],
+                                    "wake_methods": ["grok-routine", "mcp-events", "poll"],
+                                },
+                            )
+                        elif method == "POST":
+                            status, result = (
+                                (200 if aid else 201),
+                                store.manage_bot(room, operation or "create", body, aid),
+                            )
+                        else:
+                            raise Problem(405, "POST required")
+                    else:
+                        if temporary_session and path.endswith("/settings"):
+                            current = store.db.execute(
+                                "SELECT lead FROM rooms WHERE id=?", (path.split("/")[3],)
+                            ).fetchone()
+                            if current is None:
+                                raise Problem(404, "Room not found")
+                            body = body | {"lead": current["lead"]}
+                        status, result = self.dispatch(method, path, token, body)
+                        if method == "GET" and re.fullmatch(r"/api/rooms/[a-f0-9]{24}", path):
+                            result["can_manage_bots"] = cookie_authenticated and temporary_session
                 return self.respond(status, result)
             except Problem as exc:
                 self.respond(exc.status, {"error": str(exc)})

@@ -160,7 +160,7 @@ python scripts/local_runtime.py up
 printf '{}\n' | python scripts/local_runtime.py client --bot helper --operation mailbox
 ```
 
-Dot 类 Bot 使用 `--kind dot --wake mcp-events`，其他 Bot 可使用 `--kind other-bot --wake poll`。事件方式需要各 Bot 使用自己的凭据连接和订阅；轮询方式需要 Bot 定期读取自己的信箱。网页提供添加命令，浏览器会话不会签发 Bot 凭据。
+Dot 类 Bot 使用 `--kind dot --wake mcp-events`，其他 Bot 可使用 `--kind other-bot --wake poll`。事件方式需要各 Bot 使用自己的凭据连接和订阅；轮询方式需要 Bot 定期读取自己的信箱。从本机「打开圆桌」的 Cookie 会话可在网页增删改 Bot。新令牌只显示一次；随后运行 `python scripts/local_runtime.py connect-bot --bot helper`，通过隐藏提示保存到本机实例。修改唤醒方式后也运行此命令同步配置，再由你安排重启。远程和令牌连接不能使用网页管理接口。
 
 旧实例的 `origin` / `worker` 自动识别为两个 Bot，不需要手工迁移；旧 `routine.json` 仍用于原来的 Bot，新 `routine-<id>.json` 优先。配置保留兼容字段并记录 `bots` 列表；`client` 未指定 `--bot` 时仍使用原来的默认 Bot。
 
