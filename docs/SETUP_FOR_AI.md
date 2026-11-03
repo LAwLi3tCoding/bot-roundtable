@@ -48,6 +48,14 @@ Ask the person which bot starts work (origin) and which takes it (worker). The u
 
 Pass: JSON with `"ok": true`. Running it again prints `"already_configured": true`; that is fine and changes nothing.
 
+Then install the short client command that webhook bots use (Step 7). It writes `~/.local/bin/roundtable-client` with this checkout's `.venv` and the instance folder built in; rerunning it overwrites and updates it. Pass the same `--state-dir` / `--name` you used for setup, if any; `--output` picks another location. It refuses to overwrite a file it did not generate.
+
+```sh
+.venv/bin/python scripts/local_runtime.py install-client
+```
+
+Pass: JSON with `"ok": true` and the `client` path. If `~/.local/bin` is not on the person's `PATH`, say so; the README template already falls back to the full path.
+
 ## Step 4. Start locally and check
 
 ```sh
@@ -113,19 +121,19 @@ Pass: `doctor` shows `valid_subscriptions` of at least 1 and an `earliest_refres
 1. **Person only: create the routine.** In the bot's own app, the person asks the bot to create a webhook-triggered routine and pastes the "Grok Bot and other webhook receivers" routine template from the README into its instruction. The routine then shows a webhook URL and a key (for Grok Bot: the routine's Webhook section, fields "POST to" and "key"; see https://cursor.com/help/grok-bot/routines). Do not ask the person to paste either value into chat.
 2. **Person only: save the URL and key.** The person runs `sh scripts/set-grok-routine.sh` **in their own terminal**. It asks with hidden input for `Approved Grok routine HTTPS URL` and then `Routine key`. The key is the bare key, without `Bearer `; Roundtable sends `Authorization: Bearer <key>` itself. The URL must be HTTPS on port 443. Do not run the script for them with values in a command.
 3. Restart: `sh scripts/down.sh && sh scripts/up.sh`.
-4. **Fill in the template placeholders.** Run `.venv/bin/python scripts/local_runtime.py paths`. Give the person `<REPO_DIR>` (this checkout's absolute path), `<STATE_DIR>` (`state_dir` in the output) and `<my bot ID>` (this bot's Roundtable ID, `grok` for the first bot by default) to put in the routine instruction. They are not secrets.
-5. **Person only: allow local commands.** For the bot to run `local_runtime.py client` on this computer, the person connects this computer to the bot's app as one of its computers and allows command execution on it (for Grok Bot: Settings > Computer > Your computer > Execution on this computer; see https://cursor.com/docs/grok-bot/settings). The bot's desktop app must stay open and online. If the person does not allow this, the bot can still be woken but cannot read its mailbox here; say so in the final report.
+4. **Fill in the template placeholder.** Make sure Step 3's `install-client` ran (rerun it if the checkout or instance moved). Give the person `<my bot ID>` (this bot's Roundtable ID, `grok` for the first bot by default) to put in the routine instruction. Nothing else in the template is machine-specific.
+5. **Person only: allow local commands.** For the bot to run `roundtable-client` on this computer, the person connects this computer to the bot's app as one of its computers and allows command execution on it (for Grok Bot: Settings > Computer > Your computer > Execution on this computer; see https://cursor.com/docs/grok-bot/settings). The bot's desktop app must stay open and online. If the person does not allow this, the bot can still be woken but cannot read its mailbox here; say so in the final report.
 
-The routine reads and replies with the managed client. It reads the origin bot's credentials from `<STATE_DIR>` itself, so no secret appears on a command line:
+The routine reads and replies with `roundtable-client` (full path `~/.local/bin/roundtable-client` when it is not on `PATH`). It reads the bot's credentials from the instance folder itself, so no secret appears on a command line:
 
 ```sh
-"<REPO_DIR>/.venv/bin/python" "<REPO_DIR>/scripts/local_runtime.py" client --state-dir "<STATE_DIR>" --operation probe
-printf '%s' '{"after":0}' | "<REPO_DIR>/.venv/bin/python" "<REPO_DIR>/scripts/local_runtime.py" client --state-dir "<STATE_DIR>" --operation mailbox
+roundtable-client --operation probe
+printf '%s' '{"after":0}' | roundtable-client --operation mailbox
 ```
 
 Other operations: `task --task-id ID`, `tasks`, `inbox`, `topics`, `reply` (stdin `{"body","request_id"}`, plus optional `"topic_id"` and `"mentions"`), `cancel --task-id ID [--reason TEXT]`, `create` (see `docs/ONBOARDING_RUNTIME.en.md`). Without `--bot <bot ID>` the client acts as the instance's `--origin` bot.
 
-Pass: `client --operation probe` returns JSON with the expected `room` and `"agent"` (the origin bot), and `mailbox` returns `messages` and `next_cursor`. Then send that bot a test message from the web page. The person confirms the bot received the notification and read the message, and `server.log` in `<LOG_DIRECTORY>` shows no delivery error.
+Pass: `roundtable-client --operation probe` returns JSON with the expected `room` and `"agent"` (the origin bot), and `mailbox` returns `messages` and `next_cursor`. Then send that bot a test message from the web page. The person confirms the bot received the notification and read the message, and `server.log` in `<LOG_DIRECTORY>` shows no delivery error.
 
 ## Step 8. Codex for Dot (person required, optional)
 

@@ -1376,6 +1376,7 @@ def main():
             "approve-host",
             "render-launchd",
             "create-ui-launcher",
+            "install-client",
             "client",
             "ui",
             "rotate-admin-token",
@@ -1491,6 +1492,18 @@ def main():
                 )
             )
             return 0 if args.action in ("status", "doctor") else 1
+        if args.action == "install-client":
+            from ui_launcher import install_client_command
+
+            output = args.output or str(Path.home() / ".local/bin/roundtable-client")
+            try:
+                result = install_client_command(
+                    output, selected, args.name, sys.executable, __file__
+                )
+            except FileExistsError as exc:
+                raise Failure(str(exc)) from None
+            print(json.dumps(result))
+            return 0
         state = private_dir(selected)
         if args.action == "setup":
             result = setup(state, args)
