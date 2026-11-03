@@ -146,6 +146,74 @@ class HandoffTests(unittest.TestCase):
                     self.rid, self.actor, {"name": name, "arguments": arguments, "after": 0}
                 )
 
+    def test_cancel_notifies_active_workers_once_and_origin_once(self):
+        def feed(actor, after):
+            return self.h.event_feed(
+                self.rid,
+                actor,
+                {"name": "roundtable.notification", "arguments": {}, "after": after},
+            )
+
+        cursors = {a: feed(a, None)["cursor"] for a in ("bot:worker-one", "bot:worker-two")}
+        cursors[self.actor] = feed(self.actor, None)["cursor"]
+        task = self.create()
+        self.claim(task)
+        self.report(self.claim(task, 1, "claim-two"), actor="bot:worker-two")
+        queued = self.create(
+            request_id="queued", assignments=[dict(worker="worker-two", instruction="Later")]
+        )
+        for target in (task, queued):
+            self.h.operate(
+                self.rid,
+                "user",
+                "cancel",
+                dict(task_id=target["task_id"], request_id="cancel-" + target["task_id"]),
+            )
+
+        def cancelled(tid):
+            return {"kind": "task.finished", "id": tid, "status": "cancelled"}
+
+        def finished(actor):
+            return [
+                e["data"]
+                for e in feed(actor, cursors[actor])["events"]
+                if e["data"]["kind"] == "task.finished"
+            ]
+
+        # The working worker is told to stop; the finished worker is not woken.
+        self.assertEqual(finished("bot:worker-one"), [cancelled(task["task_id"])])
+        # A queued, never-claimed assignment is also told it is cancelled.
+        self.assertEqual(finished("bot:worker-two"), [cancelled(queued["task_id"])])
+        # The origin still gets exactly one finished event per task, no duplicates.
+        self.assertEqual(
+            finished(self.actor), [cancelled(task["task_id"]), cancelled(queued["task_id"])]
+        )
+        self.assertEqual(feed("bot:outsider", 0)["events"], [])
+
+    def test_cancel_subtree_notifies_child_workers(self):
+        def feed(actor, after):
+            return self.h.event_feed(
+                self.rid,
+                actor,
+                {"name": "roundtable.notification", "arguments": {}, "after": after},
+            )
+
+        cursor = feed("bot:worker-two", None)["cursor"]
+        root = self.create(assignments=[dict(worker="worker-one", instruction="Root")])
+        child = self.create(
+            parent_task_id=root["task_id"],
+            request_id="child",
+            assignments=[dict(worker="worker-two", instruction="Child")],
+        )
+        self.h.operate(
+            self.rid, "user", "cancel", dict(task_id=root["task_id"], request_id="cancel")
+        )
+        events = [e["data"] for e in feed("bot:worker-two", cursor)["events"]]
+        self.assertIn(
+            {"kind": "task.finished", "id": child["task_id"], "status": "cancelled"}, events
+        )
+        self.assertNotIn(root["task_id"], repr(events))
+
     def test_lead_origin_independent_assignments_progress_and_fanin(self):
         with self.assertRaises(Problem):
             self.store.start(self.rid, "old discussion", ["worker-one"], 3, "old", actor=self.actor)

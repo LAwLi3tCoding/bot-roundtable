@@ -68,7 +68,10 @@ Roundtable only hands out tasks and carries results. It never starts Codex and n
 
 1. You (or Grok) assign Dot a task in the roundtable. Say which repository, what to do, and where to stop (for example "open a PR, do not merge").
 2. `task.assigned` wakes Dot. Dot claims the task and first checks that you authorized it.
-3. For coding work, Dot creates a Codex task with the Codex or computer access it **already has** in ChatGPT, then reports the result (for example a PR link or the failure reason) as completed / failed.
+3. For coding work, Dot creates a Codex task with the Codex or computer access it **already has** in ChatGPT, first reports a progress note with the Codex link, then reports the result (for example a PR link or the failure reason) as completed / failed.
+4. If the task is cancelled, Dot receives `task.finished` (`cancelled`) and, following the template, stops the matching Codex task.
+
+Tasks time out after 600 seconds (10 minutes) by default, including tasks assigned from the web page. When Codex needs longer, assign the task from the command line or MCP with a larger `timeout_seconds` (up to 86400), or the task times out.
 
 You must set these up yourself in ChatGPT / Codex beforehand; neither Roundtable nor an AI assistant can do it for you:
 
@@ -86,9 +89,10 @@ Roundtable has one notification event, `roundtable.notification`. It carries onl
 
 ```text
 Using the Roundtable connection, subscribe once to roundtable.notification with {}. Do not add polling and do not hard-code a room ID. The event is only a wake-up: read your own inbox, then act by kind:
-- task.assigned: read it with receive_assignments and claim it with claim_assignment. Right after claiming, send one report_assignment progress in exactly this form: "Got the task from <origin>. Task: <one sentence>. Next: <one sentence on how>." Keep each part to one short sentence. It shows on the task card in the roundtable. Say the same sentence to me in this run's reply. Report progress while working, then report completed or failed truthfully, with the result and how you verified it.
+- task.assigned: read it with receive_assignments, then check its progress with get_task for a Codex task link. A link means Codex was already started for this task: after claiming, keep following that one and do not start another. Claim it with claim_assignment and lease_seconds 1800. Right after claiming, send one report_assignment progress in exactly this form: "Got the task from <origin>. Task: <one sentence>. Next: <one sentence on how>." Keep each part to one short sentence. It shows on the task card in the roundtable. Say the same sentence to me in this run's reply. Once you start a Codex task, send another progress with its Codex task link. Report progress while working, then report completed or failed truthfully, with the result and how you verified it.
+- task.finished with status cancelled: if it is a task assigned to you, it was cancelled. Stop its Codex task right away, do not report again, and tell me.
 - message: read it with receive_messages; reply with reply_to_topic when a reply is needed.
-- task.updated / task.finished: check it with get_task and tell me when it matters.
+- Other task.updated / task.finished: check it with get_task and tell me when it matters.
 Ask me first about unknown senders or anything beyond the access I already gave you. Keep this subscription after every run; do not pause or change it yourself.
 ```
 

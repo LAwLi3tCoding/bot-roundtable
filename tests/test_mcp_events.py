@@ -286,6 +286,32 @@ class EventsFixture(unittest.TestCase):
         )
         self.assertNotIn(b"private result", b"".join(r[2] for r in self.receiver.records))
 
+    def test_cancel_is_pushed_to_the_assigned_worker_subscription(self):
+        self.broker.rpc("events/subscribe", subscription())
+        task = self.create()
+        self.broker.dispatch_once()
+        self.store.handoffs.operate(
+            self.room["id"],
+            "bot:event-origin",
+            "cancel",
+            {"task_id": task["task_id"], "reason": "PRIVATE REASON", "request_id": "cancel"},
+        )
+        for _ in range(3):
+            self.broker.dispatch_once()
+        events = [
+            r[0]["data"]
+            for r in self.receiver.records
+            if r[0].get("name") == "roundtable.notification"
+        ]
+        self.assertEqual(
+            events,
+            [
+                {"kind": "task.assigned", "id": task["task_id"]},
+                {"kind": "task.finished", "id": task["task_id"], "status": "cancelled"},
+            ],
+        )
+        self.assertNotIn(b"PRIVATE", b"".join(r[2] for r in self.receiver.records))
+
     @patch.dict("os.environ", {}, clear=True)
     @patch("event_delivery.DirectHTTPSConnection")
     def test_callback_ssrf_rebinding_and_redirect_are_blocked(self, connection):

@@ -25,7 +25,7 @@ No other fields are sent: no task text, message body, result, token or lease. On
 |---|---|
 | `task.assigned` | The worker of a new or requeued assignment that is still queued |
 | `task.updated` | The task's origin, for changes made by someone else |
-| `task.finished` | The task's origin, when the task reaches a finished state |
+| `task.finished` | The task's origin, when the task reaches a finished state; also, with status `cancelled`, the worker of an assignment that was still queued or working when the task was cancelled |
 | `message` | An authorized topic member selected for a bounded message wake (delivery alone does not imply wake; system notices never wake) |
 
 Examples: `{"kind":"task.assigned","id":"0123456789abcdef01234567"}`, `{"kind":"task.finished","id":"0123456789abcdef01234567","status":"completed"}`, `{"kind":"message","id":"42"}`.

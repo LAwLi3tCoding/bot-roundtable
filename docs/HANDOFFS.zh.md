@@ -8,7 +8,7 @@
 
 按 README 以 demo 模式启动服务器（`sh scripts/start-local.sh server --demo` 或 `ROUNDTABLE_DEMO=1`；默认不含 demo 成员）、创建含两个 demo 成员的群，点击“委派任务”。填写标题、共享上下文，并为两个成员分别写指令。提交后可切换“汇总”与各成员交接线程；demo 自动领取并产生带 `[DEMO]` 的确定性文本，验证的是通信流程。
 
-Web 也能查看从原生 MCP 创建的任务，补充共享或单个执行者上下文、重试失败交接、取消任务。补充文字只是数据：不会重新执行已完成任务、增加权限或预算。取消失败任务可阻止其后续重试；取消向所有子任务递归传播，但不能撤回外部 Bot 已产生的副作用。
+Web 也能查看从原生 MCP 创建的任务，补充共享或单个执行者上下文、重试失败交接、取消任务。补充文字只是数据：不会重新执行已完成任务、增加权限或预算。取消失败任务可阻止其后续重试；取消向所有子任务递归传播，并通知仍在排队或执行的执行者停下，但不能撤回外部 Bot 已产生的副作用。
 
 ## 首轮真实组合：Grok Bot + dot
 
@@ -35,7 +35,7 @@ Grok 官方 routine webhook 是潜在可选 wake 路径，200 只代表 accepted
 | `report_assignment` | 携带 lease / attempt，报告 progress、completed 或 failed；progress 续租 |
 | `add_task_context` | 入口/房间 owner 添加共享或单交接补充，不触发执行 |
 | `retry_assignment` | 入口/owner 在剩余预算、额度与尝试次数内重排失败交接 |
-| `cancel_task` | 入口/owner 取消任务及子任务 |
+| `cancel_task` | 入口/owner 取消任务及子任务；仍在排队或执行的执行者会收到 `task.finished`（`cancelled`） |
 
 示例参数（ID 用自己群里的真实登记值替换；不包含凭据）：
 

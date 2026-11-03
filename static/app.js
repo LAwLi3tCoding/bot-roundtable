@@ -144,6 +144,16 @@ $('body').addEventListener('keydown', event => {
  else if(event.key === 'Enter' || event.key === 'Tab') {event.preventDefault(); chooseMention(mentionIndex);}
  else if(event.key === 'Escape') {event.preventDefault();mentionList.hidden=true;}
 });
+// Enter sends; Cmd/Ctrl/Shift+Enter add a line. Runs after the mention handler,
+// so Enter that picks a mention never sends. IME composition never sends.
+$('body').addEventListener('keydown', event => {
+ if(event.key !== 'Enter' || event.defaultPrevented || event.isComposing || event.keyCode === 229) return;
+ const input = $('body');
+ if(event.metaKey || event.ctrlKey) { event.preventDefault(); input.setRangeText('\n', input.selectionStart, input.selectionEnd, 'end'); input.dispatchEvent(new Event('input',{bubbles:true})); return; }
+ if(event.shiftKey || event.altKey) return;
+ event.preventDefault();
+ if(input.value.trim() && !$('send').disabled) $('compose').requestSubmit();
+});
 $('directory').onclick=()=>action(async()=>{if(window.BotManagement)return window.BotManagement.open();await reloadWorkspace();renderDirectory();openDialog('directory-dialog');});
 $('manage').onclick=()=>action(()=>{if(!active)throw new Error('needConnection');renderManage();openDialog('manage-dialog');});
 $('settings-form').onsubmit=event=>{event.preventDefault();action(async()=>{await api(roomPath('/settings'),roomAuth(),{name:$('edit-name').value});await refresh(true);renderManage();},$('manage-dialog'));};
