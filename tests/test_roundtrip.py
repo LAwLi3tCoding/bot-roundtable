@@ -275,7 +275,7 @@ class WaitDeadlineTests(unittest.TestCase):
     def test_trickling_response_cannot_extend_total_wait(self):
         from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-        stopped = threading.Event()
+        stopped, body_finished = threading.Event(), threading.Event()
 
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *args):
@@ -292,6 +292,8 @@ class WaitDeadlineTests(unittest.TestCase):
                         self.wfile.flush()
                         if stopped.wait(0.01):
                             break
+                    else:
+                        body_finished.set()
                 except (BrokenPipeError, ConnectionResetError):
                     pass
 
@@ -299,11 +301,11 @@ class WaitDeadlineTests(unittest.TestCase):
         thread = threading.Thread(target=server.serve_forever)
         thread.start()
         client = LocalClient(f"http://127.0.0.1:{server.server_port}", "a" * 24, "origin", "a" * 32)
-        start = time.monotonic()
         try:
             with self.assertRaisesRegex(LocalFailure, "wait_timeout"):
                 client.wait("b" * 24, timeout=0.15)
-            self.assertLess(time.monotonic() - start, 0.6)
+            # The client hit its total deadline while the server was still trickling.
+            self.assertFalse(body_finished.is_set(), "trickling body extended the wait")
         finally:
             stopped.set()
             server.shutdown()

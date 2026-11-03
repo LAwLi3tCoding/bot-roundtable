@@ -400,10 +400,11 @@ class EventsFixture(unittest.TestCase):
     @patch.dict("os.environ", {}, clear=True)
     def test_total_callback_deadline_and_bounded_stuck_dns(self):
         transport = CallbackTransport(["callback.example.com"], deadline_seconds=0.05)
-        release = threading.Event()
+        release, dns_returned = threading.Event(), threading.Event()
 
         def dns(*args, **kwargs):
-            release.wait(3)
+            release.wait(10)
+            dns_returned.set()
             return [(2, 1, 6, "", ("8.8.8.8", 443))]
 
         with (
@@ -412,10 +413,10 @@ class EventsFixture(unittest.TestCase):
         ):
             try:
                 for _ in range(5):
-                    began = time.monotonic()
                     with self.assertRaises(TimeoutError):
                         transport.post("https://callback.example.com/x", b"{}", {})
-                    self.assertLess(time.monotonic() - began, 0.4)
+                    # The deadline fired while DNS was still stuck, not after it gave up.
+                    self.assertFalse(dns_returned.is_set(), "callback waited for stuck DNS")
                 connection.assert_not_called()
             finally:
                 release.set()

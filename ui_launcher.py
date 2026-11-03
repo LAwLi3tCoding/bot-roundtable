@@ -5,6 +5,45 @@ import os
 import plistlib
 import shlex
 import shutil
+import subprocess
+import sys
+import tempfile
+
+ICON_SVG = Path(__file__).resolve().parent / "assets" / "roundtable-icon.svg"
+ICON_TOOLS = ("qlmanage", "sips", "iconutil")
+
+
+def build_icns(svg, resources):
+    """Best effort, macOS only: render the SVG, size it with sips and pack it with iconutil.
+
+    Returns the icon file name, or None when the platform or tools are missing or a step fails;
+    the launcher then keeps the default icon.
+    """
+    if sys.platform != "darwin" or not svg.exists():
+        return None
+    if not all(shutil.which(tool) for tool in ICON_TOOLS):
+        return None
+
+    def run(*argv):
+        subprocess.run(argv, capture_output=True, check=True, timeout=60)
+
+    try:
+        with tempfile.TemporaryDirectory() as temporary:
+            work = Path(temporary)
+            run("qlmanage", "-t", "-s", "1024", "-o", str(work), str(svg))
+            master = work / (svg.name + ".png")
+            iconset = work / "AppIcon.iconset"
+            iconset.mkdir()
+            for size in (16, 32, 128, 256, 512):
+                for scale, suffix in ((1, ""), (2, "@2x")):
+                    pixels = str(size * scale)
+                    name = f"icon_{size}x{size}{suffix}.png"
+                    run("sips", "-z", pixels, pixels, str(master), "--out", str(iconset / name))
+            resources.mkdir(parents=True, exist_ok=True, mode=0o700)
+            run("iconutil", "-c", "icns", str(iconset), "-o", str(resources / "AppIcon.icns"))
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return "AppIcon.icns" if (resources / "AppIcon.icns").exists() else None
 
 
 def create_launcher(output, state, name, python, runtime):
@@ -29,18 +68,19 @@ def create_launcher(output, state, name, python, runtime):
         launcher = executable_dir / "launcher"
         launcher.write_text("#!/bin/sh\nexec " + shlex.join(argv) + " >/dev/null 2>&1\n")
         launcher.chmod(0o700)
+        info = {
+            "CFBundleExecutable": "launcher",
+            "CFBundleIdentifier": "local.roundtable.ui",
+            "CFBundleName": "Bot Roundtable",
+            "CFBundlePackageType": "APPL",
+            "CFBundleVersion": "1",
+            "LSUIElement": True,
+        }
+        icon = build_icns(ICON_SVG, target / "Contents" / "Resources")
+        if icon:
+            info["CFBundleIconFile"] = icon
         with (target / "Contents" / "Info.plist").open("wb") as handle:
-            plistlib.dump(
-                {
-                    "CFBundleExecutable": "launcher",
-                    "CFBundleIdentifier": "local.roundtable.ui",
-                    "CFBundleName": "Bot Roundtable",
-                    "CFBundlePackageType": "APPL",
-                    "CFBundleVersion": "1",
-                    "LSUIElement": True,
-                },
-                handle,
-            )
+            plistlib.dump(info, handle)
     except BaseException:
         shutil.rmtree(target)
         raise

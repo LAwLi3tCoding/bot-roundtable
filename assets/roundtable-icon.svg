@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Bot Roundtable app icon: a round table seen from above with bots seated around it. Original work, MIT licensed with this repository. -->
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="#f7f7f7"/>
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="none" stroke="#dedede" stroke-width="8"/>
+  <circle cx="512" cy="512" r="228" fill="#252525"/>
+  <circle cx="512" cy="512" r="168" fill="none" stroke="#ffffff" stroke-opacity=".14" stroke-width="12"/>
+  <circle cx="512.0" cy="182.0" r="74" fill="#39745d" stroke="#f7f7f7" stroke-width="20"/>
+  <circle cx="825.8" cy="410.0" r="74" fill="#8b622d" stroke="#f7f7f7" stroke-width="20"/>
+  <circle cx="706.0" cy="779.0" r="74" fill="#974c65" stroke="#f7f7f7" stroke-width="20"/>
+  <circle cx="318.0" cy="779.0" r="74" fill="#386e96" stroke="#f7f7f7" stroke-width="20"/>
+  <circle cx="198.2" cy="410.0" r="74" fill="#64646f" stroke="#f7f7f7" stroke-width="20"/>
+</svg>
