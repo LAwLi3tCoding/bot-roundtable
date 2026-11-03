@@ -52,6 +52,7 @@ def main():
             assert "roundtable_ui" not in page.evaluate("document.cookie")
             for kind in ("localStorage", "sessionStorage"):
                 assert page.evaluate(f"{kind}.getItem('roundtable-access-v1') === null")
+            page.locator("#mailbox-settings > summary").click()
             page.locator(".workspace-picker summary").click()
             page.locator(f'[data-room-id="{first["id"]}"]').click()
             page.reload()

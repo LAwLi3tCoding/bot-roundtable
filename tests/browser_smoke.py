@@ -37,6 +37,8 @@ def main():
             page.locator("#admin").fill(token)
             page.locator("#access-form button[type=submit]").click()
             expect(page.locator("#access-dialog")).not_to_be_visible()
+            if not page.locator("#mailbox-settings").evaluate("e => e.open"):
+                page.locator("#mailbox-settings > summary").click()
             page.locator("#new-room").click()
             page.locator("#name").fill("Product lab")
             page.locator("#create").click()
@@ -62,6 +64,8 @@ def main():
             expect(page.locator("#mailbox-details")).to_be_visible()
             page.keyboard.press("Escape")
             expect(page.locator("#options-open")).to_be_focused()
+            if not page.locator("#mailbox-settings").evaluate("e => e.open"):
+                page.locator("#mailbox-settings > summary").click()
             page.locator("#language").select_option("zh")
             expect(page.locator("#manage")).to_have_text("管理")
             expect(page.locator("#mailbox-all")).to_have_text("全部")
@@ -69,11 +73,15 @@ def main():
             expect(page.locator(".message-body")).to_have_text(payload)
             page.locator("#stop").click()
             expect(page.locator("#status")).to_have_text("已停止回复")
+            if not page.locator("#mailbox-settings").evaluate("e => e.open"):
+                page.locator("#mailbox-settings > summary").click()
             page.locator("#manage").click()
             page.locator("#edit-name").fill("协作实验室")
             page.locator("#settings-form button[type=submit]").click()
             page.locator("#manage-dialog .close").click()
             # Existing bot management remains functional beside mailbox topics.
+            if not page.locator("#mailbox-settings").evaluate("e => e.open"):
+                page.locator("#mailbox-settings > summary").click()
             page.locator("#manage").click()
             page.locator("#create-lead").click()
             page.locator("#bot-name").fill("Research Lead")
@@ -113,6 +121,8 @@ def main():
                     break
                 page.wait_for_timeout(20)
             assert page.evaluate("window.staleReady")
+            if not page.locator("#mailbox-settings").evaluate("e => e.open"):
+                page.locator("#mailbox-settings > summary").click()
             page.locator("#manage").click()
             page.locator("#edit-name").fill("Latest room state")
             page.locator("#settings-form button[type=submit]").click()
@@ -124,12 +134,18 @@ def main():
             page.locator("#settings-form button[type=submit]").click()
             expect(page.locator("#room-subtitle")).to_contain_text("协作实验室")
             page.locator("#manage-dialog .close").click()
+            if not page.locator("#mailbox-settings").evaluate("e => e.open"):
+                page.locator("#mailbox-settings > summary").click()
             page.locator("#language").select_option("en")
+            if not page.locator("#mailbox-settings").evaluate("e => e.open"):
+                page.locator("#mailbox-settings > summary").click()
             page.locator("#mcp-open").click()
             expect(page.locator("#mcp-config")).to_contain_text("ROOM_SCOPED_AGENT_TOKEN")
             assert token not in page.locator("#mcp-config").inner_text()
             expect(page.locator("#connection-results")).to_contain_text("No probe observed")
             page.locator("#mcp-dialog .close").click()
+            if not page.locator("#mailbox-settings").evaluate("e => e.open"):
+                page.locator("#mailbox-settings > summary").click()
             page.locator("#new-room").click()
             page.locator("#name").fill("Separate room")
             page.locator("#create").click()
@@ -154,6 +170,8 @@ def main():
                 expect(page.locator("#mailbox-dialog")).to_be_visible()
                 assert not page.locator("#mailbox-budget").evaluate("n => n.checkValidity()")
             page.keyboard.press("Escape")
+            if not page.locator("#mailbox-settings").evaluate("e => e.open"):
+                page.locator("#mailbox-settings > summary").click()
             page.locator("#mailbox-theme").select_option("dark")
             expect(page.locator("html")).to_have_attribute("data-theme", "dark")
             assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")

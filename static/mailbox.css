@@ -38,7 +38,7 @@
   border:0;
   border-radius:0;
   box-shadow:none;
-  grid-template-columns:var(--mailbox-sidebar-width,280px) minmax(0,1fr);
+  grid-template-columns:var(--mailbox-sidebar-width,320px) minmax(0,1fr);
   background:var(--bg)
 }
 #sidebar {
@@ -576,7 +576,7 @@ pre,.secondary {
 }
 @media(max-width:960px) {
   .app-shell {
-    grid-template-columns:var(--mailbox-sidebar-width,280px) minmax(0,1fr)
+    grid-template-columns:var(--mailbox-sidebar-width,320px) minmax(0,1fr)
   }
   .topbar {
     padding:0 20px
@@ -735,33 +735,33 @@ pre,.secondary {
   width: 86%;
   height: 86%;
   border-radius: 42% 48% 40% 44%;
-  background: radial-gradient(ellipse at 30% 20%, var(--character-light), var(--character-color) 62%, var(--character-shadow));
-  box-shadow: inset 1px 2px 2px #ffffff70, inset -2px -3px 4px #00000026;
+  background:var(--character-color);
+  box-shadow:none;
   transform: rotate(-6deg);
 }
 .avatar-sage {
   --character-light: #b1ead5;
-  --character-color: #65b69b;
+  --character-color: #159e7a;
   --character-shadow: #3f826c;
 }
 .avatar-sand {
   --character-light: #ffde9a;
-  --character-color: #e6b25f;
+  --character-color: #f47821;
   --character-shadow: #ac7433;
 }
 .avatar-rose {
   --character-light: #ffc7ce;
-  --character-color: #e995a5;
+  --character-color: #ed3683;
   --character-shadow: #b55b75;
 }
 .avatar-blue {
   --character-light: #b4d9ff;
-  --character-color: #78afe5;
+  --character-color: #2385ec;
   --character-shadow: #447caf;
 }
 .avatar-slate {
   --character-light: #e1e1e8;
-  --character-color: #a8a8b8;
+  --character-color: #33343a;
   --character-shadow: #75758c;
 }
 .character-capsule .character-body {
@@ -775,12 +775,12 @@ pre,.secondary {
 }
 .character-eyes {
   position: absolute;
-  left: 29%;
-  top: 41%;
-  width: 9%;
-  height: 13%;
+  left: 28%;
+  top: 34%;
+  width: 11%;
+  height: 26%;
   border-radius: 50%;
-  background: #253139;
+  background:#fff;
   transform-origin: center;
   animation: character-blink 7s infinite;
 }
@@ -809,7 +809,7 @@ pre,.secondary {
 .character-eyes::after {
   content: "";
   position: absolute;
-  left: 340%;
+  left: 220%;
   width: 100%;
   height: 100%;
   border-radius: inherit;
@@ -966,3 +966,74 @@ pre,.secondary {
 @media(prefers-reduced-motion:reduce) {
   #mailbox-identity span { transition:none; transform:none; }
 }
+
+/* User-supplied desktop pixels: original flat characters and conversation hierarchy. */
+#mailbox-pins { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:4px; padding:10px 8px 14px; flex-shrink:0; }
+#mailbox-pins:empty { display:none; }
+.mailbox-pin { min-width:0; padding:8px 4px; display:flex; flex-direction:column; gap:6px; border-radius:14px; }
+.mailbox-pin.selected { background:var(--soft); }
+.mailbox-pin > .avatar { width:60px; height:60px; }
+.mailbox-pin > .pin-name { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; }
+.mailbox-pin:hover .character-body,.mailbox-pin:focus-visible .character-body { transform:rotate(7deg); }
+.sidebar-top .sidebar-tools .icon-button { border-radius:50%; background:var(--control); border:1px solid var(--line); }
+.mailbox-actions { flex-direction:row; margin:0 8px 4px; gap:4px; }
+.mailbox-actions > button,.mailbox-actions .workspace-tabs button { font-size:12px; min-height:30px; padding:6px 8px; }
+.mailbox-actions .workspace-tabs { flex:1; }
+.mailbox-section { padding-block:8px 4px; }
+.mailbox-row time { display:none; }
+.sidebar-footer { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:auto; padding:12px 8px 0; }
+.sidebar-footer > #access { font-size:13px; color:var(--ink); }
+#mailbox-settings { position:relative; }
+#mailbox-settings > summary { list-style:none; cursor:pointer; display:flex; align-items:center; justify-content:center; width:36px; height:36px; font-size:22px; border-radius:50%; background:var(--control); border:1px solid var(--line); }
+#mailbox-settings > summary::-webkit-details-marker { display:none; }
+.sidebar-settings-panel { position:absolute; bottom:44px; right:0; z-index:10; width:min(260px,calc(var(--mailbox-sidebar-width,320px) - 32px)); max-height:70vh; overflow:auto; padding:12px; border:1px solid var(--line); border-radius:16px; background:var(--control); box-shadow:0 8px 28px #00000018; }
+.sidebar-settings-panel #manage { width:100%; justify-content:flex-start; font-size:12px; }
+.sidebar-settings-panel .workspace-picker { border:0; padding:8px; }
+.conversation-identity { position:absolute; left:50%; transform:translateX(-50%); max-width:calc(100% - 40px); margin:0; padding:0 16px 0 10px; background:var(--control); box-shadow:0 2px 9px #0000000c; border:1px solid color-mix(in srgb,var(--line) 65%,transparent); height:40px; }
+#mailbox-identity { padding-right:5px; }
+#mailbox-identity span { font-size:16px; }
+.topbar #status { display:none; }
+#mailbox-exchange-title { display:flex; align-items:center; gap:8px; font-size:14px; white-space:nowrap; overflow:hidden; }
+#mailbox-exchange-title[hidden] { display:none; }
+.exchange-member { display:flex; align-items:center; gap:6px; min-width:0; }
+.exchange-member > span:last-child { overflow:hidden; text-overflow:ellipsis; }
+.exchange-member .avatar { width:24px; height:24px; }
+.exchange-arrow { color:var(--muted); }
+.is-exchange > .heading,.is-exchange > .avatar { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+.avatar-stack { width:36px; height:36px; }
+.avatar-stack.multi-avatar { display:grid; grid-template-columns:repeat(2,1fr); align-content:center; gap:0; }
+.avatar-stack.multi-avatar .avatar { width:20px; height:20px; margin:0; border:0; font-size:8px; }
+.avatar-stack:not(.multi-avatar) .avatar { margin:0; }
+.conversation-identity .avatar-stack { transform:scale(.68); width:36px; }
+.mailbox-message > .avatar { width:24px; height:24px; align-self:flex-end; margin:0 0 2px; }
+.mailbox-message { gap:8px; margin-bottom:18px; }
+.mailbox-message.human > .avatar,.direct-chat .mailbox-message > .avatar { display:none; }
+.mailbox-message.human .message-meta strong,.direct-chat .mailbox-message .message-meta strong,.mailbox-recipients { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); }
+.mailbox-message.human .message-meta,.direct-chat .mailbox-message .message-meta { height:0; margin:0; position:relative; }
+.mailbox-message.human .message-meta time,.direct-chat .mailbox-message .message-meta time { position:absolute; bottom:2px; right:0; white-space:nowrap; }
+.mailbox-message.bot .message-meta strong { color:var(--muted); }
+#compose { box-shadow:0 2px 7px #0000000a; }
+#compose #stop { background:transparent; width:28px; height:28px; padding:0; font-size:0; color:var(--muted); }
+#compose #stop::before { content:''; width:10px; height:10px; border-radius:2px; background:currentColor; }
+.sidebar-compact #mailbox-pins { grid-template-columns:1fr; padding:4px 0; }
+.sidebar-compact .mailbox-pin > .avatar { width:36px; height:36px; }
+.sidebar-compact .mailbox-pin > .pin-name { display:none; }
+.sidebar-compact .mailbox-actions { flex-direction:column; }
+@media(max-width:720px) {
+  #mailbox-pins { grid-template-columns:repeat(4,minmax(0,1fr)); }
+  .conversation-identity { max-width:calc(100% - 90px); }
+  .exchange-member > span:last-child { max-width:95px; }
+}
+
+.avatar-stack.multi-avatar:has(.avatar:nth-child(2)) .avatar { width:18px; height:18px; font-size:8px; }
+.mailbox-message[data-avatar-color=sage] .message-meta strong { color:#087858; }
+.mailbox-message[data-avatar-color=sand] .message-meta strong { color:#a54b0b; }
+.mailbox-message[data-avatar-color=rose] .message-meta strong { color:#be155d; }
+.mailbox-message[data-avatar-color=blue] .message-meta strong { color:#1767b7; }
+:root[data-theme=dark] .mailbox-message[data-avatar-color=sage] .message-meta strong { color:#58d5b2; }
+:root[data-theme=dark] .mailbox-message[data-avatar-color=sand] .message-meta strong { color:#ffad72; }
+:root[data-theme=dark] .mailbox-message[data-avatar-color=rose] .message-meta strong { color:#ff83b7; }
+:root[data-theme=dark] .mailbox-message[data-avatar-color=blue] .message-meta strong { color:#7abbff; }
+
+.mailbox-pin { position:relative; }
+.mailbox-pin .unread { position:absolute; top:4px; right:4px; font-size:10px; }

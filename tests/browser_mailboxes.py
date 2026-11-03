@@ -86,7 +86,10 @@ def main():
             page.goto(origin + "/#roundtable-login=" + issued["code"])
             expect(page.locator("#mailbox-list")).to_be_visible()
             expect(page.locator("#room-title")).to_have_text("All")
+            if not page.locator("#mailbox-settings").evaluate("e => e.open"):
+                page.locator("#mailbox-settings > summary").click()
             page.locator("#mailbox-theme").select_option("light")
+            page.locator("#mailbox-settings > summary").click()
             # Search is a toolbar disclosure; Escape clears and returns focus.
             expect(page.locator("#room-search")).not_to_be_visible()
             page.locator("#mailbox-search").click()
@@ -97,7 +100,7 @@ def main():
             expect(page.locator("#room-search")).not_to_be_visible()
             assert page.locator("#task-view").evaluate("e => !!e.closest('#sidebar')")
 
-            assert page.locator("#sidebar").bounding_box()["width"] == 280
+            assert page.locator("#sidebar").bounding_box()["width"] == 320
             page.locator("#mailbox-collapse").click()
             assert page.locator("#sidebar").bounding_box()["width"] == 88
             page.locator("#mailbox-collapse").click()
@@ -109,11 +112,17 @@ def main():
             page.keyboard.press("Home")
             page.keyboard.press("ArrowLeft")
             assert page.locator("#sidebar").bounding_box()["width"] == 240
+            page.locator("#mailbox-settings > summary").click()
+            panel = page.locator(".sidebar-settings-panel").bounding_box()
+            assert panel["x"] >= 0 and panel["x"] + panel["width"] <= 240
+            page.keyboard.press("Escape")
+            expect(page.locator("#mailbox-settings > summary")).to_be_focused()
+            page.locator("#mailbox-resize").focus()
             page.keyboard.press("ArrowRight")
             assert page.locator("#sidebar").bounding_box()["width"] == 250
-            for _ in range(3):
+            for _ in range(7):
                 page.keyboard.press("ArrowRight")
-            assert page.locator("#sidebar").bounding_box()["width"] == 280
+            assert page.locator("#sidebar").bounding_box()["width"] == 320
 
             page.locator('[data-bot-id="sage"]').click()
             expect(page.locator("#room-title")).to_have_text("Sage")
@@ -186,7 +195,7 @@ def main():
             )
             page.locator("#options-open").click()
             page.locator("#mailbox-details-members .member").filter(has_text="Sage").locator(
-                "button"
+                "button:not([data-pin-actor])"
             ).click()
             page.locator("#mailbox-avatar-initial").fill("SG")
             page.locator("#mailbox-avatar-color").select_option("rose")
@@ -223,6 +232,13 @@ def main():
             expect(page.locator("#room-title")).to_have_text("Design review")
             page.locator("#mailbox-identity").click()
             expect(page.locator("#mailbox-details")).to_be_visible()
+            page.locator('[data-pin-actor="bot:atlas"]').click()
+            page.locator('[data-pin-actor="bot:nova"]').click()
+            expect(page.locator(".mailbox-pin")).to_have_count(2)
+            expect(page.locator('[data-pin-actor="bot:nova"]')).to_be_focused()
+            page.locator('[data-pin-actor="bot:nova"]').click()
+            expect(page.locator(".mailbox-pin")).to_have_count(1)
+            page.locator('[data-pin-actor="bot:nova"]').click()
             page.locator("#mailbox-details [data-mailbox-close]").click()
 
             assert len(store.mailboxes.topics(rid, "user")) == 3
@@ -237,7 +253,7 @@ def main():
                 "bot:atlas",
                 group["id"],
                 {
-                    "body": "The layout is ready. I will focus on the conversation list.",
+                    "body": "The layout is ready. I will focus on the conversation list.\n\nKeep the pinned bots above recent conversations. Each row needs a clear name, a short preview, and an unread count only when a new message is waiting.\n\nFor the first review, check keyboard navigation and make sure the selected conversation stays visible after refresh.",
                     "request_id": "atlas-group",
                 },
             )
@@ -246,7 +262,7 @@ def main():
                 "bot:nova",
                 group["id"],
                 {
-                    "body": "I will check the composer and keyboard interactions.",
+                    "body": "I will check the composer and keyboard interactions.\n\nThe input should grow with the draft, then return to its compact size after sending. Focus must stay in place when new messages arrive.\n\nI will also test dark appearance and reduced motion before the next review.",
                     "request_id": "nova-group",
                 },
             )
@@ -274,7 +290,18 @@ def main():
             assert own["x"] + own["width"] > canvas["x"] + canvas["width"] * 0.8
             assert peer["x"] < canvas["x"] + canvas["width"] * 0.25
             assert page.locator("#compose").bounding_box()["width"] == 960
+            identity = page.locator(".conversation-identity").bounding_box()
+            assert (
+                abs(identity["x"] + identity["width"] / 2 - canvas["x"] - canvas["width"] / 2) < 2
+            )
+            for item in page.locator("#mailbox-list .mailbox-row").all():
+                face = item.locator(".avatar-stack, .mailbox-avatar").first.bounding_box()
+                copy = item.locator(".mailbox-row-copy").bounding_box()
+                assert face["x"] + face["width"] <= copy["x"]
+            if not page.locator("#mailbox-settings").evaluate("e => e.open"):
+                page.locator("#mailbox-settings > summary").click()
             page.locator("#mailbox-theme").select_option("dark")
+            page.locator("#mailbox-settings > summary").click()
             expect(page.locator("html")).to_have_attribute("data-theme", "dark")
             page.screenshot(
                 path=str(screenshots / "mailbox-group-dark.png"),
@@ -292,6 +319,11 @@ def main():
             page.locator('#messages [data-topic-id="' + private["id"] + '"]').click()
             expect(page.locator("#mailbox-join")).to_be_visible()
             expect(page.locator(".mailbox-message")).to_have_count(2)
+            expect(page.locator("#mailbox-exchange-title")).to_contain_text("Atlas")
+            expect(page.locator("#mailbox-exchange-title")).to_contain_text("Nova")
+            page.screenshot(
+                path=str(screenshots / "mailbox-exchange-dark.png"), animations="disabled"
+            )
             page.locator("#body").fill("Thanks, both. Please include the accessibility findings.")
             page.locator("#send").click()
             expect(page.locator(".mailbox-message")).to_have_count(3)
@@ -330,6 +362,7 @@ def main():
             store.db.commit()
             page.reload()
             expect(page.locator(".mailbox-time-divider")).to_have_count(2)
+            expect(page.locator(".mailbox-pin")).to_have_count(2)
             store.db.execute("UPDATE mail_messages SET created=? WHERE id=?", (1767398390, ids[1]))
             store.db.execute("UPDATE mail_messages SET created=? WHERE id=?", (1767398410, ids[2]))
             store.db.commit()
