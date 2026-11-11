@@ -1,10 +1,41 @@
 """Observed local protocol access, never inferred vendor login or online status."""
 
 import re
+import sqlite3
 import time
+from pathlib import Path
 
 from roundtable import Problem
 from outbound import outbound_diagnostics
+
+
+def events_database(store):
+    path = getattr(store, "path", None)
+    if not path or path == ":memory:":
+        return None
+    database = Path(path).expanduser()
+    if not database.is_file():
+        return None
+    events = database.parent / "events.db"
+    return events if events.is_file() else None
+
+
+def load_subscription_expiry(store, principals):
+    """Latest expiry per principal; never returns URLs, secrets or raw tokens."""
+    path = events_database(store)
+    if path is None or not principals:
+        return None
+    placeholders = ",".join("?" * len(principals))
+    try:
+        with sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True) as db:
+            rows = db.execute(
+                f"SELECT principal, MAX(expires) FROM subscriptions "
+                f"WHERE principal IN ({placeholders}) GROUP BY principal",
+                tuple(principals),
+            ).fetchall()
+    except sqlite3.Error:
+        return None
+    return {row[0]: row[1] for row in rows}
 
 
 class Connections:
@@ -40,13 +71,36 @@ class Connections:
     def status(self, room):
         result = []
         with self.store.lock:
-            for row in self.store.db.execute(
-                "SELECT a.id,a.token,COALESCE(b.name,a.id) AS name,a.kind,p.observed,p.nonce FROM agents a LEFT JOIN bots b ON b.id=a.id LEFT JOIN connection_probes p "
-                "ON p.room=a.room AND p.agent=a.id AND p.epoch=a.token WHERE a.room=?",
-                (room,),
-            ):
+            rows = list(
+                self.store.db.execute(
+                    "SELECT a.id,a.token,COALESCE(b.name,a.id) AS name,a.kind,p.observed,p.nonce FROM agents a LEFT JOIN bots b ON b.id=a.id LEFT JOIN connection_probes p "
+                    "ON p.room=a.room AND p.agent=a.id AND p.epoch=a.token WHERE a.room=?",
+                    (room,),
+                )
+            )
+        expiries = load_subscription_expiry(
+            self.store, [row["token"] for row in rows if row["token"]]
+        )
+        now = time.time()
+        with self.store.lock:
+            for row in rows:
                 value = dict(row)
                 epoch = value.pop("token")
+                if expiries is None:
+                    subscription_state, subscription_evidence, subscription_expires_at = (
+                        "unknown",
+                        "events-db-unavailable",
+                        None,
+                    )
+                else:
+                    expiry = expiries.get(epoch)
+                    subscription_evidence = "events-db"
+                    if expiry is None:
+                        subscription_state, subscription_expires_at = "missing", None
+                    elif expiry > now:
+                        subscription_state, subscription_expires_at = "valid", expiry
+                    else:
+                        subscription_state, subscription_expires_at = "expired", expiry
                 task_events = self.store.db.execute(
                     "SELECT e.kind,e.created FROM task_events e JOIN tasks t ON t.id=e.task "
                     "JOIN assignments a ON a.id=e.assignment WHERE t.room=? AND a.worker=? "
@@ -85,8 +139,9 @@ class Connections:
                     last_claim=last_claim,
                     last_reply=last_reply,
                     last_activity=max(activity, default=None),
-                    subscription_state="unknown",
-                    subscription_evidence="separate-mcp-process",
+                    subscription_state=subscription_state,
+                    subscription_evidence=subscription_evidence,
+                    subscription_expires_at=subscription_expires_at,
                     activity_evidence="current-scoped-credential",
                 )
                 result.append(value)

@@ -1,15 +1,19 @@
 import json
 import io
+import os
 import secrets
+import sqlite3
+import tempfile
 import threading
 import time
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from connections import Connections, capabilities
 from grok_adapter import GrokWebhook
 from local_client import LocalClient, LocalFailure, main
-from roundtable import Store
+from roundtable import Store, digest
 from server import make_server
 
 
@@ -190,3 +194,71 @@ class LocalConnectionTests(unittest.TestCase):
         self.assertNotIn(self.agent["token"], json.dumps(dispatch.call_args.args[0]))
         with self.assertRaises(ValueError):
             adapter.dispatch_assignment({"status": "completed"})
+
+
+class SubscriptionStateTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.temp.name)
+        self.store = Store(str(self.dir / "roundtable.db"))
+        self.room = self.store.room("Subscription state")
+        self.agent = self.store.add_agent(self.room["id"], "dot-bot", "dot")
+
+    def tearDown(self):
+        self.store.db.close()
+        self.temp.cleanup()
+
+    def write_events(self, rows):
+        path = self.dir / "events.db"
+        path.unlink(missing_ok=True)
+        with sqlite3.connect(path) as db:
+            db.execute(
+                "CREATE TABLE subscriptions("
+                "principal TEXT, expires REAL, url TEXT, secret TEXT)"
+            )
+            db.executemany(
+                "INSERT INTO subscriptions VALUES (?,?,?,?)",
+                rows,
+            )
+        os.chmod(path, 0o600)
+
+    def member(self):
+        return next(m for m in self.store.connections.status(self.room["id"]) if m["id"] == "dot-bot")
+
+    def test_memory_store_stays_unknown(self):
+        store = Store()
+        room = store.room("Memory")
+        store.add_agent(room["id"], "local-bot")
+        member = store.connections.status(room["id"])[0]
+        self.assertEqual(member["subscription_state"], "unknown")
+        self.assertEqual(member["subscription_evidence"], "events-db-unavailable")
+        store.db.close()
+
+    def test_reads_valid_expired_and_missing_without_exposing_secrets(self):
+        secret = "whsec_synthetic-secret-must-not-leak"
+        url = "https://callback.example.com/private-hook"
+        self.write_events(
+            [
+                (digest(self.agent["token"]), time.time() + 120, url, secret),
+            ]
+        )
+        member = self.member()
+        self.assertEqual(member["subscription_state"], "valid")
+        self.assertEqual(member["subscription_evidence"], "events-db")
+        self.assertGreater(member["subscription_expires_at"], time.time())
+        encoded = json.dumps(member)
+        self.assertNotIn(secret, encoded)
+        self.assertNotIn(url, encoded)
+        self.assertNotIn(self.agent["token"], encoded)
+        self.write_events(
+            [
+                (digest(self.agent["token"]), 1, url, secret),
+            ]
+        )
+        member = self.member()
+        self.assertEqual(member["subscription_state"], "expired")
+        other = self.store.add_agent(self.room["id"], "other-bot")
+        statuses = {m["id"]: m["subscription_state"] for m in self.store.connections.status(self.room["id"])}
+        self.assertEqual(statuses["dot-bot"], "expired")
+        self.assertEqual(statuses["other-bot"], "missing")
+        self.assertNotIn(other["token"], json.dumps(self.store.connections.status(self.room["id"])))

@@ -93,7 +93,7 @@ sh scripts/up.sh --component mcp
 
 The installation maintainer reports that one real installation received Grok terminal routine receipts and automatically renewed subscriptions before expiry. This report was relayed through Grok, not independently reproduced in this documentation update; each deployment must verify receipt/task correlation and renewal timestamps. See [evidence limits](../VERIFICATION.md#maintainer-reported-acceptance).
 
-Subscriptions default to one hour and are capped at one hour. Platform renewal is **not guaranteed**; verify the earliest `refreshBefore` and actual renewals. Backend connection/5xx failures preserve existing subscriptions with `backend_unavailable` and bounded backoff; 401/403 revoke them. Invalid 200 bodies never authorize. Expiry/cancellation still remove state, and recovery does not replay already acknowledged events.
+Subscriptions default to seven days and are capped at seven days. Platform renewal is **not guaranteed**; verify the earliest `refreshBefore` and actual renewals. Backend connection/5xx failures preserve existing subscriptions with `backend_unavailable` and bounded backoff; 401/403 revoke them. Invalid 200 bodies never authorize. Expiry/cancellation still remove state, and recovery does not replay already acknowledged events.
 
 If the platform automation/subscription is lost, inspect existing records first. Toggle the existing automation only when appropriate, or recreate only after confirming it is absent; then verify actual subscribe and renewal records and the new refresh time. A toggle is not proof of renewal, and a new subscription does not replay missed work.
 

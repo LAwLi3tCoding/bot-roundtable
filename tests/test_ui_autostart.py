@@ -159,6 +159,70 @@ class AutostartTests(unittest.TestCase):
             self.assertFalse(runtime.notify_failure("x"))
         popen.assert_not_called()
 
+    def configure_events(self, expires=None):
+        self.config["events"] = True
+        self.config["worker"] = "dot"
+        runtime.env_save(
+            self.state / "dot.env",
+            {
+                "ROUNDTABLE_URL": "http://127.0.0.1:1",
+                "ROUNDTABLE_ROOM": "r",
+                "ROUNDTABLE_AGENT": "dot",
+                "ROUNDTABLE_TOKEN": "synthetic-worker-token",
+            },
+        )
+        if expires is None:
+            return
+        runtime.save(self.state / "events.db", "")
+        with runtime.sqlite3.connect(self.state / "events.db") as db:
+            db.execute("CREATE TABLE subscriptions(principal TEXT, expires REAL)")
+            principal = runtime.hashlib.sha256(b"synthetic-worker-token").hexdigest()
+            db.execute("INSERT INTO subscriptions VALUES (?,?)", (principal, expires))
+
+    def test_success_alerts_when_events_have_no_subscription(self):
+        self.configure_events()
+        with (
+            patch.object(runtime, "owned", return_value=123),
+            patch.object(runtime, "ready", return_value=True),
+            patch.object(runtime, "open_ui", return_value=dict(OPENED)),
+            patch.object(runtime.sys, "platform", "darwin"),
+            patch.object(runtime.shutil, "which", return_value="/usr/bin/osascript"),
+            patch.object(runtime.subprocess, "Popen") as popen,
+        ):
+            result = runtime.autostart_ui(self.state, self.config)
+        self.assertEqual(result["subscription_warning"], "events_enabled_but_no_valid_subscription")
+        self.assertIn("重新订阅", result["subscription_notice"])
+        argv = popen.call_args.args[0]
+        self.assertEqual(argv[0], "osascript")
+        self.assertIn("重新订阅", argv[-1])
+        self.assertIn(str(self.state / "logs" / "ui-launcher.log"), argv[-1])
+        self.assertNotIn("圆桌没有打开", argv[-1])
+
+    def test_success_does_not_alert_when_subscription_is_valid(self):
+        self.configure_events(expires=time.time() + 120)
+        with (
+            patch.object(runtime, "owned", return_value=123),
+            patch.object(runtime, "ready", return_value=True),
+            patch.object(runtime, "open_ui", return_value=dict(OPENED)),
+            patch.object(runtime.subprocess, "Popen") as popen,
+        ):
+            result = runtime.autostart_ui(self.state, self.config)
+        self.assertNotIn("subscription_warning", result)
+        popen.assert_not_called()
+
+    def test_subscription_alert_skipped_off_macos(self):
+        self.configure_events()
+        with (
+            patch.object(runtime, "owned", return_value=123),
+            patch.object(runtime, "ready", return_value=True),
+            patch.object(runtime, "open_ui", return_value=dict(OPENED)),
+            patch.object(runtime.sys, "platform", "linux"),
+            patch.object(runtime.subprocess, "Popen") as popen,
+        ):
+            result = runtime.autostart_ui(self.state, self.config)
+        self.assertEqual(result["subscription_warning"], "events_enabled_but_no_valid_subscription")
+        popen.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

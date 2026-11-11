@@ -210,7 +210,10 @@ window.I18N = {
     "roundtableEmpty": "Everyone can read messages here. Mention a Bot to invite it into the discussion.",
     "stopRoundtableConfirm": "Stopping prevents further Bot notifications and messages at this table. Stop replies?",
     "stopRoundtableHint": "Stopping prevents further Bot notifications and messages at this table.",
-    "stopReplies": "Stop replies"
+    "stopReplies": "Stop replies",
+    "subscriptionMissing": "Dot event subscription has expired. Re-subscribe to roundtable events in the Dot session.",
+    "subscriptionValid": "Event subscription is active",
+    "subscriptionExpired": "Event subscription expired"
   },
   "zh": {
     "Open the roundtable locally to manage bots": "请在本机通过「打开圆桌」进入后管理 Bot。",
@@ -422,6 +425,9 @@ window.I18N = {
     "roundtableEmpty": "所有人都能看到这里的消息。@ 一个 Bot，邀请它加入讨论。",
     "stopRoundtableConfirm": "停止后，这张圆桌不会再叫醒 Bot，也不能继续发消息。确定停止回复吗？",
     "stopRoundtableHint": "停止后，这张圆桌不再叫醒 Bot，也不能继续发消息。",
-    "stopReplies": "停止回复"
+    "stopReplies": "停止回复",
+    "subscriptionMissing": "Dot 事件订阅已失效，请在 Dot 会话里重新订阅圆桌事件",
+    "subscriptionValid": "事件订阅有效",
+    "subscriptionExpired": "事件订阅已失效"
   }
 };

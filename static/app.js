@@ -8,6 +8,9 @@ let adminToken = '', active = null, rooms = [], bots = [], state = null, refresh
 const roomTokens = new Map();
 let connectionEvidence = [], wakeMethods = {};
 function memberEvidence(id){const item=connectionEvidence.find(m=>m.id===id);if(!item?.last_activity)return language==='zh'?'还没连上':'Not connected yet';const minutes=Math.floor((Date.now()/1000-item.last_activity)/60);return minutes<2?(language==='zh'?'在线':'Online'):(language==='zh'?`${minutes} 分钟前活跃`:`Active ${minutes} min ago`);}
+function eventWake(id, bot){const wake=(bot&&bot.wake)||wakeMethods[id];const member=connectionEvidence.find(m=>m.id===id);return wake==='mcp-events'||member?.kind==='dot'||bot?.kind==='dot';}
+function subscriptionStatus(id, bot){if(!eventWake(id, bot))return null;const state=connectionEvidence.find(m=>m.id===id)?.subscription_state;if(state==='valid')return {missing:false, text:t('subscriptionValid')};if(state==='missing'||state==='expired')return {missing:true, text:t('subscriptionExpired')};return null;}
+function renderSubscriptionBanner(){const banner=$('subscription-banner');if(!banner)return;if(!active||!state){banner.hidden=true;banner.textContent='';return;}const missing=connectionEvidence.filter(member=>subscriptionStatus(member.id, member)?.missing);banner.hidden=!missing.length;banner.textContent=missing.length?t('subscriptionMissing'):'';}
 
 const credentialKey = 'roundtable-access-v1';
 const COOKIE_SESSION = 'cookie-session';
@@ -109,11 +112,12 @@ function renderState() {
  $('manage').disabled=!connected;
  if(!connected){$('messages').replaceChildren();}$('task-filter').disabled=!connected;$('delegate-topic').disabled=!connected;
  window.HandoffUI?.render();
+ renderSubscriptionBanner();
 }
 function wakeLabel(id){const method=wakeMethods[id];const zh={'grok-routine':'推送到 Webhook','mcp-events':'订阅事件','poll':'Bot 自己定时来看'};const en={'grok-routine':'Push to webhook','mcp-events':'Subscribe to events','poll':'Bot checks on a schedule'};return (language==='zh'?zh:en)[method]||(language==='zh'?'通知方式尚未配置':'Notifications not configured');}
 function renderDirectory() {
  if(window.BotManagement){window.BotManagement.render();return;}
- $('bot-cards').replaceChildren(); for(const bot of bots){const card=element('div','bot-card');card.append(element('div','avatar',bot.name.slice(0,1)),element('h3','',bot.name),element('span','status-pill',memberEvidence(bot.id)),element('p','muted',bot.description||t('registerHint')),element('code','',bot.id),element('p','member-evidence',wakeLabel(bot.id)));$('bot-cards').append(card);}
+ $('bot-cards').replaceChildren(); for(const bot of bots){const card=element('div','bot-card');card.append(element('div','avatar',bot.name.slice(0,1)),element('h3','',bot.name),element('span','status-pill',memberEvidence(bot.id)),element('p','muted',bot.description||t('registerHint')),element('code','',bot.id),element('p','member-evidence',wakeLabel(bot.id)));const sub=subscriptionStatus(bot.id, bot);if(sub)card.append(element('p',sub.missing?'subscription-missing muted':'muted',sub.text));$('bot-cards').append(card);}
 }
 function renderManage() {
  if(!state)return;$('edit-name').value=state.room.name;
@@ -169,6 +173,6 @@ async function refreshConnections(){
  if(!active){results.textContent=t('needConnection');return;}
  const room=active.id;const data=await api(roomPath('/connections'),roomAuth());
  if(active?.id!==room)return;
- for(const member of data.members){const row=element('p','small');row.append(element('strong','',member.name+' · '),element('span','',member.observed?`${t('connectionObserved')} ${new Date(member.observed*1000).toLocaleString()}`:t('connectionUnseen')));results.append(row);}
+ for(const member of data.members){const row=element('p','small');row.append(element('strong','',member.name+' · '),element('span','',member.observed?`${t('connectionObserved')} ${new Date(member.observed*1000).toLocaleString()}`:t('connectionUnseen')));const sub=subscriptionStatus(member.id, member);if(sub)row.append(element('span',sub.missing?'subscription-missing':'',' · '+sub.text));results.append(row);}
 }
 $('connection-refresh').onclick=()=>action(refreshConnections,$('mcp-dialog'));

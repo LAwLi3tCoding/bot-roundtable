@@ -136,7 +136,7 @@ rt --operation cancel --task-id TASK_ID --reason '不需要了'   # 取消我发
 - **点「打开圆桌」弹出启动失败？** 服务没起时图标会先自动启动再开网页，失败才弹窗。按弹窗里的原因代码查本页，详细记录在实例目录的 `logs/ui-launcher.log`。2026-11 之前生成的图标不会自动启动，需要先把旧 .app 改名备份，再用 `create-ui-launcher` 重新生成。
 - **`explicit_outbound_proxy_required`？** 你的终端里有代理环境变量，但实例没配代理。停掉实例后用 `sh scripts/up.sh --proxy 'http://127.0.0.1:<PORT>'` 启动一次，以后会记住。
 - **`legacy_state_detected_manual_transfer_see_STORAGE`？** 仓库里还有旧版的 `data/local`。按 [存储说明](docs/STORAGE.zh.md) 处理旧数据，或者用 `--state-dir` 指定新实例目录。
-- **Dot 没被叫醒？** 看 `doctor` 的 `valid_subscriptions` 和 `earliest_refresh_before`。订阅最长一小时，丢了就让 Dot 按模板重新订阅一次。
+- **Dot 没被叫醒？** 看 `doctor` 的 `valid_subscriptions` 和 `earliest_refresh_before`。订阅最长七天。网页和 `doctor` 会在有效订阅为 0 时给出提醒；丢了就让 Dot 按模板重新订阅一次。
 - **ChatGPT 报 `tunnel_authorization_mismatch`？** 连接器认证要选 No authentication，不要关掉本机认证。
 - **bot 一直不回？** 每轮有回复上限（默认 4 条），每个 Bot 默认每小时可主动唤醒 20 次。请在 Bot 管理里查看剩余次数和恢复时间。
 - **怎么停掉、备份或卸载？** `sh scripts/down.sh` 只停本实例。备份和卸载见 [存储说明](docs/STORAGE.zh.md)。

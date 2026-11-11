@@ -35,7 +35,7 @@ Examples: `{"kind":"task.assigned","id":"0123456789abcdef01234567"}`, `{"kind":"
 
 The same authenticated `/mcp` accepts `events/list`, `events/subscribe`, `events/unsubscribe`. A successful initialize adds `capabilities.events`. Event data contains only kind, id and optional status; retrieve authorized text/results using tools. An event cannot increase permissions or directly run a worker. Each notification is scoped to the authenticated member, and self-authored changes are excluded.
 
-Implementation limits: maximum 10 subscriptions per principal / 100 total; default and maximum lifetime one hour, no permanent grant; canonical subscription identity; 60-second non-sliding verification cache; short challenge lifetime; 60-second dual-signature key rotation. Expired/revoked subscriptions stop delivery. The private SQLite subscription/outbox file survives restart and is required to have private permissions on Unix. It stores callback URLs and signing secrets in plaintext: protect its directory and backups. No real secrets were configured in development tests.
+Implementation limits: maximum 10 subscriptions per principal / 100 total; default and maximum lifetime seven days, no permanent grant; canonical subscription identity; 60-second non-sliding verification cache; short challenge lifetime; 60-second dual-signature key rotation. Expired/revoked subscriptions stop delivery. The private SQLite subscription/outbox file survives restart and is required to have private permissions on Unix. It stores callback URLs and signing secrets in plaintext: protect its directory and backups. No real secrets were configured in development tests.
 
 A cursor over the existing task event store drives the **internal outbox**; it is not a client polling or streaming delivery mode. Events are sent as signed HTTPS callbacks only. One request per event, stable ID across at most three attempts, fresh timestamp/signature, bounded backoff. 410 ends the subscription, 413 and other permanent rejections are not retried. A 2xx is receipt, never proof of bot execution. Event IDs support receiver deduplication; external exactly-once execution is not promised. New subscriptions start at the current event boundary. Protocol cursor is null: no replay request API is offered. Existing unexpired subscriptions resume persisted outbox work after restart; expired subscriptions lose undispatched work.
 
@@ -57,20 +57,20 @@ Network I/O runs outside the subscription database lock. Each scan uses at most 
 
 When changing Events capabilities, refresh the existing ChatGPT plugin's tools/metadata and rediscover event sources/schema in the actual conversation. `roundtable.notification` uses `{}`; any other name or argument is rejected. Tool discovery alone does not confirm event discovery or a subscription. After a real host rejection, verify only the safely logged candidate hostname against the intended platform interaction, explicitly approve the exact host, and restart only the affected gateway while preserving its private Events DB. No universal callback hostname is assumed. This implementation retains `-32015` for callback/verification failures; platform pre-creation errors are a separate layer.
 
-Confirm successful subscription state before creating test work. On an ambiguous create result, inspect existing platform automations/subscriptions before retrying; do not create duplicates or substitute a polling schedule. Default and maximum TTL are one hour. The client/product must renew before expiry; the operator must verify that behavior. This service has no universal renewal controller, and a new subscription does not replay past events. Real event-triggered Dot receipt → claim → exact read-only nonce completion has been observed in a controlled test; each installation must verify its own route. See [acceptance levels](ROUNDTRIP.en.md).
+Confirm successful subscription state before creating test work. On an ambiguous create result, inspect existing platform automations/subscriptions before retrying; do not create duplicates or substitute a polling schedule. Default and maximum TTL are seven days. The client/product must renew before expiry; the operator must verify that behavior. This service has no universal renewal controller, and a new subscription does not replay past events. Real event-triggered Dot receipt → claim → exact read-only nonce completion has been observed in a controlled test; each installation must verify its own route. See [acceptance levels](ROUNDTRIP.en.md).
 
 **安全首次接入：** 空白名单现在允许 Events 发现，但在 DNS/网络/持久化前拒绝全部订阅 challenge。读取平台真实请求的安全 hostname 拒绝日志，另行核验后精确批准，仅重启受管理的网关。见[自动配置](SETUP_AUTOMATION.zh.md)。不批准占位域名或通配符。
 
 能力变化后，刷新既有 ChatGPT 插件的工具/metadata，再在实际会话重新发现事件来源/schema。`roundtable.notification` 参数为 `{}`，其他事件名或参数一律拒绝；工具存在不等于事件已发现或已订阅。真实请求被 host 拒绝后，只提取安全日志中的候选 hostname，核实平台来源后精确批准，仅重启相应网关并保留私有 Events DB；不假定任何全局固定回调域名。callback/验证失败继续使用 `-32015`，平台创建前错误是另一层。
 
-订阅成功后再造测试任务。创建结果不确定先查已有 automation/subscription，不重复创建，不用轮询替代事件。默认及最长 TTL 均一小时，由产品/客户端续订，操作者需核验；服务没有通用续订控制器，新订阅不重放过去事件。受控实测已观察到真实事件触发 Dot 领取并原样回报只读 nonce，每个安装仍需独立验收，见[验收层级](ROUNDTRIP.zh.md)。
+订阅成功后再造测试任务。创建结果不确定先查已有 automation/subscription，不重复创建，不用轮询替代事件。默认及最长 TTL 均七天，由产品/客户端续订，操作者需核验；服务没有通用续订控制器，新订阅不重放过去事件。受控实测已观察到真实事件触发 Dot 领取并原样回报只读 nonce，每个安装仍需独立验收，见[验收层级](ROUNDTRIP.zh.md)。
 ## Backend availability / 后端可用性
 
 Authorization is tri-state: a complete matching 200 authorizes; 401/403 revoke; network/5xx/malformed 200 preserve existing subscriptions with `backend_unavailable`, without sending while unavailable. A five-second backoff bounds repeated checks. Expiry and cancellation still apply; post-delivery uncertainty in authorization does not replay an acknowledged event. Create/renew/cancel/expire/revoke logs contain status names only, never URL, secret or principal. Initial/renewal requests with uncertain authorization are rejected, not newly authorized.
 
 授权为三态：完整且身份匹配的 200 明确授权；401/403 撤权；连接/5xx/非法 200 保留已有订阅并记 `backend_unavailable`，不可用期间不发事件，检查退避五秒。取消/过期照常，投递后权限检查暂不可用不重发已确认事件。创建/续订/取消/过期/撤权日志只有状态名，不含 URL、secret、principal。授权不确定的创建/续订请求拒绝，不获得新授权。
 
-Subscriptions default/max to one hour. Platform renewal must be verified, and toggling an automation does not guarantee another subscribe request. 订阅默认/上限一小时，须验证平台续订；切换 automation 开关不保证重新 subscribe。
+Subscriptions default/max to seven days. Platform renewal must be verified, and toggling an automation does not guarantee another subscribe request. 订阅默认/上限七天，须验证平台续订；切换 automation 开关不保证重新 subscribe。
 
 ## Reported live acceptance / 报告的真实验收
 

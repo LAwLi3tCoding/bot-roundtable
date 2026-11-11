@@ -334,8 +334,18 @@ class SetupTests(unittest.TestCase):
             )
         result = runtime.diagnostics(self.state, config)
         self.assertEqual(result["valid_subscriptions"], 1)
+        self.assertEqual(result["warnings"], [])
+        self.assertNotIn("subscription_notice", result)
         self.assertNotIn("other-principal", str(result))
         self.assertNotIn(member["ROUNDTABLE_TOKEN"], str(result))
+
+    def test_doctor_warns_when_events_enabled_without_subscription(self):
+        config = self.setup_instance()
+        result = runtime.diagnostics(self.state, config)
+        self.assertTrue(result["events_enabled"])
+        self.assertEqual(result["valid_subscriptions"], 0)
+        self.assertEqual(result["warnings"], ["events_enabled_but_no_valid_subscription"])
+        self.assertIn("重新订阅", result["subscription_notice"])
 
     def test_concurrent_setup_lock_and_nonprivate_existing_log(self):
         with runtime.locked(self.state), self.assertRaises(BlockingIOError):

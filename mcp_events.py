@@ -29,6 +29,10 @@ NOTIFICATION_KINDS = ["task.assigned", "task.updated", "task.finished", "message
 
 # One generic event. New notification kinds never require a new subscription;
 # the payload names what changed and the bot reads bodies from its own inbox.
+# Default and maximum lifetime. Clients may request a shorter TTL; none is perpetual.
+MAX_TTL_MS = 7 * 24 * 60 * 60 * 1000  # 7 days
+DEFAULT_TTL_MS = MAX_TTL_MS
+
 EVENTS = [
     {
         "name": NOTIFICATION_EVENT,
@@ -196,12 +200,12 @@ class EventBroker:
     ):
         # Validate resource scope before resolving/contacting any callback.
         initial = self.feed(grant, name, arguments, None)
-        ttl = params.get("ttlMs", 3600000)
+        ttl = params.get("ttlMs", DEFAULT_TTL_MS)
         if ttl is None:
-            ttl = 3600000  # Never grant perpetual subscriptions.
+            ttl = DEFAULT_TTL_MS  # Never grant perpetual subscriptions.
         if type(ttl) is not int or ttl <= 0:
             raise EventError(-32602, "invalid_ttl")
-        ttl = min(ttl, 3600000)
+        ttl = min(ttl, MAX_TTL_MS)
         try:
             signing_key(delivery.get("secret"))
         except ValueError:

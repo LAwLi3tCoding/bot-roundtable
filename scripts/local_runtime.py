@@ -972,6 +972,11 @@ def diagnostics(state, config):
                 (principal, time.time()),
             ).fetchone()
             report["valid_subscriptions"], report["earliest_refresh_before"] = count, expiry
+    if report["events_enabled"] and report["valid_subscriptions"] == 0:
+        report["warnings"] = [SUBSCRIPTION_WARNING]
+        report["subscription_notice"] = SUBSCRIPTION_NOTICE
+    else:
+        report["warnings"] = []
     try:
         check_private(state / "roundtable.db")
         # Owner-only local command; exactly this instance's room/origin.
@@ -1364,6 +1369,9 @@ def open_ui(state, config, copy_token=False):
 
 
 AUTOSTART_LOCK_WAIT = 90
+SUBSCRIPTION_WARNING = "events_enabled_but_no_valid_subscription"
+SUBSCRIPTION_NOTICE = "Dot 事件订阅已失效，请在 Dot 会话里重新订阅圆桌事件"
+
 
 
 def bring_up(state, config, component=None, without_tunnel=False, no_caffeinate=False):
@@ -1417,16 +1425,53 @@ def autostart_ui(state, config):
             )["started"]
         result = open_ui(state, config)
     result["autostarted"] = started
+    alert = missing_subscription_alert(state, config)
+    if alert:
+        result.update(alert)
+        log_path = state / "logs" / "ui-launcher.log"
+        message = alert["subscription_notice"] + "\n日志：" + str(log_path)
+        notify_alert(message)
     return result
+
+
+def missing_subscription_alert(state, config):
+    """Return a warning payload when Events are on but this instance has no live subscription."""
+    if not config.get("events"):
+        return None
+    try:
+        member = env_read(state / (config["worker"] + ".env"))
+        dbpath = state / "events.db"
+        count = 0
+        if dbpath.exists():
+            check_private(dbpath)
+            principal = hashlib.sha256(member["ROUNDTABLE_TOKEN"].encode()).hexdigest()
+            with sqlite3.connect(dbpath.as_uri() + "?mode=ro", uri=True) as db:
+                count = db.execute(
+                    "SELECT COUNT(*) FROM subscriptions WHERE principal=? AND expires>?",
+                    (principal, time.time()),
+                ).fetchone()[0]
+    except Exception:
+        return None
+    if count:
+        return None
+    return {
+        "subscription_warning": SUBSCRIPTION_WARNING,
+        "subscription_notice": SUBSCRIPTION_NOTICE,
+    }
 
 
 def notify_failure(reason, log_path=None):
     """Best-effort macOS alert; the message holds only the reason code and the log path."""
-    if sys.platform != "darwin" or not shutil.which("osascript"):
-        return False
     message = "圆桌没有打开：" + str(reason)
     if log_path:
         message += "\n日志：" + str(log_path)
+    return notify_alert(message, log_path)
+
+
+def notify_alert(message, log_path=None):
+    """Non-blocking macOS dialog. The log path is only appended when the caller put it in message."""
+    if sys.platform != "darwin" or not shutil.which("osascript"):
+        return False
     script = [
         "on run argv",
         'display dialog (item 1 of argv) with title "打开圆桌" buttons {"好"} '

@@ -182,6 +182,9 @@ svg { width: var(--rt-icon-size); height: var(--rt-icon-size); flex-shrink: 0; f
 .sidebar-settings-panel button { width: 100%; justify-content: flex-start; }
 .sidebar-settings-panel select { width: 100%; margin-top: var(--rt-space-2); }
 #poll-error { margin: 0; padding: var(--rt-space-2) var(--rt-space-4); color: var(--rt-ink); background: var(--rt-surface); text-align: center; }
+#subscription-banner { margin: 0; padding: var(--rt-space-3) var(--rt-space-4); background: var(--rt-danger-bg); color: var(--rt-danger); text-align: center; font-weight: var(--rt-weight-semibold); }
+#subscription-banner[hidden] { display: none; }
+.subscription-missing { color: var(--rt-danger); margin: var(--rt-space-1) 0 0; }
 .timeline-toolbar { display: flex; align-items: center; gap: var(--rt-space-4); width: min(calc(100% - var(--rt-canvas-gutter)), var(--rt-timeline-width)); margin-inline: auto; padding-block: var(--rt-space-2) var(--rt-space-4); border-bottom: var(--rt-border-width) solid var(--rt-line); }
 #bot-filters { display: flex; flex: 1; min-width: 0; }
 #bot-filter { max-width: 100%; min-width: 0; width: auto; }

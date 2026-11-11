@@ -19,7 +19,7 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
 from event_delivery import CallbackTransport, encode, signed_headers
-from mcp_events import EventBroker, EventError
+from mcp_events import DEFAULT_TTL_MS, EventBroker, EventError, MAX_TTL_MS
 from mcp_http import ScopedVerifier, build_http_app, parse_grants
 from roundtable import Store
 from server import make_server
@@ -224,6 +224,37 @@ class EventsFixture(unittest.TestCase):
         self.assertIsNone(
             self.broker.db.execute("SELECT id FROM subscriptions WHERE id=?", (sid,)).fetchone()
         )
+
+    def test_ttl_defaults_to_seven_days_and_honors_shorter_requests(self):
+        params = subscription()
+        sid = self.broker.rpc("events/subscribe", params)["id"]
+        expires = self.broker.db.execute(
+            "SELECT expires FROM subscriptions WHERE id=?", (sid,)
+        ).fetchone()[0]
+        self.assertAlmostEqual(expires, time.time() + DEFAULT_TTL_MS / 1000, delta=5)
+        params["ttlMs"] = 8_000
+        self.broker.rpc("events/subscribe", params)
+        expires = self.broker.db.execute(
+            "SELECT expires FROM subscriptions WHERE id=?", (sid,)
+        ).fetchone()[0]
+        self.assertAlmostEqual(expires, time.time() + 8, delta=2)
+        params["ttlMs"] = MAX_TTL_MS + 1_000
+        self.broker.rpc("events/subscribe", params)
+        expires = self.broker.db.execute(
+            "SELECT expires FROM subscriptions WHERE id=?", (sid,)
+        ).fetchone()[0]
+        self.assertAlmostEqual(expires, time.time() + MAX_TTL_MS / 1000, delta=5)
+        params["ttlMs"] = None
+        self.broker.rpc("events/subscribe", params)
+        expires = self.broker.db.execute(
+            "SELECT expires FROM subscriptions WHERE id=?", (sid,)
+        ).fetchone()[0]
+        self.assertAlmostEqual(expires, time.time() + DEFAULT_TTL_MS / 1000, delta=5)
+        for invalid in (0, -1, "1000", 1.5):
+            params["ttlMs"] = invalid
+            with self.assertRaises(EventError) as error:
+                self.broker.rpc("events/subscribe", params)
+            self.assertEqual(error.exception.reason, "invalid_ttl")
 
     def test_expiration_and_410_413_never_retry(self):
         params = subscription()

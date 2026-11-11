@@ -92,7 +92,7 @@ sh scripts/up.sh --component mcp
 
 安装维护者经 Grok 报告：一次真实安装已收到 Grok 终态 routine 回执，并在订阅到期前自动续订。本次文档更新未独立复现；每个部署仍须核对回执与任务关联、续订时间。见[证据限制](../VERIFICATION.md#maintainer-reported-acceptance)。
 
-订阅默认一小时、上限一小时，**不保证平台自动续订**；应检查最早 `refreshBefore` 和实际续订。后端连接/5xx 故障保留订阅、记 `backend_unavailable` 并有界退避；401/403 才明确撤权。非法/不完整 200 不授权。取消/过期仍清理，恢复不重发已确认成功的事件。
+订阅默认七天、上限七天，**不保证平台自动续订**；应检查最早 `refreshBefore` 和实际续订。后端连接/5xx 故障保留订阅、记 `backend_unavailable` 并有界退避；401/403 才明确撤权。非法/不完整 200 不授权。取消/过期仍清理，恢复不重发已确认成功的事件。
 
 若平台 automation/订阅丢失，先检查已有记录。适用时关开已有 automation，或确认不存在后重建；随后核对实际 subscribe/续订记录及新的刷新时间。开关动作本身不证明续订，新订阅也不会重放错过的工作。
 
