@@ -133,6 +133,7 @@ rt --operation cancel --task-id TASK_ID --reason '不需要了'   # 取消我发
 ## 常见问题
 
 - **`doctor` 显示某个组件没起来？** 先看 `sh scripts/status.sh`，日志在 macOS 的 `~/Library/Logs/bot-roundtable/default`。重启用 `sh scripts/down.sh && sh scripts/up.sh`。
+- **点「打开圆桌」弹出启动失败？** 服务没起时图标会先自动启动再开网页，失败才弹窗。按弹窗里的原因代码查本页，详细记录在实例目录的 `logs/ui-launcher.log`。2026-11 之前生成的图标不会自动启动，需要先把旧 .app 改名备份，再用 `create-ui-launcher` 重新生成。
 - **`explicit_outbound_proxy_required`？** 你的终端里有代理环境变量，但实例没配代理。停掉实例后用 `sh scripts/up.sh --proxy 'http://127.0.0.1:<PORT>'` 启动一次，以后会记住。
 - **`legacy_state_detected_manual_transfer_see_STORAGE`？** 仓库里还有旧版的 `data/local`。按 [存储说明](docs/STORAGE.zh.md) 处理旧数据，或者用 `--state-dir` 指定新实例目录。
 - **Dot 没被叫醒？** 看 `doctor` 的 `valid_subscriptions` 和 `earliest_refresh_before`。订阅最长一小时，丢了就让 Dot 按模板重新订阅一次。

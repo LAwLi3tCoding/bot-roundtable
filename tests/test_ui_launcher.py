@@ -35,12 +35,38 @@ class LauncherTests(unittest.TestCase):
             self.assertEqual(run.stderr, b"")
             self.assertEqual(
                 json.loads(capture.read_text()),
-                ["ui", "--state-dir", str(state), "--name", "synthetic"],
+                ["ui", "--state-dir", str(state), "--name", "synthetic", "--autostart"],
             )
             self.assertNotIn("synthetic-secret", launcher.read_text())
             self.assertFalse((root / "injected").exists())
             with self.assertRaises(FileExistsError):
                 create_launcher(target, state, "synthetic", sys.executable, runtime)
+
+    def test_logs_result_privately_and_keeps_generation_path(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            logs = root / "state dir" / "logs"
+            runtime = root / "fake runtime.py"
+            runtime.write_text(
+                "import json,os\nprint(json.dumps({'ok': False, 'reason': 'synthetic_reason',"
+                " 'path': os.environ['PATH']}))\n"
+            )
+            target = root / "Roundtable UI.app"
+            search = "/synthetic/bin:/usr/bin:/bin"
+            create_launcher(
+                target, root / "state dir", "synthetic", sys.executable, runtime, logs, search
+            )
+            launcher = target / "Contents/MacOS/launcher"
+            run = subprocess.run([str(launcher)], capture_output=True, check=True, env={})
+            self.assertEqual(run.stdout + run.stderr, b"")
+            log = logs / "ui-launcher.log"
+            lines = log.read_text().splitlines()
+            self.assertEqual(len(lines), 2)
+            record = json.loads(lines[1])
+            self.assertEqual(record["reason"], "synthetic_reason")
+            self.assertEqual(record["path"], search)
+            self.assertEqual(log.stat().st_mode & 0o077, 0)
+            self.assertEqual(logs.stat().st_mode & 0o077, 0)
 
     def test_requires_bundle_extension(self):
         with tempfile.TemporaryDirectory() as temporary:
