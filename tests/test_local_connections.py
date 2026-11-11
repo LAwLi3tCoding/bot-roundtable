@@ -213,8 +213,7 @@ class SubscriptionStateTests(unittest.TestCase):
         path.unlink(missing_ok=True)
         with sqlite3.connect(path) as db:
             db.execute(
-                "CREATE TABLE subscriptions("
-                "principal TEXT, expires REAL, url TEXT, secret TEXT)"
+                "CREATE TABLE subscriptions(principal TEXT, expires REAL, url TEXT, secret TEXT)"
             )
             db.executemany(
                 "INSERT INTO subscriptions VALUES (?,?,?,?)",
@@ -223,7 +222,9 @@ class SubscriptionStateTests(unittest.TestCase):
         os.chmod(path, 0o600)
 
     def member(self):
-        return next(m for m in self.store.connections.status(self.room["id"]) if m["id"] == "dot-bot")
+        return next(
+            m for m in self.store.connections.status(self.room["id"]) if m["id"] == "dot-bot"
+        )
 
     def test_memory_store_stays_unknown(self):
         store = Store()
@@ -258,7 +259,9 @@ class SubscriptionStateTests(unittest.TestCase):
         member = self.member()
         self.assertEqual(member["subscription_state"], "expired")
         other = self.store.add_agent(self.room["id"], "other-bot")
-        statuses = {m["id"]: m["subscription_state"] for m in self.store.connections.status(self.room["id"])}
+        statuses = {
+            m["id"]: m["subscription_state"] for m in self.store.connections.status(self.room["id"])
+        }
         self.assertEqual(statuses["dot-bot"], "expired")
         self.assertEqual(statuses["other-bot"], "missing")
         self.assertNotIn(other["token"], json.dumps(self.store.connections.status(self.room["id"])))

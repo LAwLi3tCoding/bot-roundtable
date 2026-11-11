@@ -1373,7 +1373,6 @@ SUBSCRIPTION_WARNING = "events_enabled_but_no_valid_subscription"
 SUBSCRIPTION_NOTICE = "Dot 事件订阅已失效，请在 Dot 会话里重新订阅圆桌事件"
 
 
-
 def bring_up(state, config, component=None, without_tunnel=False, no_caffeinate=False):
     """Start the selected components with the saved configuration; caller holds the lock."""
     if config.get("home") != str(HOME):
