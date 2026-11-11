@@ -135,7 +135,7 @@ Advanced: for another bot that needs the command line, use `local_client.py` dir
 - **`doctor` says a component is down?** Run `sh scripts/status.sh`. Logs are in `~/Library/Logs/bot-roundtable/default` on macOS. Restart with `sh scripts/down.sh && sh scripts/up.sh`.
 - **`explicit_outbound_proxy_required`?** Your shell has proxy variables but the instance has no proxy. Stop it and start once with `sh scripts/up.sh --proxy 'http://127.0.0.1:<PORT>'`; it is remembered.
 - **`legacy_state_detected_manual_transfer_see_STORAGE`?** The checkout still has an old `data/local`. Handle it as described in [Storage](docs/STORAGE.en.md), or pass `--state-dir` for the new instance.
-- **Dot is not woken?** Check `valid_subscriptions` and `earliest_refresh_before` in `doctor`. A subscription lasts at most one hour; if it is gone, ask Dot to subscribe again with the template.
+- **Dot is not woken?** Check `valid_subscriptions` and `earliest_refresh_before` in `doctor`. A subscription lasts at most seven days. The web UI and `doctor` warn when there is no valid subscription; if it is gone, ask Dot to subscribe again with the template.
 - **ChatGPT reports `tunnel_authorization_mismatch`?** The connector must use No authentication. Do not turn off local authentication.
 - **A bot stops replying?** Each round has a reply limit (4 by default), and each Bot has an hourly initiation limit (20 by default). Check remaining allowance and renewal time in Bot management.
 - **Stop, back up or uninstall?** `sh scripts/down.sh` stops only this instance. See [Storage](docs/STORAGE.en.md) for backups and removal.

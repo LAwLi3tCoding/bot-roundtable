@@ -46,7 +46,30 @@ def build_icns(svg, resources):
     return "AppIcon.icns" if (resources / "AppIcon.icns").exists() else None
 
 
-def create_launcher(output, state, name, python, runtime):
+def launcher_script(argv, log_dir=None, search_path=None):
+    """sh body: run `ui --autostart`, appending its JSON result to a private launcher log.
+
+    Finder starts apps with a minimal PATH, so the generating shell's PATH is kept to find
+    tunnel-client. Output goes to /dev/null only when no log directory can be created.
+    """
+    lines = ["#!/bin/sh", "umask 077"]
+    if search_path:
+        lines.append("PATH=" + shlex.quote(search_path) + "; export PATH")
+    command = "exec " + shlex.join(argv)
+    if log_dir:
+        directory = shlex.quote(str(log_dir))
+        log = shlex.quote(str(Path(log_dir) / "ui-launcher.log"))
+        lines += [
+            f"if mkdir -p {directory} 2>/dev/null; then",
+            f"  date '+%Y-%m-%dT%H:%M:%S%z' >>{log} 2>/dev/null",
+            f"  {command} >>{log} 2>&1",
+            "fi",
+        ]
+    lines.append(command + " >/dev/null 2>&1")
+    return "\n".join(lines) + "\n"
+
+
+def create_launcher(output, state, name, python, runtime, log_dir=None, search_path=None):
     """Create a new bundle only; paths and runtime identity are fixed at generation."""
     target = Path(output).expanduser().absolute()
     if target.suffix != ".app":
@@ -64,9 +87,10 @@ def create_launcher(output, state, name, python, runtime):
             str(Path(state).expanduser().absolute()),
             "--name",
             name,
+            "--autostart",
         ]
         launcher = executable_dir / "launcher"
-        launcher.write_text("#!/bin/sh\nexec " + shlex.join(argv) + " >/dev/null 2>&1\n")
+        launcher.write_text(launcher_script(argv, log_dir, search_path))
         launcher.chmod(0o700)
         info = {
             "CFBundleExecutable": "launcher",

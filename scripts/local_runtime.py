@@ -89,17 +89,28 @@ def env_save(path, values, replace=False):
 
 
 @contextmanager
-def locked(state):
+def locked(state, wait=0):
+    """Exclusive instance lock; with wait>0, retry until the deadline instead of failing."""
     fd = os.open(state / ".lock", os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0), 0o600)
     try:
-        if os.name == "nt":
-            import msvcrt
+        deadline = time.monotonic() + wait
+        while True:
+            try:
+                if os.name == "nt":
+                    import msvcrt
 
-            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)  # type: ignore[attr-defined]
-        else:
-            import fcntl
+                    msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)  # type: ignore[attr-defined]
+                else:
+                    import fcntl
 
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError:
+                if not wait:
+                    raise
+                if time.monotonic() >= deadline:
+                    raise Failure("instance_busy_try_again") from None
+                time.sleep(0.2)
         yield
     finally:
         os.close(fd)
@@ -961,6 +972,11 @@ def diagnostics(state, config):
                 (principal, time.time()),
             ).fetchone()
             report["valid_subscriptions"], report["earliest_refresh_before"] = count, expiry
+    if report["events_enabled"] and report["valid_subscriptions"] == 0:
+        report["warnings"] = [SUBSCRIPTION_WARNING]
+        report["subscription_notice"] = SUBSCRIPTION_NOTICE
+    else:
+        report["warnings"] = []
     try:
         check_private(state / "roundtable.db")
         # Owner-only local command; exactly this instance's room/origin.
@@ -1352,6 +1368,129 @@ def open_ui(state, config, copy_token=False):
     return {"ok": True, "opened": True, "one_time_login": True, "expires_in": grant["expires_in"]}
 
 
+AUTOSTART_LOCK_WAIT = 90
+SUBSCRIPTION_WARNING = "events_enabled_but_no_valid_subscription"
+SUBSCRIPTION_NOTICE = "Dot 事件订阅已失效，请在 Dot 会话里重新订阅圆桌事件"
+
+
+def bring_up(state, config, component=None, without_tunnel=False, no_caffeinate=False):
+    """Start the selected components with the saved configuration; caller holds the lock."""
+    if config.get("home") != str(HOME):
+        raise Failure("code_location_changed_run_rebind")
+    if not without_tunnel and component in (None, "tunnel"):
+        preflight_tunnel(state)
+    if not config["proxy"] and any(os.environ.get(k) for k in AMBIENT):
+        raise Failure("explicit_outbound_proxy_required")
+    selected = [component] if component else list(COMPONENTS[:2] if without_tunnel else COMPONENTS)
+    started = []
+    sleep_state: dict[str, object] = {"state": "unchanged"}
+    if "server" in selected:
+        config["caffeinate"] = not no_caffeinate
+        write_json(state / "instance.json", config, replace=True)
+        if no_caffeinate:
+            stop_component(state, config, "caffeinate")
+            sleep_state = {"state": "disabled"}
+        elif sys.platform != "darwin":
+            sleep_state = {"state": "skipped", "reason": "non_macos"}
+        elif not shutil.which("caffeinate"):
+            sleep_state = {"state": "skipped", "reason": "binary_unavailable"}
+        else:
+            selected.insert(selected.index("server") + 1, "caffeinate")
+            sleep_state = {"state": "requested", "system_sleep_requires_ac": True}
+    try:
+        for item in selected:
+            if start(state, config, item):
+                started.append(item)
+    except Exception:
+        for item in reversed(started):
+            stop_component(state, config, item)
+        raise
+    return {"ok": True, "started": started, "sleep_prevention": sleep_state}
+
+
+def autostart_ui(state, config):
+    """Open the UI, first starting the instance the way `up` would when the server is down.
+
+    Waiting on the instance lock makes a second click reuse the first click's start.
+    """
+    with locked(state, wait=AUTOSTART_LOCK_WAIT):
+        started = []
+        if not owned(state, config, "server") or not ready(state, config, "server"):
+            started = bring_up(
+                state,
+                config,
+                without_tunnel=not (state / "runtime-key.env").exists(),
+                no_caffeinate=config.get("caffeinate") is False,
+            )["started"]
+        result = open_ui(state, config)
+    result["autostarted"] = started
+    alert = missing_subscription_alert(state, config)
+    if alert:
+        result.update(alert)
+        log_path = state / "logs" / "ui-launcher.log"
+        message = alert["subscription_notice"] + "\n日志：" + str(log_path)
+        notify_alert(message)
+    return result
+
+
+def missing_subscription_alert(state, config):
+    """Return a warning payload when Events are on but this instance has no live subscription."""
+    if not config.get("events"):
+        return None
+    try:
+        member = env_read(state / (config["worker"] + ".env"))
+        dbpath = state / "events.db"
+        count = 0
+        if dbpath.exists():
+            check_private(dbpath)
+            principal = hashlib.sha256(member["ROUNDTABLE_TOKEN"].encode()).hexdigest()
+            with sqlite3.connect(dbpath.as_uri() + "?mode=ro", uri=True) as db:
+                count = db.execute(
+                    "SELECT COUNT(*) FROM subscriptions WHERE principal=? AND expires>?",
+                    (principal, time.time()),
+                ).fetchone()[0]
+    except Exception:
+        return None
+    if count:
+        return None
+    return {
+        "subscription_warning": SUBSCRIPTION_WARNING,
+        "subscription_notice": SUBSCRIPTION_NOTICE,
+    }
+
+
+def notify_failure(reason, log_path=None):
+    """Best-effort macOS alert; the message holds only the reason code and the log path."""
+    message = "圆桌没有打开：" + str(reason)
+    if log_path:
+        message += "\n日志：" + str(log_path)
+    return notify_alert(message, log_path)
+
+
+def notify_alert(message, log_path=None):
+    """Non-blocking macOS dialog. The log path is only appended when the caller put it in message."""
+    if sys.platform != "darwin" or not shutil.which("osascript"):
+        return False
+    script = [
+        "on run argv",
+        'display dialog (item 1 of argv) with title "打开圆桌" buttons {"好"} '
+        "default button 1 with icon caution giving up after 120",
+        "end run",
+    ]
+    argv = ["osascript"] + [part for line in script for part in ("-e", line)] + [message]
+    try:
+        subprocess.Popen(
+            argv,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except OSError:
+        return False
+    return True
+
+
 def next_steps(state):
     import shlex
 
@@ -1487,6 +1626,11 @@ def main():
     parser.add_argument("--output")
     parser.add_argument("--replace", action="store_true")
     parser.add_argument("--copy-token", action="store_true")
+    parser.add_argument(
+        "--autostart",
+        action="store_true",
+        help="ui only: start the instance first when its server is not ready; alert on failure",
+    )
     parser.add_argument("--rotate-room-token", action="store_true")
     parser.add_argument("--identity")
     parser.add_argument(
@@ -1533,7 +1677,16 @@ def main():
 
             if not args.output:
                 raise Failure("launcher_output_required")
-            result = create_launcher(args.output, selected, args.name, sys.executable, __file__)
+            result = create_launcher(
+                args.output,
+                selected,
+                args.name,
+                sys.executable,
+                __file__,
+                # The launcher passes --state-dir, so its runs resolve this same directory.
+                log_dir=log_dir(selected, args.name, custom_state=True),
+                search_path=os.environ.get("PATH", ""),
+            )
             print(json.dumps(result))
             return 0
         if args.action == "paths":
@@ -1551,6 +1704,8 @@ def main():
         if args.action != "setup" and not (selected / "instance.json").exists():
             import shlex
 
+            if args.action == "ui" and args.autostart:
+                notify_failure("not_configured_run_setup")
             print(
                 json.dumps(
                     {
@@ -1593,6 +1748,12 @@ def main():
                 # Long network waits must not prevent status, cancellation or shutdown.
                 print(json.dumps(run_client(state, config, args)))
                 return 0
+            if args.action == "ui" and args.autostart and not args.copy_token:
+                result = autostart_ui(state, config)
+                if not result.get("ok"):
+                    notify_failure(result.get("reason"), args.resolved_log_dir)
+                print(json.dumps(result))
+                return 0 if result.get("ok") else 1
             with locked(state):
                 if args.action in ("up", "approve-host"):
                     if args.proxy is not None:
@@ -1620,41 +1781,9 @@ def main():
                     write_json(state / "instance.json", config, replace=True)
                     result = {"ok": True, "rebound": True, "rerender_launchd_required": True}
                 elif args.action == "up":
-                    if config.get("home") != str(HOME):
-                        raise Failure("code_location_changed_run_rebind")
-                    if not args.without_tunnel and args.component in (None, "tunnel"):
-                        preflight_tunnel(state)
-                    if not config["proxy"] and any(os.environ.get(k) for k in AMBIENT):
-                        raise Failure("explicit_outbound_proxy_required")
-                    selected = (
-                        [args.component]
-                        if args.component
-                        else list(COMPONENTS[:2] if args.without_tunnel else COMPONENTS)
+                    result = bring_up(
+                        state, config, args.component, args.without_tunnel, args.no_caffeinate
                     )
-                    started = []
-                    sleep_state: dict[str, object] = {"state": "unchanged"}
-                    if "server" in selected:
-                        config["caffeinate"] = not args.no_caffeinate
-                        write_json(state / "instance.json", config, replace=True)
-                        if args.no_caffeinate:
-                            stop_component(state, config, "caffeinate")
-                            sleep_state = {"state": "disabled"}
-                        elif sys.platform != "darwin":
-                            sleep_state = {"state": "skipped", "reason": "non_macos"}
-                        elif not shutil.which("caffeinate"):
-                            sleep_state = {"state": "skipped", "reason": "binary_unavailable"}
-                        else:
-                            selected.insert(selected.index("server") + 1, "caffeinate")
-                            sleep_state = {"state": "requested", "system_sleep_requires_ac": True}
-                    try:
-                        for component in selected:
-                            if start(state, config, component):
-                                started.append(component)
-                    except Exception:
-                        for component in reversed(started):
-                            stop_component(state, config, component)
-                        raise
-                    result = {"ok": True, "started": started, "sleep_prevention": sleep_state}
                 elif args.action == "down":
                     for component in (
                         [args.component] if args.component else ("tunnel", "mcp", "server")
@@ -1710,13 +1839,18 @@ def main():
         print(json.dumps(result))
         return 0
     except Exception as exc:
+        reason = (
+            str(exc)
+            if isinstance(exc, (Failure, CredentialError, StatePathError))
+            else "local_operation_failed"
+        )
+        if args.action == "ui" and args.autostart:
+            notify_failure(reason, getattr(args, "resolved_log_dir", None))
         print(
             json.dumps(
                 {
                     "ok": False,
-                    "reason": str(exc)
-                    if isinstance(exc, (Failure, CredentialError, StatePathError))
-                    else "local_operation_failed",
+                    "reason": reason,
                     "error_type": type(exc).__name__,
                     "secrets_included": False,
                 }

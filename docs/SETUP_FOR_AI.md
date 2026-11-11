@@ -173,7 +173,7 @@ Report to the person: which components are ready, the subscription count, and wh
 | Port already in use | Another program uses the port. Ask the person; rerun setup with `--server-port` / `--mcp-port` only for a new instance. |
 | `callback_host_not_approved` | Expected before step 6 approval. |
 | `tunnel_authorization_mismatch` in ChatGPT | The connector must use No authentication. |
-| `valid_subscriptions: 0` after approval | Ask the person to re-trigger the automation; subscriptions last at most one hour. |
+| `valid_subscriptions: 0` after approval | Ask the person to re-trigger the automation; subscriptions last at most seven days. |
 | Tunnel not ready | Check `tunnel.yaml` has the real Tunnel ID, the key was saved, and the Tunnel client is installed. On macOS, move a checkout out of protected folders. |
 
 More detail: `docs/SETUP_AUTOMATION.en.md`, `docs/DOT_SETUP.en.md`, `docs/TERMINAL_RECEIPTS.en.md`, `docs/STORAGE.en.md`.

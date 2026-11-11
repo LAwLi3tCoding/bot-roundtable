@@ -60,6 +60,7 @@ class Store:
     def __init__(self, path: str = ":memory:", timeout: float = 60, demo: bool = False):
         # Deterministic demo members are opt-in (server.py --demo / ROUNDTABLE_DEMO=1).
         self.demo = demo
+        self.path = path
         self.db = sqlite3.connect(path, check_same_thread=False)
         self.db.row_factory = sqlite3.Row
         self.lock = threading.RLock()

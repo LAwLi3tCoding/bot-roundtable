@@ -19,7 +19,7 @@ window.BotManagement = (() => {
    const info=element('div','bot-card-info'),heading=element('div','bot-card-heading');
    heading.append(avatar(bot),element('h3','',bot.deleted?t('botDeleted'):bot.name));
    info.append(heading,element('p','',bot.deleted?t('botDeleted'):bot.disabled?t('botDisabled'):memberEvidence(bot.id)));
-   if(!bot.deleted){info.append(element('code','',bot.id),element('p','',t({'grok-routine':'wakeRoutine','mcp-events':'wakeEvents','poll':'wakePoll'}[bot.wake||wakeMethods[bot.id]]||'botSetupNeeded')));}
+   if(!bot.deleted){info.append(element('code','',bot.id),element('p','',t({'grok-routine':'wakeRoutine','mcp-events':'wakeEvents','poll':'wakePoll'}[bot.wake||wakeMethods[bot.id]]||'botSetupNeeded')));const sub=subscriptionStatus(bot.id, bot);if(sub)info.append(element('p',sub.missing?'subscription-missing':'muted',sub.text));}
    row.append(info);
    if(can&&!bot.deleted){const controls=element('div','bot-row-actions');controls.append(button(t('editBot'),()=>edit(bot)),button(t(bot.disabled?'restoreBot':'disableBot'),()=>changeStatus(bot)),button(t('deleteBot'),()=>remove(bot),true));row.append(controls);}
    $('bot-cards').append(row);

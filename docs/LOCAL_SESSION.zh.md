@@ -16,9 +16,9 @@ HTTP cookie 不按端口隔离，同主机名其他服务仍属本机信任边�
 .venv/bin/python scripts/local_runtime.py create-ui-launcher --output '<EXISTING_OUTPUT_DIRECTORY>/打开圆桌.app' --state-dir '<STATE_DIRECTORY>' --name default
 ```
 
-将占位符替换为安装路径，含空格的路径保留引号，并使用实际实例名。生成器只创建新应用，拒绝覆盖已有文件；不读取凭据、不启动服务、不安装到 Applications、不改变认证设置。用户自行将应用放到方便的位置或加入 Dock。日常只需双击：现有 `ui` 流程自动验证并打开网页，无需知道或输入一次性码。托管服务须已运行；若没有打开页面，请维护者检查该实例。代码目录或 Python 路径移动后需重新生成入口。
+将占位符替换为安装路径，含空格的路径保留引号，并使用实际实例名。生成器只创建新应用，拒绝覆盖已有文件；不读取凭据、不启动服务、不安装到 Applications、不改变认证设置。用户自行将应用放到方便的位置或加入 Dock。日常只需双击：现有 `ui` 流程自动验证并打开网页，无需知道或输入一次性码。服务没在运行时，点击会先按 `up` 的方式启动（沿用实例已保存的代理和防休眠设置；有 runtime key 时一并启动 Tunnel），就绪后再打开网页；启动期间重复点击会等第一次启动完成，不会重复启动。启动失败或超时会弹出系统提示，写明原因代码和日志目录。代码目录或 Python 路径移动后需重新生成入口。
 
-快捷文件只保存路径和参数，不保存令牌或登录码；运行输出被丢弃，不写日志。测试实际执行合成 shell 入口，覆盖空格和 shell 特殊字符路径；尚未原生验证 Finder/LaunchServices 或 macOS 应用安全提示。Linux 可自行建立禁用终端显示的桌面入口，执行等价的 `local_runtime.py ui --state-dir ... --name ...`；当前生成器仅输出 macOS 应用。Windows 托管 UI 流程仍不支持。
+快捷文件只保存路径、参数和生成时的 `PATH`（Finder 启动时 `PATH` 很短，找不到 `tunnel-client`），不保存令牌或登录码。每次点击的结果 JSON 追加到实例目录 `logs/ui-launcher.log`，内容不含令牌或登录码。此前生成的应用不会自动启动服务，需备份改名旧应用后重新生成。测试实际执行合成 shell 入口，覆盖空格和 shell 特殊字符路径；尚未原生验证 Finder/LaunchServices 或 macOS 应用安全提示。Linux 可自行建立禁用终端显示的桌面入口，执行等价的 `local_runtime.py ui --state-dir ... --name ...`；当前生成器仅输出 macOS 应用。Windows 托管 UI 流程仍不支持。
 
 会话从交换或成功续期起有效一小时，打开的页面每五分钟尝试续期。会话过期或服务重启后，再点击应用即可；并非每次访问输入码，也不是永久免登录。
 
