@@ -703,45 +703,21 @@ def supervise(state, config, component, identity):
                     buffers[key.fd] = tail
                     log.flush()
         finally:
+            # Leader remains unreaped throughout both signals; PGID cannot be reused.
             cleaned = True
             try:
                 if child is not None:
-                    try:
-                        if group_live(child.pid):
-                            os.killpg(child.pid, signal.SIGTERM)
-                        # Leader remains unreaped throughout both signals; PGID cannot be reused.
-                        time.sleep(0.2)
-                        if group_live(child.pid):
-                            os.killpg(child.pid, signal.SIGKILL)
-                    except ProcessLookupError:
-                        pass
-                    except PermissionError:
-                        # Some kernels reject signalling an all-zombie group. Confirm it,
-                        # otherwise retain failure state; never substitute a different signal path.
-                        cleaned = not group_live(child.pid)
-                    except Failure:
-                        cleaned = False
-                    if cleaned:
-                        deadline = time.monotonic() + 3
-                        while group_live(child.pid) and time.monotonic() < deadline:
-                            time.sleep(0.05)
-                        cleaned = not group_live(child.pid)
-                    if cleaned:
-                        child.wait(timeout=3)
-                        log.write("component_exit_code=" + str(child.returncode) + "\n")
-                        # A fast failing child can exit before the selector consumes stderr.
-                        # Drain only after confirmed exit; retain the bounded safe vocabulary.
-                        if child.stdout:
-                            os.set_blocking(child.stdout.fileno(), False)
-                            remaining = buffers.get(child.stdout.fileno(), b"") + (
-                                child.stdout.read(65536) or b""
-                            )
-                            for line in remaining.splitlines():
-                                log.write(safe_log(line.decode("utf-8", "replace")))
-                    if child.stdout:
-                        child.stdout.close()
+                    leftover = b""
+                    if child.stdout is not None:
+                        leftover = buffers.get(child.stdout.fileno(), b"")
+                    cleaned = stop_child_group(child, log, leftover)
+            except Failure:
+                cleaned = False
             except Exception:
-                cleaned = False  # No raw exception text; a failed inspection is not success.
+                try:
+                    cleaned = child is None or not group_live(child.pid)
+                except Exception:
+                    cleaned = False
             finally:
                 if source is not None:
                     os.close(source)
@@ -808,6 +784,216 @@ def ready(state, config, component):
         return False
 
 
+CHILD_TERM_GRACE_SECONDS = 0.5
+CHILD_EXIT_CONFIRM_SECONDS = 8
+
+
+def leftover_cleanup_error(code, state):
+    import shlex
+
+    inspect = shlex.join(
+        [
+            sys.executable,
+            str(HOME / "scripts/local_runtime.py"),
+            "doctor",
+            "--state-dir",
+            str(state),
+        ]
+    )
+    return Failure(
+        f"{code} leftover_processes_still_running; "
+        "after confirming recorded pids in this instance state belong to this instance, "
+        "stop those process groups and rerun; inspect with: " + inspect
+    )
+
+
+def command_matches_stamp(stamp, expected, interpreter=False):
+    if not expected:
+        return False
+    if stamp_matches_command(stamp, expected, interpreter=interpreter):
+        return True
+    return len(expected) > 1 and stamp_matches_command(stamp, expected[1:], interpreter=True)
+
+
+def recorded_process_gone(pid, recorded_stamp=None, expected_command=None, interpreter=False):
+    """True when pid is not the recorded process. A reused pid counts as gone."""
+    if type(pid) is not int or pid <= 0:
+        return True
+    stamp = process_stamp(pid)
+    if not stamp:
+        return True
+    if recorded_stamp:
+        return stamp != recorded_stamp
+    if expected_command is not None:
+        return not command_matches_stamp(stamp, expected_command, interpreter=interpreter)
+    raise Failure("recorded_process_identity_uncertain")
+
+
+def recorded_group_gone(pgid, recorded_stamp=None, expected_command=None, interpreter=False):
+    """True when the recorded process group has no remaining members we still own."""
+    if type(pgid) is not int or pgid <= 0:
+        return True
+    stamp = process_stamp(pgid)
+    if stamp:
+        if recorded_stamp and stamp == recorded_stamp:
+            return False
+        if expected_command is not None and command_matches_stamp(
+            stamp, expected_command, interpreter=interpreter
+        ):
+            return False
+        if recorded_stamp or expected_command is not None:
+            # The leader pid was reused; do not inspect a foreign process group.
+            return True
+        raise Failure("recorded_process_identity_uncertain")
+    return not group_live(pgid)
+
+
+def previous_cleanup_unconfirmed(state, config, component, include_child=False):
+    outcome = state / (component + ".stop.json")
+    has_markers = (state / (component + ".pid.json")).exists() or (
+        state / (component + ".started.json")
+    ).exists()
+    if include_child:
+        has_markers = has_markers or (state / (component + ".child.json")).exists()
+    if has_markers and not outcome.exists():
+        return True
+    return bool(
+        outcome.exists()
+        and (
+            not read_json(outcome).get("cleaned")
+            or read_json(outcome).get("identity") != config["identity"]
+        )
+    )
+
+
+def archive_cleanup_markers(state, component):
+    names = [
+        component + suffix for suffix in (".pid.json", ".started.json", ".stop.json", ".child.json")
+    ]
+    if not any((state / name).exists() for name in names):
+        return
+    archive = private_dir(state / "reaped-cleanup")
+    stamp = time.strftime("%Y%m%dT%H%M%S")
+    for name in names:
+        path = state / name
+        if not path.exists():
+            continue
+        dest = archive / (stamp + "-" + name)
+        suffix = 0
+        while dest.exists():
+            suffix += 1
+            dest = archive / (f"{stamp}-{suffix}-" + name)
+        path.replace(dest)
+
+
+def supervisor_expected_command(state, config, component):
+    return [
+        str(Path(__file__).resolve()),
+        "_serve",
+        "--state-dir",
+        str(state),
+        "--component",
+        component,
+        "--identity",
+        config["identity"],
+    ]
+
+
+def previous_descendants_gone(state, config, component):
+    """Confirm the recorded supervisor, child, and process group are no longer ours."""
+    expected = supervisor_expected_command(state, config, component)
+    pid_path = state / (component + ".pid.json")
+    if pid_path.exists():
+        record = read_json(pid_path)
+        if not recorded_process_gone(
+            record.get("pid"),
+            record.get("stamp"),
+            expected,
+            interpreter=True,
+        ):
+            return False
+    started_path = state / (component + ".started.json")
+    if started_path.exists():
+        started = read_json(started_path)
+        if started.get("supervisor_pid") is not None and not recorded_process_gone(
+            started.get("supervisor_pid"),
+            expected_command=expected,
+            interpreter=True,
+        ):
+            return False
+    child_path = state / (component + ".child.json")
+    if child_path.exists():
+        child = read_json(child_path)
+        command = child.get("command")
+        if command is not None and not isinstance(command, list):
+            command = None
+        if not recorded_process_gone(child.get("pid"), child.get("stamp"), command):
+            return False
+        if not recorded_group_gone(child.get("pid"), child.get("stamp"), command):
+            return False
+    return True
+
+
+def resolve_unconfirmed_cleanup(state, config, component, code, include_child=False):
+    """Reap stale markers when leftovers are gone; refuse when they are still live."""
+    if not previous_cleanup_unconfirmed(state, config, component, include_child=include_child):
+        return False
+    try:
+        gone = previous_descendants_gone(state, config, component)
+    except Failure:
+        raise leftover_cleanup_error(code, state) from None
+    if not gone:
+        raise leftover_cleanup_error(code, state)
+    archive_cleanup_markers(state, component)
+    return True
+
+
+def stop_child_group(child, log, leftover=b""):
+    """Signal the child's process group and confirm it is gone.
+
+    Log or wait failures after the group has exited do not unconfirm cleanup.
+    """
+    try:
+        if group_live(child.pid):
+            os.killpg(child.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    except PermissionError:
+        if group_live(child.pid):
+            return False
+    time.sleep(CHILD_TERM_GRACE_SECONDS)
+    try:
+        if group_live(child.pid):
+            os.killpg(child.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    except PermissionError:
+        if group_live(child.pid):
+            return False
+    deadline = time.monotonic() + CHILD_EXIT_CONFIRM_SECONDS
+    while group_live(child.pid) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    if group_live(child.pid):
+        return False
+    try:
+        child.wait(timeout=3)
+        if log is not None:
+            log.write("component_exit_code=" + str(child.returncode) + "\n")
+            if child.stdout:
+                os.set_blocking(child.stdout.fileno(), False)
+                remaining = leftover + (child.stdout.read(65536) or b"")
+                for line in remaining.splitlines():
+                    log.write(safe_log(line.decode("utf-8", "replace")))
+    except Exception:
+        pass
+    try:
+        if child.stdout:
+            child.stdout.close()
+    except Exception:
+        pass
+    return True
+
+
 def start(state, config, component):
     if owned(state, config, component):
         if not ready(state, config, component):
@@ -815,18 +1001,14 @@ def start(state, config, component):
         return False
     if component in ("server", "mcp"):
         free_port(config[component + "_port"])
+    resolve_unconfirmed_cleanup(state, config, component, "previous_descendant_cleanup_unconfirmed")
     outcome = state / (component + ".stop.json")
-    if (
-        (state / (component + ".pid.json")).exists()
-        or (state / (component + ".started.json")).exists()
-    ) and not outcome.exists():
-        raise Failure("previous_descendant_cleanup_unconfirmed")
     if outcome.exists():
         if (
             not read_json(outcome).get("cleaned")
             or read_json(outcome).get("identity") != config["identity"]
         ):
-            raise Failure("previous_descendant_cleanup_unconfirmed")
+            raise leftover_cleanup_error("previous_descendant_cleanup_unconfirmed", state)
         outcome.unlink()
     (state / (component + ".started.json")).unlink(missing_ok=True)
     command(state, config, component)
@@ -917,17 +1099,18 @@ def stop_component(state, config, component):
     process = CHILDREN.pop(pid, None)
     if process is not None:
         process.wait(timeout=3)
+    resolve_unconfirmed_cleanup(state, config, component, "descendant_cleanup_unconfirmed")
     outcome = state / (component + ".stop.json")
     if (
         (state / (component + ".pid.json")).exists()
         or (state / (component + ".started.json")).exists()
     ) and not outcome.exists():
-        raise Failure("descendant_cleanup_unconfirmed")
+        raise leftover_cleanup_error("descendant_cleanup_unconfirmed", state)
     if outcome.exists() and (
         not read_json(outcome).get("cleaned")
         or read_json(outcome).get("identity") != config["identity"]
     ):
-        raise Failure("descendant_cleanup_unconfirmed")
+        raise leftover_cleanup_error("descendant_cleanup_unconfirmed", state)
     (state / (component + ".pid.json")).unlink(missing_ok=True)
 
 

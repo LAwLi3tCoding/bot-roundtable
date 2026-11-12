@@ -139,28 +139,31 @@ class Maintenance(unittest.TestCase):
         ):
             with self.assertRaisesRegex(runtime.Failure, "instance_running_use_down"):
                 require_stopped(self.source, self.config, runtime)
-        with patch.object(runtime, "process_stamp", return_value="different-stamp"):
-            with self.assertRaisesRegex(runtime.Failure, "identity_uncertain"):
-                require_stopped(self.source, self.config, runtime)
+        with (
+            patch.object(runtime, "process_stamp", return_value="different-stamp"),
+            patch.object(os, "kill", side_effect=AssertionError),
+        ):
+            require_stopped(self.source, self.config, runtime)
+        self.assertFalse((self.source / "server.pid.json").exists())
+        self.assertTrue(any((self.source / "reaped-cleanup").glob("*-server.pid.json")))
         self.assertFalse(self.target.exists())
 
-    def test_dead_pid_without_stop_is_uncertain(self):
+    def test_dead_pid_without_stop_is_reaped(self):
         runtime.write_json(
             self.source / "server.pid.json",
             {"pid": 123, "stamp": "synthetic", "identity": self.config["identity"]},
         )
-        with (
-            patch.object(runtime, "process_stamp", return_value=""),
-            self.assertRaisesRegex(runtime.Failure, "cleanup_unconfirmed"),
-        ):
+        with patch.object(runtime, "process_stamp", return_value=""):
             require_stopped(self.source, self.config, runtime)
+        self.assertFalse((self.source / "server.pid.json").exists())
+        self.assertTrue(any((self.source / "reaped-cleanup").glob("*-server.pid.json")))
         self.assertFalse(self.target.exists())
 
     def test_unclean_descendant_and_occupied_port_refused(self):
         runtime.write_json(self.source / "mcp.started.json", {"identity": self.config["identity"]})
-        with self.assertRaisesRegex(runtime.Failure, "cleanup_unconfirmed"):
-            require_stopped(self.source, self.config, runtime)
-        (self.source / "mcp.started.json").unlink()
+        require_stopped(self.source, self.config, runtime)
+        self.assertFalse((self.source / "mcp.started.json").exists())
+        self.assertTrue(any((self.source / "reaped-cleanup").glob("*-mcp.started.json")))
         with socket.socket() as sock:
             sock.bind(("127.0.0.1", 0))
             sock.listen()
