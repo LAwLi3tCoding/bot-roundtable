@@ -274,7 +274,7 @@ class SetupTests(unittest.TestCase):
             time.sleep(0.05)
         self.assertFalse(runtime.process_stamp(pid))
 
-    def test_missing_stop_outcome_is_uncertain_not_stale_success(self):
+    def test_missing_stop_outcome_is_reaped_when_process_is_gone(self):
         config = self.setup_instance()
         runtime.write_json(
             self.state / "server.pid.json",
@@ -285,12 +285,9 @@ class SetupTests(unittest.TestCase):
                 "component": "server",
             },
         )
-        with self.assertRaisesRegex(runtime.Failure, "cleanup_unconfirmed"):
-            runtime.stop_component(self.state, config, "server")
-        with self.assertRaisesRegex(runtime.Failure, "cleanup_unconfirmed"):
-            runtime.start(self.state, config, "server")
-        self.assertTrue((self.state / "server.pid.json").exists())
-        (self.state / "server.pid.json").unlink()  # Synthetic record, never a real process.
+        self.assertTrue(runtime.start(self.state, config, "server"))
+        self.assertTrue(any((self.state / "reaped-cleanup").glob("*-server.pid.json")))
+        runtime.stop_component(self.state, config, "server")
 
     def test_wait_does_not_hold_lifecycle_lock(self):
         config = self.setup_instance()
@@ -397,15 +394,15 @@ s.serve_forever()
         self.assertNotIn("synthetic-not-for-logs", text)
         self.assertEqual((self.state / "logs/tunnel.log").stat().st_mode & 0o777, 0o600)
 
-    def test_started_marker_without_pid_blocks_restart_and_false_stop(self):
+    def test_started_marker_without_live_process_is_reaped(self):
         config = self.setup_instance()
         marker = self.state / "server.started.json"
         runtime.write_json(marker, {"identity": config["identity"], "supervisor_pid": 99999999})
-        with self.assertRaisesRegex(runtime.Failure, "cleanup_unconfirmed"):
-            runtime.start(self.state, config, "server")
-        with self.assertRaisesRegex(runtime.Failure, "cleanup_unconfirmed"):
-            runtime.stop_component(self.state, config, "server")
-        marker.unlink()  # Only a synthetic failure record; no process was started.
+        self.assertTrue(runtime.start(self.state, config, "server"))
+        self.assertTrue(any((self.state / "reaped-cleanup").glob("*-server.started.json")))
+        self.assertTrue(marker.exists())
+        self.assertNotEqual(runtime.read_json(marker).get("supervisor_pid"), 99999999)
+        runtime.stop_component(self.state, config, "server")
 
     def test_ambient_proxy_diagnosable_but_start_requires_explicit_choice(self):
         config = self.setup_instance()

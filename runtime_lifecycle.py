@@ -11,18 +11,19 @@ def require_stopped(source, config, runtime):
             record = runtime.read_json(pidfile)
             stamp = runtime.process_stamp(record["pid"])
             if stamp:
-                if record.get("stamp") != stamp or record.get("identity") != config["identity"]:
+                if record.get("identity") != config["identity"]:
                     raise Failure("instance_pid_identity_uncertain")
-                raise Failure("instance_running_use_down")
-        started = source / (component + ".started.json")
-        child = source / (component + ".child.json")
-        if pidfile.exists() or started.exists() or child.exists():
-            stop = source / (component + ".stop.json")
-            if not stop.exists():
-                raise Failure("instance_descendant_cleanup_unconfirmed")
-            result = runtime.read_json(stop)
-            if result.get("identity") != config["identity"] or result.get("cleaned") is not True:
-                raise Failure("instance_descendant_cleanup_unconfirmed")
+                if record.get("stamp") == stamp:
+                    raise Failure("instance_running_use_down")
+                # Stamp mismatch means the original supervisor is gone; do not
+                # signal the process now using that pid.
+        runtime.resolve_unconfirmed_cleanup(
+            source,
+            config,
+            component,
+            "instance_descendant_cleanup_unconfirmed",
+            include_child=True,
+        )
     for key in ("server_port", "mcp_port"):
         with socket.socket() as sock:
             sock.settimeout(0.2)
